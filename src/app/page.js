@@ -34,7 +34,7 @@ const today = () => new Date().toLocaleDateString("en-US", { weekday: "long", mo
 // ── API Call Helper ────────────────────────────────────────────────────────
 const callClaude = async (messages, system, useSearch = false, imageBase64 = null) => {
   const body = {
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     max_tokens: 1500,
     system,
     messages,
@@ -187,7 +187,7 @@ function SnapToLog({ onConfirm, onCancel }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-5",
           max_tokens: 1000,
           system: `You are Hunter, an expert at reading sports betting slip screenshots from any sportsbook (FanDuel, DraftKings, BetMGM, Caesars, offshore books, etc).
 
