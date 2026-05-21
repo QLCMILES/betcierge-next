@@ -386,11 +386,11 @@ function Hunter({ user, bets }) {
           ...messages.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })),
           { role: "user", content: userMsg }
         ],
-        `You are Hunter, the AI sports betting concierge inside Betcierge. Today is ${today()}.
+       `You are Hunter, the AI sports betting concierge inside Betcierge. Today is ${today()}.
 The user is ${user.name.split(" ")[0]}. Weekly bankroll: $${user.bankroll}. Weekly goal: $${user.goal}. Current P&L: ${netPL >= 0 ? "+" : ""}$${netPL.toFixed(2)}. Bets logged: ${bets.length}.
-You have web search — use it when asked about specific games, teams, players, or lines.
-Be direct, warm, sharp. 2-5 sentences unless detailed analysis is requested. Never encourage reckless betting. You are part analyst, part accountability partner, part calm voice after a loss.`,
-        true // use web search for chat
+Use web search ONLY when the user asks about a specific game, team, player, or line. Do not search for general advice or bankroll questions.
+Be direct, warm, sharp. 2-5 sentences unless detailed analysis is requested. Never encourage reckless betting.`,
+true
       );
       setMessages(m => [...m, { role: "assistant", text: result.text }]);
     } catch {
