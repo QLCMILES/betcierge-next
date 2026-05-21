@@ -348,13 +348,14 @@ function Hunter({ user, bets }) {
   useEffect(() => { loadDailyPicks(); }, []);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  const loadDailyPicks = async () => {
+  const loadDailyPicks = async (retryCount = 0) => {
   setPicksLoading(true);
   setDailyPicks(null);
   try {
+    await new Promise(resolve => setTimeout(resolve, retryCount * 2000));
     const result = await callClaude(
-      [{ role: "user", content: `Today is ${today()}. Search for today's sports slate and give me your top 3-5 betting picks. Return ONLY raw JSON: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"...","units":1}],"summary":"..."}` }],
-      `You are Hunter, an elite sports betting analyst. Use web search to find today's games, then return ONLY raw JSON picks. No markdown, no backticks.`,
+      [{ role: "user", content: `Today is ${today()}. Search for today's top sports matchups, injury reports, and betting lines. Give me the top 3 highest confidence betting picks. Return ONLY raw JSON: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"...","units":1}],"summary":"..."}` }],
+      `You are Hunter, an elite sports betting analyst. Use web search to find today's real games and lines. Return ONLY 3 picks as raw JSON. No markdown, no backticks.`,
       true
     );
     const clean = result.text.replace(/```json|```/g, "").trim();
@@ -364,11 +365,15 @@ function Hunter({ user, bets }) {
     if (parsed.picks) setDailyPicks(parsed);
     else throw new Error("Invalid format");
   } catch {
-    setDailyPicks({ picks: [{ sport: "⚠️", game: "Couldn't load picks", pick: "Tap ↻ to retry", odds: "--", confidence: "Low", insight: "Hunter hit a snag. Tap refresh to try again.", units: 1 }], summary: "Tap ↻ to reload." });
+    if (retryCount < 2) {
+      setPicksLoading(false);
+      setTimeout(() => loadDailyPicks(retryCount + 1), 2000);
+    } else {
+      setDailyPicks({ picks: [{ sport: "⚠️", game: "Couldn't load picks", pick: "Tap ↻ to retry", odds: "--", confidence: "Low", insight: "Hunter hit a snag. Tap refresh to try again.", units: 1 }], summary: "Tap ↻ to reload." });
+      setPicksLoading(false);
+    }
   }
-  setPicksLoading(false);
 };
-
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
     const userMsg = input.trim();
