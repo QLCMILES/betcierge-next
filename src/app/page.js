@@ -354,18 +354,39 @@ function Hunter({ user, bets }) {
   setPicksLoading(true);
   setDailyPicks(null);
   try {
+    // Check Supabase first
+    const today = new Date().toISOString().split('T')[0];
+    const { data: existing } = await supabase
+      .from('daily_picks')
+      .select('*')
+      .eq('date', today)
+      .eq('status', 'active');
+
+    if (existing && existing.length >= 3) {
+      const summary = existing[0]?.summary || "Hunter's top plays for today.";
+      setDailyPicks({ picks: existing, summary });
+      setPicksLoading(false);
+      return;
+    }
+
+    // No picks yet — generate new ones
     await new Promise(resolve => setTimeout(resolve, retryCount * 2000));
     const result = await callClaude(
-      [{ role: "user", content: `Today is ${today()}. Search for today's top sports matchups, injury reports, and betting lines. Give me the top 3 highest confidence betting picks. Return ONLY raw JSON: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"...","units":1}],"summary":"..."}` }],
-      `You are Hunter, an elite sports betting analyst. Use web search to find today's real games and lines. Return ONLY 3 picks as raw JSON. No markdown, no backticks.`,
+      [{ role: "user", content: `Today is ${today()}. Search for today's top sports matchups, injury reports, and betting lines. Give me exactly 3 high confidence betting picks. Return ONLY raw JSON: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"...","units":1,"game_time":"7:05 PM ET","status":"active"}],"summary":"..."}` }],
+      `You are Hunter, an elite sports betting analyst. Use web search to find today's real games and lines. Return ONLY 3 picks as raw JSON. Include game_time for each pick. No markdown, no backticks.`,
       true
     );
     const clean = result.text.replace(/```json|```/g, "").trim();
     const jsonMatch = clean.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No JSON");
     const parsed = JSON.parse(jsonMatch[0]);
-    if (parsed.picks) setDailyPicks(parsed);
-    else throw new Error("Invalid format");
+    if (!parsed.picks) throw new Error("Invalid format");
+
+    // Save to Supabase
+    const picksToSave = parsed.picks.map(p => ({ ...p, date: today, status: 'active', summary: parsed.summary }));
+    await supabase.from('daily_picks').insert(picksToSave);
+
+    setDailyPicks(parsed);
   } catch {
     if (retryCount < 2) {
       setPicksLoading(false);
