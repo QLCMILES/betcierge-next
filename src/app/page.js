@@ -349,78 +349,25 @@ function Hunter({ user, bets }) {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const loadDailyPicks = async () => {
-    setPicksLoading(true);
-    setDailyPicks(null);
-    try {
-      // Step 1: Search for today's slate with web search
-      const searchResult = await callClaude(
-        [{ role: "user", content: `Today is ${today()}. Search for today's MLB games with starting pitchers, today's NBA playoff games, and any other major sports events today. Find injury reports and relevant betting angles.` }],
-        "You are a sports research assistant. Search for today's sports betting slate and return a detailed summary of today's games, starting pitchers for MLB, injury reports, and key betting angles. Be specific with real data.",
-        true // use web search
-      );
-
-      // Step 2: Use the research to generate structured picks — NO web search this time so JSON comes back clean
-      const picksResult = await callClaude(
-        [{
-          role: "user", content: `Based on this research about today's slate:
-
-${searchResult.text}
-
-Now give me your top 3-5 high probability betting picks for today. Return ONLY raw JSON, no markdown, no backticks:
-{
-  "picks": [
-    {
-      "sport": "MLB",
-      "game": "Team A vs Team B",
-      "pick": "Team A ML",
-      "odds": "-145",
-      "confidence": "High",
-      "insight": "2-3 sentence analysis with specific stats from the research",
-      "units": 2
-    }
-  ],
-  "summary": "1-2 sentence overview of today's card"
-}`
-        }],
-        `You are Hunter, an elite sports betting analyst. Today is ${today()}. You just received research about today's slate. Generate structured JSON picks based strictly on that research. Only pick games with genuine edges. Confidence: High (strong edge), Medium (solid lean), Low (slight lean). Units: 1/2/3. Return ONLY raw JSON.`,
-        false // no web search — keeps response clean for JSON parsing
-      );
-
-      const clean = picksResult.text.replace(/```json|```/g, "").trim();
-
-      // Find JSON in the response even if there's surrounding text
-      const jsonMatch = clean.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("No JSON found");
-
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (parsed.picks && Array.isArray(parsed.picks)) {
-        setDailyPicks(parsed);
-      } else {
-        throw new Error("Invalid picks format");
-      }
-    } catch (e) {
-      // Fallback: generate picks without web search using training knowledge
-      try {
-        const fallbackResult = await callClaude(
-          [{ role: "user", content: `Today is ${today()}. Based on your knowledge of current sports schedules and team performance, give me your top 3 betting picks for today. Return ONLY raw JSON: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"...","units":1}],"summary":"..."}` }],
-          `You are Hunter, an elite sports betting analyst. Today is ${today()}. Generate your best picks based on your knowledge. Return ONLY raw JSON.`,
-          false
-        );
-        const clean2 = fallbackResult.text.replace(/```json|```/g, "").trim();
-        const jsonMatch2 = clean2.match(/\{[\s\S]*\}/);
-        if (jsonMatch2) {
-          const parsed2 = JSON.parse(jsonMatch2[0]);
-          setDailyPicks({ ...parsed2, note: "Live data unavailable — picks based on Hunter's analysis" });
-        } else throw new Error("fallback failed");
-      } catch {
-        setDailyPicks({
-          picks: [{ sport: "⚠️", game: "Connection issue", pick: "Tap ↻ to retry", odds: "--", confidence: "Low", insight: "Hunter couldn't load today's picks. Check your connection and tap the refresh button to try again.", units: 1 }],
-          summary: "Tap ↻ to reload Hunter's picks."
-        });
-      }
-    }
-    setPicksLoading(false);
-  };
+  setPicksLoading(true);
+  setDailyPicks(null);
+  try {
+    const result = await callClaude(
+      [{ role: "user", content: `Today is ${today()}. Search for today's sports slate and give me your top 3-5 betting picks. Return ONLY raw JSON: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"...","units":1}],"summary":"..."}` }],
+      `You are Hunter, an elite sports betting analyst. Use web search to find today's games, then return ONLY raw JSON picks. No markdown, no backticks.`,
+      true
+    );
+    const clean = result.text.replace(/```json|```/g, "").trim();
+    const jsonMatch = clean.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No JSON");
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (parsed.picks) setDailyPicks(parsed);
+    else throw new Error("Invalid format");
+  } catch {
+    setDailyPicks({ picks: [{ sport: "⚠️", game: "Couldn't load picks", pick: "Tap ↻ to retry", odds: "--", confidence: "Low", insight: "Hunter hit a snag. Tap refresh to try again.", units: 1 }], summary: "Tap ↻ to reload." });
+  }
+  setPicksLoading(false);
+};
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
