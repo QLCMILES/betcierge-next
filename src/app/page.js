@@ -1,6 +1,4 @@
 "use client";
-import { createClient } from '@supabase/supabase-js';
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 import { useState, useEffect, useRef } from "react";
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -350,30 +348,25 @@ function Hunter({ user, bets }) {
   useEffect(() => { loadDailyPicks(); }, []);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  const loadDailyPicks = async (retryCount = 0) => {
+const loadDailyPicks = async (retryCount = 0) => {
   setPicksLoading(true);
   setDailyPicks(null);
   try {
-    // Check Supabase first
-    const today = new Date().toISOString().split('T')[0];
-    const { data: existing } = await supabase
-      .from('daily_picks')
-      .select('*')
-      .eq('date', today)
-      .eq('status', 'active');
+    // Check for today's picks via our API
+    const checkRes = await fetch('/api/claude', { method: 'GET' });
+    const checkData = await checkRes.json();
 
-    if (existing && existing.length >= 3) {
-      const summary = existing[0]?.summary || "Hunter's top plays for today.";
-      setDailyPicks({ picks: existing, summary });
+    if (checkData.picks && checkData.picks.length >= 3) {
+      setDailyPicks({ picks: checkData.picks, summary: checkData.picks[0]?.summary || "Hunter's top plays for today." });
       setPicksLoading(false);
       return;
     }
 
-    // No picks yet — generate new ones
+    // Generate new picks
     await new Promise(resolve => setTimeout(resolve, retryCount * 2000));
     const result = await callClaude(
-      [{ role: "user", content: `Today is ${today()}. Search for today's top sports matchups, injury reports, and betting lines. Give me exactly 3 high confidence betting picks. Return ONLY raw JSON: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"...","units":1,"game_time":"7:05 PM ET","status":"active"}],"summary":"..."}` }],
-      `You are Hunter, an elite sports betting analyst. Use web search to find today's real games and lines. Return ONLY 3 picks as raw JSON. Include game_time for each pick. No markdown, no backticks.`,
+      [{ role: "user", content: `Today is ${today()}. Search for today's top sports matchups and give me exactly 3 high confidence betting picks. Return ONLY raw JSON: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"...","units":1,"game_time":"7:05 PM ET"}],"summary":"..."}` }],
+      `You are Hunter, an elite sports betting analyst. Use web search to find today's real games. Return ONLY 3 picks as raw JSON. No markdown, no backticks.`,
       true
     );
     const clean = result.text.replace(/```json|```/g, "").trim();
@@ -382,9 +375,12 @@ function Hunter({ user, bets }) {
     const parsed = JSON.parse(jsonMatch[0]);
     if (!parsed.picks) throw new Error("Invalid format");
 
-    // Save to Supabase
-    const picksToSave = parsed.picks.map(p => ({ ...p, date: today, status: 'active', summary: parsed.summary }));
-    await supabase.from('daily_picks').insert(picksToSave);
+    // Save via our API
+    await fetch('/api/claude', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ picks: parsed.picks, summary: parsed.summary })
+    });
 
     setDailyPicks(parsed);
   } catch {
