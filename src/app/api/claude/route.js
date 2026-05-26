@@ -52,14 +52,18 @@ export async function PUT(request) {
 
     // Insert one row per pick
     const rows = picks.map(p => ({
-      date: today,
-      sport: p.sport,
-      game: p.game,
-      pick: p.pick,
-      odds: p.odds,
-      status: 'active',
-      created_at: new Date().toISOString(),
-    }));
+  date: today,
+  sport: p.sport,
+  game: p.game,
+  pick: p.pick,
+  odds: p.odds,
+  confidence: p.confidence,
+  insight: p.insight,
+  units: p.units,
+  game_time: p.game_time,
+  status: 'active',
+  created_at: new Date().toISOString(),
+}));
 
     const { data, error } = await supabase
       .from('daily_picks')
