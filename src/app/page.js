@@ -365,7 +365,26 @@ const loadDailyPicks = async (retryCount = 0) => {
     // Fetch real odds data
     const oddsRes = await fetch('/api/odds');
     const oddsData = await oddsRes.json();
-    const gamesContext = oddsData.games ? JSON.stringify(oddsData.games.slice(0, 15)) : "No games data available";
+    const todayStr = new Date().toISOString().split('T')[0];
+    const tomorrowStr = new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0];
+    const slimGames = (oddsData.games || [])
+      .filter(g => g.commence_time.startsWith(todayStr) || g.commence_time.startsWith(tomorrowStr))
+      .slice(0, 8)
+      .map(g => {
+        const bm = g.bookmakers?.[0];
+        const h2h = bm?.markets?.find(m => m.key === 'h2h');
+        const spread = bm?.markets?.find(m => m.key === 'spreads');
+        const total = bm?.markets?.find(m => m.key === 'totals');
+        return {
+          sport: g.sport_title,
+          game: `${g.away_team} @ ${g.home_team}`,
+          time: g.commence_time,
+          moneyline: h2h?.outcomes?.map(o => `${o.name}: ${o.price}`).join(', '),
+          spread: spread?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', '),
+          total: total?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', '),
+        };
+      });
+    const gamesContext = JSON.stringify(slimGames);
 
     // Generate picks using real data — no web search needed
     const result = await callClaude(
