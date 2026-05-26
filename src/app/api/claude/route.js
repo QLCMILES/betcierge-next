@@ -42,20 +42,28 @@ export async function GET(request) {
 export async function PUT(request) {
   try {
     const { picks, date } = await request.json();
+    const today = date || new Date().toISOString().split('T')[0];
 
+    // Deactivate old picks for today
     await supabase
       .from('daily_picks')
       .update({ status: 'inactive' })
-      .eq('date', date);
+      .eq('date', today);
+
+    // Insert one row per pick
+    const rows = picks.map(p => ({
+      date: today,
+      sport: p.sport,
+      game: p.game,
+      pick: p.pick,
+      odds: p.odds,
+      status: 'active',
+      created_at: new Date().toISOString(),
+    }));
 
     const { data, error } = await supabase
       .from('daily_picks')
-      .insert({
-        date,
-        picks,
-        status: 'active',
-        created_at: new Date().toISOString(),
-      })
+      .insert(rows)
       .select();
 
     if (error) throw error;
