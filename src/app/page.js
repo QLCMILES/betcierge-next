@@ -352,7 +352,7 @@ const loadDailyPicks = async (retryCount = 0) => {
   setPicksLoading(true);
   setDailyPicks(null);
   try {
-    // Check for today's picks via our API
+    // Check Supabase for today's picks first
     const checkRes = await fetch('/api/claude', { method: 'GET' });
     const checkData = await checkRes.json();
 
@@ -362,20 +362,25 @@ const loadDailyPicks = async (retryCount = 0) => {
       return;
     }
 
-    // Generate new picks
-    await new Promise(resolve => setTimeout(resolve, retryCount * 2000));
+    // Fetch real odds data
+    const oddsRes = await fetch('/api/odds');
+    const oddsData = await oddsRes.json();
+    const gamesContext = oddsData.games ? JSON.stringify(oddsData.games.slice(0, 15)) : "No games data available";
+
+    // Generate picks using real data — no web search needed
     const result = await callClaude(
-      [{ role: "user", content: `Today is ${today()}. Search for today's top sports matchups and give me exactly 3 high confidence betting picks. Return ONLY raw JSON: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"...","units":1,"game_time":"7:05 PM ET"}],"summary":"..."}` }],
-      `You are Hunter, an elite sports betting analyst. Use web search to find today's real games. Return ONLY 3 picks as raw JSON. No markdown, no backticks.`,
-      true
+      [{ role: "user", content: `Today is ${today()}. Here are today's real games and odds from The Odds API: ${gamesContext}. Based on this real data, give me exactly 3 high confidence betting picks. Return ONLY raw JSON: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"...","units":1,"game_time":"7:05 PM ET"}],"summary":"..."}` }],
+      `You are Hunter, an elite sports betting analyst. You have been given real live odds data. Analyze it and return ONLY 3 picks as raw JSON. No markdown, no backticks, no web search needed.`,
+      false
     );
+
     const clean = result.text.replace(/```json|```/g, "").trim();
     const jsonMatch = clean.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No JSON");
     const parsed = JSON.parse(jsonMatch[0]);
     if (!parsed.picks) throw new Error("Invalid format");
 
-    // Save via our API
+    // Save to Supabase via our API
     await fetch('/api/claude', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
