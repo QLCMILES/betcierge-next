@@ -59,7 +59,7 @@ export async function PUT(request) {
   odds: p.odds,
   confidence: p.confidence,
   insight: p.insight,
-  units: p.units,
+  units: parseInt(p.units) || 1,
   game_time: p.game_time,
   status: 'active',
   created_at: new Date().toISOString(),
