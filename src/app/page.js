@@ -353,7 +353,7 @@ You remember this user's history from previous conversations. Be their trusted a
                     if (line.startsWith('- ') || line.startsWith('* ')) return <div key={j} style={{ paddingLeft: 12, marginBottom: 4, color: "#bbb" }}>• {line.replace(/^[-*] /, '')}</div>;
                     if (line.match(/^\d+\. /)) return <div key={j} style={{ paddingLeft: 12, marginBottom: 4, color: "#bbb" }}>{line}</div>;
                     if (line.trim() === '') return <div key={j} style={{ height: 8 }} />;
-                    if (line.startsWith('**') && line.endsWith('**') && line.length > 4) return <div key={j} style={{ color: "#f5a623", fontFamily: "'Cormorant Garamond',serif", fontSize: 15, fontWeight: 700, marginTop: 12, marginBottom: 4 }}>{line.replace(/\*\*/g, '')}</div>;
+                    if (line.replace(/\*\*/g, '').trim() !== line.trim() && line.startsWith('**')) return <div key={j} style={{ color: "#f5a623", fontFamily: "'Cormorant Garamond',serif", fontSize: 15, fontWeight: 700, marginTop: 12, marginBottom: 4 }}>{line.replace(/\*\*/g, '')}</div>;
                     const parts = line.split(/(\*\*[^*]+\*\*)/g);
 return (
   <div key={j} style={{ marginBottom: 4 }}>
