@@ -5,12 +5,14 @@ export async function GET() {
     // Fetch today's NFL, NBA, MLB, NHL games with odds
     const sports = ['basketball_nba', 'americanfootball_nfl', 'baseball_mlb', 'icehockey_nhl'];
     
-    const results = await Promise.all(
-      sports.map(sport =>
-        fetch(`https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american`)
-          .then(r => r.json())
-      )
-    );
+ const results = await Promise.all(
+  sports.map(sport => {
+    const from = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    const to = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    return fetch(`https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american&commenceTimeFrom=${from}&commenceTimeTo=${to}`)
+      .then(r => r.json())
+  })
+);
 
     const games = results.flat().filter(g => g && g.id);
     return Response.json({ games });
