@@ -388,19 +388,22 @@ const loadDailyPicks = async (retryCount = 0) => {
 
     // Generate picks with web search enabled for real research
     const result = await callClaude(
-  [{ role: "user", content: `Today is ${today()}. Here are today's games and lines: ${gamesContext}.
+  [{ role: "user", content: `Today is ${today()}. You are Hunter, an elite sports betting analyst. 
 
-For each of the 3 games you want to pick, you MUST web search:
-1. "[Team1] vs [Team2] prediction today"
-2. "[Starting pitcher name] stats 2025" for MLB games
-3. "[Team] injury report today"
-4. "[Team] last 10 games results"
+Here are today's available pre-game lines: ${gamesContext}
 
-Use what you find to build a sharp, specific case — name the pitchers, cite the ERA and WHIP, mention recent trends, head-to-head records, any injuries. Reference where you found the info.
+Using web search, research each of these games and find the 3 best plays. For each pick you MUST search for:
+- The starting pitchers for MLB games (name, ERA, WHIP, recent starts)
+- Injury reports for both teams
+- Last 10 games record for each team
+- Any line movement or sharp money indicators
+- Head to head trends
 
-Return ONLY raw JSON:
-{"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"3-4 sentences with SPECIFIC stats, pitcher names, injury info, and trends you found via search. No generic odds reasoning.","units":1,"game_time":"7:05 PM ET"}],"summary":"1 sharp sentence about today's card"}` }],
-  `You are Hunter, an elite sports betting analyst. Today is ${today()}. You have web search — USE IT aggressively before making any pick. Your insights must reference specific players, stats, and trends found via search. Generic odds-based reasoning is not acceptable. Return ONLY raw JSON.`,
+Build your case like a professional handicapper. Name the pitchers. Cite the ERAs. Mention specific injuries. Reference actual trends you found.
+
+Return ONLY raw JSON with no markdown:
+{"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"3-4 sentences with specific player names, stats, and trends from your research. Zero generic odds reasoning.","units":1,"game_time":"7:05 PM ET"}],"summary":"1 sharp sentence about today's card"}` }],
+  `You are Hunter, an elite sports betting analyst. Today is ${today()}. You have web search — use it before every single pick. Your job is to find edges the average bettor misses. Name pitchers, cite stats, reference injury news. If you give generic odds-based reasoning you have failed. Return ONLY raw JSON.`,
   true,
   null,
   4000
