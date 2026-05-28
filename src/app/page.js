@@ -368,7 +368,7 @@ const loadDailyPicks = async (retryCount = 0) => {
     const todayStr = new Date().toISOString().split('T')[0];
     const tomorrowStr = new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0];
     const slimGames = (oddsData.games || [])
-      .filter(g => new Date(g.commence_time) > new Date())
+      .filter(g => new Date(g.commence_time) > new Date(Date.now() + 2 * 60 * 60 * 1000))
       .slice(0, 10)
       .map(g => {
         const bm = g.bookmakers?.[0];
