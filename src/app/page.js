@@ -369,7 +369,7 @@ const loadDailyPicks = async (retryCount = 0) => {
     const tomorrowStr = new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0];
     const slimGames = (oddsData.games || [])
       .filter(g => g.commence_time.startsWith(todayStr) || g.commence_time.startsWith(tomorrowStr))
-      .slice(0, 8)
+      .slice(0, 10)
       .map(g => {
         const bm = g.bookmakers?.[0];
         const h2h = bm?.markets?.find(m => m.key === 'h2h');
@@ -386,11 +386,17 @@ const loadDailyPicks = async (retryCount = 0) => {
       });
     const gamesContext = JSON.stringify(slimGames);
 
-    // Generate picks using real data — no web search needed
+    // Generate picks with web search enabled for real research
     const result = await callClaude(
-      [{ role: "user", content: `Today is ${today()}. Here are today's real games and odds from The Odds API: ${gamesContext}. Based on this real data, give me exactly 3 high confidence betting picks. Return ONLY raw JSON: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"...","units":1,"game_time":"7:05 PM ET"}],"summary":"..."}` }],
-      `You are Hunter, an elite sports betting analyst. You have been given real live odds data. Analyze it and return ONLY 3 picks as raw JSON. No markdown, no backticks, no web search needed.`,
-      false
+      [{ role: "user", content: `Today is ${today()}. Here are today's games and lines from The Odds API: ${gamesContext}. 
+
+Step 1: Use web search to research the most important games — look up injury reports, starting lineups, recent form (last 5 games), head-to-head trends, weather for outdoor games, and any sharp money movement or public betting percentages you can find.
+
+Step 2: Cross-reference that research with the odds above to find the 3 highest-value plays where the line hasn't fully accounted for what you found.
+
+Return ONLY raw JSON: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"2-3 sentence sharp analysis referencing specific research findings","units":1,"game_time":"7:05 PM ET"}],"summary":"1 sentence overview of today's card"}` }],
+      `You are Hunter, an elite sports betting analyst with access to web search. Today is ${today()}. You have been given real odds data. Your job is to research each game using web search, then identify the 3 best value plays where the market is wrong. Be specific in your insights — reference actual injuries, lineup news, or trends you found. Return ONLY raw JSON, no markdown, no backticks.`,
+      true  // web search ON
     );
 
     const clean = result.text.replace(/```json|```/g, "").trim();
@@ -399,11 +405,11 @@ const loadDailyPicks = async (retryCount = 0) => {
     const parsed = JSON.parse(jsonMatch[0]);
     if (!parsed.picks) throw new Error("Invalid format");
 
-    // Save to Supabase via our API
+    // Save to Supabase
     await fetch('/api/claude', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ picks: parsed.picks, summary: parsed.summary })
+      body: JSON.stringify({ picks: parsed.picks, date: todayStr })
     });
 
     setDailyPicks(parsed);
@@ -417,6 +423,7 @@ const loadDailyPicks = async (retryCount = 0) => {
     }
   }
 };
+  
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
     const userMsg = input.trim();
