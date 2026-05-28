@@ -32,10 +32,10 @@ const fmt = (n) => `$${Math.abs(n || 0).toFixed(2)}`;
 const today = () => new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
 // ── API Call Helper ────────────────────────────────────────────────────────
-const callClaude = async (messages, system, useSearch = false, imageBase64 = null) => {
+const callClaude = async (messages, system, useSearch = false, imageBase64 = null, maxTokens = 1500) => {
   const body = {
     model: "claude-sonnet-4-5",
-    max_tokens: 1500,
+    max_tokens: maxTokens,
     system,
     messages,
   };
@@ -388,16 +388,23 @@ const loadDailyPicks = async (retryCount = 0) => {
 
     // Generate picks with web search enabled for real research
     const result = await callClaude(
-      [{ role: "user", content: `Today is ${today()}. Here are today's games and lines from The Odds API: ${gamesContext}. 
+  [{ role: "user", content: `Today is ${today()}. Here are today's games and lines: ${gamesContext}.
 
-Step 1: Use web search to research the most important games — look up injury reports, starting lineups, recent form (last 5 games), head-to-head trends, weather for outdoor games, and any sharp money movement or public betting percentages you can find.
+For each of the 3 games you want to pick, you MUST web search:
+1. "[Team1] vs [Team2] prediction today"
+2. "[Starting pitcher name] stats 2025" for MLB games
+3. "[Team] injury report today"
+4. "[Team] last 10 games results"
 
-Step 2: Cross-reference that research with the odds above to find the 3 highest-value plays where the line hasn't fully accounted for what you found.
+Use what you find to build a sharp, specific case — name the pitchers, cite the ERA and WHIP, mention recent trends, head-to-head records, any injuries. Reference where you found the info.
 
-Return ONLY raw JSON: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"2-3 sentence sharp analysis referencing specific research findings","units":1,"game_time":"7:05 PM ET"}],"summary":"1 sentence overview of today's card"}` }],
-      `You are Hunter, an elite sports betting analyst with access to web search. Today is ${today()}. You have been given real odds data. Your job is to research each game using web search, then identify the 3 best value plays where the market is wrong. Be specific in your insights — reference actual injuries, lineup news, or trends you found. Return ONLY raw JSON, no markdown, no backticks.`,
-      true  // web search ON
-    );
+Return ONLY raw JSON:
+{"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"3-4 sentences with SPECIFIC stats, pitcher names, injury info, and trends you found via search. No generic odds reasoning.","units":1,"game_time":"7:05 PM ET"}],"summary":"1 sharp sentence about today's card"}` }],
+  `You are Hunter, an elite sports betting analyst. Today is ${today()}. You have web search — USE IT aggressively before making any pick. Your insights must reference specific players, stats, and trends found via search. Generic odds-based reasoning is not acceptable. Return ONLY raw JSON.`,
+  true,
+  null,
+  4000
+);
 
     const clean = result.text.replace(/```json|```/g, "").trim();
     const jsonMatch = clean.match(/\{[\s\S]*\}/);
