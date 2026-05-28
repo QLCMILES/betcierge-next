@@ -355,15 +355,15 @@ You remember this user's history from previous conversations. Be their trusted a
                     if (line.trim() === '') return <div key={j} style={{ height: 8 }} />;
                     if (line.startsWith('**') && line.endsWith('**') && line.length > 4) return <div key={j} style={{ color: "#f5a623", fontFamily: "'Cormorant Garamond',serif", fontSize: 15, fontWeight: 700, marginTop: 12, marginBottom: 4 }}>{line.slice(2, -2)}</div>;
                     const parts = line.split(/(\*\*[^*]+\*\*)/g);
-                    return (
-                      <div key={j} style={{ marginBottom: 4 }}>
-                        {parts.map((part, k) =>
-                          part.startsWith('**') && part.endsWith('**')
-                            ? <span key={k} style={{ color: "#fff", fontWeight: 700 }}>{part.slice(2, -2)}</span>
-                            : <span key={k}>{part}</span>
-                        )}
-                      </div>
-                    );
+return (
+  <div key={j} style={{ marginBottom: 4 }}>
+    {parts.map((part, k) =>
+      part.startsWith('**') && part.endsWith('**')
+        ? <span key={k} style={{ color: "#fff", fontWeight: 700 }}>{part.slice(2, -2)}</span>
+        : <span key={k}>{part.replace(/\*\*/g, '')}</span>
+    )}
+  </div>
+);
                   })}
                 </div>
               ) : m.text}
