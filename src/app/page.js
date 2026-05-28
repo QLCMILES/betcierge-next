@@ -342,32 +342,33 @@ You remember this user's history from previous conversations. Be their trusted a
 
       <div style={{ padding: "10px 14px", maxHeight: 420, minHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
         {messages.map((m, i) => (
-  <div key={i} style={{ maxWidth: "88%", padding: "10px 14px", borderRadius: 16, fontSize: 13, lineHeight: 1.6, ...(m.role === "user" ? { background: "#1a1500", color: "#f5a623", alignSelf: "flex-end", borderBottomRightRadius: 4 } : { background: "#1e1e2e", color: "#ccc", alignSelf: "flex-start", borderBottomLeftRadius: 4 }) }}>
-    {m.role === "assistant" ? (
-      <div style={{ fontFamily: "'Outfit',sans-serif" }}>
-        {m.text.split('\n').map((line, j) => {
-          if (line.startsWith('### ')) return <div key={j} style={{ color: "#f5a623", fontFamily: "'Cormorant Garamond',serif", fontSize: 15, fontWeight: 700, marginTop: 12, marginBottom: 4 }}>{line.replace('### ', '')}</div>;
-          if (line.startsWith('## ')) return <div key={j} style={{ color: "#f5a623", fontFamily: "'Cormorant Garamond',serif", fontSize: 16, fontWeight: 700, marginTop: 12, marginBottom: 4 }}>{line.replace('## ', '')}</div>;
-          if (line.startsWith('# ')) return <div key={j} style={{ color: "#f5a623", fontFamily: "'Cormorant Garamond',serif", fontSize: 18, fontWeight: 700, marginTop: 12, marginBottom: 6 }}>{line.replace('# ', '')}</div>;
-          if (line.startsWith('---')) return <hr key={j} style={{ border: "none", borderTop: "1px solid #2a2a38", margin: "10px 0" }} />;
-          if (line.startsWith('- ') || line.startsWith('* ')) return <div key={j} style={{ paddingLeft: 12, marginBottom: 4, color: "#bbb" }}>• {line.replace(/^[-*] /, '')}</div>;
-          if (line.match(/^\d+\. /)) return <div key={j} style={{ paddingLeft: 12, marginBottom: 4, color: "#bbb" }}>{line}</div>;
-          if (line.trim() === '') return <div key={j} style={{ height: 8 }} />;
-          const parts = line.split(/(\*\*[^*]+\*\*)/g);
-          return (
-            <div key={j} style={{ marginBottom: 4 }}>
-              {parts.map((part, k) =>
-                part.startsWith('**') && part.endsWith('**')
-                  ? <span key={k} style={{ color: "#fff", fontWeight: 700 }}>{part.slice(2, -2)}</span>
-                  : <span key={k}>{part}</span>
-              )}
+            <div key={i} style={{ maxWidth: "88%", padding: "10px 14px", borderRadius: 16, fontSize: 13, lineHeight: 1.6, ...(m.role === "user" ? { background: "#1a1500", color: "#f5a623", alignSelf: "flex-end", borderBottomRightRadius: 4 } : { background: "#1e1e2e", color: "#ccc", alignSelf: "flex-start", borderBottomLeftRadius: 4 }) }}>
+              {m.role === "assistant" ? (
+                <div style={{ fontFamily: "'Outfit',sans-serif" }}>
+                  {m.text.split('\n').map((line, j) => {
+                    if (line.startsWith('### ')) return <div key={j} style={{ color: "#f5a623", fontFamily: "'Cormorant Garamond',serif", fontSize: 15, fontWeight: 700, marginTop: 12, marginBottom: 4 }}>{line.replace('### ', '')}</div>;
+                    if (line.startsWith('## ')) return <div key={j} style={{ color: "#f5a623", fontFamily: "'Cormorant Garamond',serif", fontSize: 16, fontWeight: 700, marginTop: 12, marginBottom: 4 }}>{line.replace('## ', '')}</div>;
+                    if (line.startsWith('# ')) return <div key={j} style={{ color: "#f5a623", fontFamily: "'Cormorant Garamond',serif", fontSize: 18, fontWeight: 700, marginTop: 12, marginBottom: 6 }}>{line.replace('# ', '')}</div>;
+                    if (line.startsWith('---')) return <hr key={j} style={{ border: "none", borderTop: "1px solid #2a2a38", margin: "10px 0" }} />;
+                    if (line.startsWith('- ') || line.startsWith('* ')) return <div key={j} style={{ paddingLeft: 12, marginBottom: 4, color: "#bbb" }}>• {line.replace(/^[-*] /, '')}</div>;
+                    if (line.match(/^\d+\. /)) return <div key={j} style={{ paddingLeft: 12, marginBottom: 4, color: "#bbb" }}>{line}</div>;
+                    if (line.trim() === '') return <div key={j} style={{ height: 8 }} />;
+                    if (line.startsWith('**') && line.endsWith('**') && line.length > 4) return <div key={j} style={{ color: "#f5a623", fontFamily: "'Cormorant Garamond',serif", fontSize: 15, fontWeight: 700, marginTop: 12, marginBottom: 4 }}>{line.slice(2, -2)}</div>;
+                    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+                    return (
+                      <div key={j} style={{ marginBottom: 4 }}>
+                        {parts.map((part, k) =>
+                          part.startsWith('**') && part.endsWith('**')
+                            ? <span key={k} style={{ color: "#fff", fontWeight: 700 }}>{part.slice(2, -2)}</span>
+                            : <span key={k}>{part}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : m.text}
             </div>
-          );
-        })}
-      </div>
-    ) : m.text}
-  </div>
-))}
+          ))}
         {loading && <div style={{ maxWidth: "88%", padding: "10px 14px", borderRadius: 16, fontSize: 13, background: "#1e1e2e", color: "#555", fontStyle: "italic", alignSelf: "flex-start" }}>Hunter is thinking...</div>}
         <div ref={bottomRef} />
       </div>
