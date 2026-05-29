@@ -103,7 +103,7 @@ Return ONLY raw JSON:
       pick: p.pick,
       odds: p.odds,
       confidence: p.confidence,
-      insight: p.insight,
+      insight: (p.insight || '').replace(/<cite[^>]*>|<\/cite>/g, ''),
       units: parseInt(p.units) || 1,
       game_time: p.game_time,
       status: 'active',
