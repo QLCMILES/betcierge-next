@@ -11,9 +11,10 @@ const supabase = createClient(
 export async function GET(request) {
   // Verify this is called by Vercel Cron or manually with secret
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+const isVercelCron = request.headers.get('x-vercel-cron') === '1';
+if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  return Response.json({ error: 'Unauthorized' }, { status: 401 });
+}
 
   try {
     const today = new Date().toISOString().split('T')[0];
