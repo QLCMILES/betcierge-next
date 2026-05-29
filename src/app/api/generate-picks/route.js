@@ -26,9 +26,7 @@ if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
       .eq('date', today);
 
     // Fetch today's odds
-    const oddsRes = await fetch(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL ? 'https://betcierge-next.vercel.app' : 'http://localhost:3000'}/api/odds`
-    );
+    const oddsRes = await fetch('https://betcierge-next.vercel.app/api/odds');
     const oddsData = await oddsRes.json();
     const now = new Date();
     const cutoff = new Date(now.getTime() + 2 * 60 * 60 * 1000);
