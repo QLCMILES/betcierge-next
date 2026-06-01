@@ -17,12 +17,9 @@ const SPORTS = [
 const BET_TYPES = ["Moneyline", "Spread", "Total (O/U)", "Parlay", "Prop", "Live Bet", "Team Total"];
 const SPORT_OPTIONS = ["MLB", "NBA", "NFL", "NHL", "Soccer", "UFC/MMA", "NCAAB", "NCAAF", "Golf", "Tennis"];
 
-// ── Supabase ───────────────────────────────────────────────────────────────
-import { createClient } from '@supabase/supabase-js';
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
+// ── Supabase + Auth ────────────────────────────────────────────────────────
+import { supabase } from "../lib/supabase";
+import LoginScreen from "../lib/LoginScreen";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const calcProfit = (amount, odds) => {
@@ -52,16 +49,7 @@ const callClaude = async (messages, system, useSearch = false, imageBase64 = nul
   return { text, raw: data };
 };
 
-// ── User Key ───────────────────────────────────────────────────────────────
-const getUserKey = () => {
-  if (typeof window === 'undefined') return null;
-  let key = localStorage.getItem('betcierge_user_key');
-  if (!key) {
-    key = 'user_' + Math.random().toString(36).substr(2, 9) + Date.now();
-    localStorage.setItem('betcierge_user_key', key);
-  }
-  return key;
-};
+// ── Auth handled by Supabase ───────────────────────────────────────────────
 
 // ── Onboarding ─────────────────────────────────────────────────────────────
 function Onboarding({ onComplete }) {
@@ -276,7 +264,7 @@ function HunterChat({ user, bets, userKey }) {
       const { data } = await supabase
         .from('user_conversations')
         .select('role, content')
-        .eq('user_key', userKey)
+        .eq('user_id', userKey)
         .order('created_at', { ascending: true })
         .limit(40);
       if (data && data.length > 0) {
@@ -285,7 +273,7 @@ function HunterChat({ user, bets, userKey }) {
         // First time — set a welcome message
         const welcome = { role: 'assistant', text: `Hey ${user.name.split(' ')[0]} 👋 I'm Hunter, your personal betting concierge. I'm here to help you find edges, stay disciplined, and build your bankroll. What's on your mind today?` };
         setMessages([welcome]);
-        await supabase.from('user_conversations').insert({ user_key: userKey, role: 'assistant', content: welcome.text });
+        await supabase.from('user_conversations').insert({ user_id: userKey, role: 'assistant', content: welcome.text });
       }
       setInitialized(true);
     };
@@ -303,7 +291,7 @@ function HunterChat({ user, bets, userKey }) {
     setLoading(true);
 
     // Save user message to Supabase
-    await supabase.from('user_conversations').insert({ user_key: userKey, role: 'user', content: userMsg });
+    await supabase.from('user_conversations').insert({ user_id: userKey, role: 'user', content: userMsg });
 
     try {
       const recentMessages = [...messages, newUserMsg].slice(-20);
@@ -321,7 +309,7 @@ You remember this user's history from previous conversations. Be their trusted a
       setMessages(m => [...m, assistantMsg]);
 
       // Save assistant message to Supabase
-      await supabase.from('user_conversations').insert({ user_key: userKey, role: 'assistant', content: result.text });
+      await supabase.from('user_conversations').insert({ user_id: userKey, role: 'assistant', content: result.text });
     } catch {
       setMessages(m => [...m, { role: "assistant", text: "Having a connection issue. Try again in a second." }]);
     }
@@ -772,29 +760,39 @@ function History({ bets, onUpdate, onNav }) {
 // ── Main ───────────────────────────────────────────────────────────────────
 export default function Betcierge() {
   const [user, setUser] = useState(null);
-  const [screen, setScreen] = useState("dashboard");
-  const [bets, setBets] = useState([]);
-  const [userKey, setUserKey] = useState(null);
+const [screen, setScreen] = useState("dashboard");
+const [bets, setBets] = useState([]);
+const [session, setSession] = useState(null);
+const [authLoading, setAuthLoading] = useState(true);
+const userKey = session?.user?.id ?? null;
 
-  useEffect(() => {
-    const key = getUserKey();
-    setUserKey(key);
-    // Try to restore user from localStorage
-    const savedUser = localStorage.getItem('betcierge_user');
-    if (savedUser) {
-      try { setUser(JSON.parse(savedUser)); } catch (e) {}
-    }
-  }, []);
-
+useEffect(() => {
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    setSession(session);
+    setAuthLoading(false);
+  });
+  const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    setSession(session);
+    setAuthLoading(false);
+  });
+  return () => subscription.unsubscribe();
+}, []);
   const handleComplete = (userData) => {
-    setUser(userData);
-    localStorage.setItem('betcierge_user', JSON.stringify(userData));
-  };
+  setUser(userData);
+};
 
   const addBet = (bet) => setBets(p => [bet, ...p]);
   const updateBet = (id, result) => setBets(p => p.map(b => b.id === id ? { ...b, result, profit: result === "Win" ? (calcProfit(b.amount, b.odds) || 0) : 0 } : b));
 
-  if (!user) return <Onboarding onComplete={handleComplete} />;
+ if (authLoading) return (
+  <div style={{ minHeight: "100vh", background: "#0a0a0a", display: "flex",
+    alignItems: "center", justifyContent: "center", color: "#fff",
+    fontFamily: "Outfit, sans-serif", fontSize: 16 }}>
+    Loading...
+  </div>
+);
+if (!session) return <LoginScreen onAuth={(s) => setSession(s)} />;
+if (!user) return <Onboarding onComplete={handleComplete} />;
 
   return (
     <div style={{ background: "#0a0a0f", minHeight: "100vh", maxWidth: 430, margin: "0 auto", fontFamily: "'Outfit',sans-serif", paddingBottom: 80 }}>
