@@ -853,9 +853,54 @@ useEffect(() => {
     if (error) console.error('Profile save error:', error);
   }
 };
+  useEffect(() => {
+  if (!userKey) return;
+  const loadBets = async () => {
+    const { data } = await supabase
+      .from('user_bets')
+      .select('*')
+      .eq('user_id', userKey)
+      .order('created_at', { ascending: false });
+    if (data) setBets(data.map(b => ({
+      id: b.id,
+      sport: b.sport,
+      game: b.game,
+      betType: b.bet_type,
+      pick: b.pick,
+      odds: b.odds,
+      amount: b.amount,
+      type: b.type,
+      result: b.result,
+      isToday: b.is_today,
+    })));
+  };
+  loadBets();
+}, [userKey]);
 
-  const addBet = (bet) => setBets(p => [bet, ...p]);
-  const updateBet = (id, result) => setBets(p => p.map(b => b.id === id ? { ...b, result, profit: result === "Win" ? (calcProfit(b.amount, b.odds) || 0) : 0 } : b));
+  const addBet = async (bet) => {
+  setBets(p => [bet, ...p]);
+  if (userKey) {
+    await supabase.from('user_bets').insert({
+      user_id: userKey,
+      sport: bet.sport,
+      game: bet.game,
+      bet_type: bet.betType,
+      pick: bet.pick,
+      odds: bet.odds,
+      amount: bet.amount,
+      type: bet.type,
+      result: bet.result,
+      is_today: bet.isToday,
+    });
+  }
+};
+
+const updateBet = async (id, result) => {
+  setBets(p => p.map(b => b.id === id ? { ...b, result } : b));
+  if (userKey) {
+    await supabase.from('user_bets').update({ result }).eq('id', id);
+  }
+};
 
  if (authLoading) return (
   <div style={{ minHeight: "100vh", background: "#0a0a0a", display: "flex",
