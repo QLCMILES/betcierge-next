@@ -766,8 +766,16 @@ const [authLoading, setAuthLoading] = useState(true);
 const userKey = session?.user?.id ?? null;
 
 useEffect(() => {
-  supabase.auth.getSession().then(({ data: { session } }) => {
+  supabase.auth.getSession().then(async ({ data: { session } }) => {
     setSession(session);
+    if (session?.user?.id) {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .single();
+      if (data) setUser(data);
+    }
     setAuthLoading(false);
   });
   const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
