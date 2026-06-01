@@ -105,8 +105,8 @@ MMA SPECIFIC:
 - Styles matchup, recent finishes vs decisions
 - Reach/size advantage, camp quality, weight cut, line movement
 
-Your picks must be the 3 highest-confidence plays available today across all sports with games. Only pick games with strong edges — if there are no clear edges, say so. Never force a pick.`,
-Build your case like a professional handicapper. Name the pitchers. Cite ERAs and WHIPs. Mention specific injuries. Reference line movement.
+Your picks must be the 3 highest-confidence plays available today across all sports with games. Only pick games with strong edges — if there are no clear edges, say so. Never force a pick.
+Build your case like a professional handicapper. Name the pitchers. Cite ERAs and WHIPs. Mention specific injuries. Reference line movement.`,
 
 Return ONLY raw JSON:
 {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"3-4 sentences with specific player names, stats, and trends from your research","units":1,"game_time":"7:05 PM ET"}],"summary":"1 sharp sentence about today's card"}`
