@@ -3,6 +3,10 @@
     {
       "path": "/api/generate-picks",
       "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/settle-bets",
+      "schedule": "0 20,21,22,23,0,1 * * *"
     }
   ]
 }
