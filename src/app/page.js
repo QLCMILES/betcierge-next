@@ -33,7 +33,7 @@ const todayDisplay = () => new Date().toLocaleDateString("en-US", { weekday: "lo
 // ── API Call Helper ────────────────────────────────────────────────────────
 const callClaude = async (messages, system, useSearch = false, imageBase64 = null, maxTokens = 1500) => {
   const body = {
-    model: "claude-sonnet-4-5",
+    model: "claude-haiku-4-5-20251001",
     max_tokens: maxTokens,
     system,
     messages,
@@ -168,7 +168,7 @@ function SnapToLog({ onConfirm, onCancel }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-5",
+          model: "claude-haiku-4-5-20251001",
           max_tokens: 1000,
           system: `You are Hunter. Extract bet details from a sportsbook screenshot. Return ONLY raw JSON: {"sport":"...","game":"...","betType":"...","pick":"...","odds":"...","amount":0,"toWin":0,"confidence":95}. If unclear: {"error":"reason"}`,
           messages: [{ role: "user", content: [
