@@ -18,8 +18,8 @@ const BET_TYPES = ["Moneyline", "Spread", "Total (O/U)", "Parlay", "Prop", "Live
 const SPORT_OPTIONS = ["MLB", "NBA", "NFL", "NHL", "Soccer", "UFC/MMA", "NCAAB", "NCAAF", "Golf", "Tennis"];
 
 // ── Supabase + Auth ────────────────────────────────────────────────────────
-import { supabase } from "../../lib/supabase";
-import LoginScreen from "../../lib/LoginScreen";
+import { supabase } from "../lib/supabase";
+import LoginScreen from "../lib/LoginScreen";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const calcProfit = (amount, odds) => {
