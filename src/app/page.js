@@ -787,12 +787,13 @@ useEffect(() => {
   const handleComplete = async (userData) => {
   setUser(userData);
   if (userKey) {
-    await supabase.from('user_profiles').upsert({
+    const { error } = await supabase.from('user_profiles').upsert({
       user_id: userKey,
       name: userData.name,
       bankroll: userData.bankroll,
       goal: userData.goal,
-    });
+    }, { onConflict: 'user_id' });
+    if (error) console.error('Profile save error:', error);
   }
 };
 
