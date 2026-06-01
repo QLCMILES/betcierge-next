@@ -61,7 +61,7 @@ function Onboarding({ onComplete }) {
 
   const canNext = [
     () => form.name && form.email && form.phone,
-    () => form.username && form.password,
+    () => form.username,
     () => form.bankroll && form.goal && parseFloat(form.bankroll) > 0 && parseFloat(form.goal) > 0,
     () => form.selectedSports.length > 0,
     () => true,
@@ -88,7 +88,6 @@ function Onboarding({ onComplete }) {
         {step === 1 && <>
           <h2 style={S.ob.title}>Create your account.</h2>
           <input style={S.input} placeholder="Choose a Username" value={form.username} onChange={e => set("username", e.target.value)} />
-          <input style={S.input} placeholder="Create a Password" type="password" value={form.password} onChange={e => set("password", e.target.value)} />
         </>}
 
         {step === 2 && <>
@@ -777,8 +776,16 @@ useEffect(() => {
   });
   return () => subscription.unsubscribe();
 }, []);
-  const handleComplete = (userData) => {
+  const handleComplete = async (userData) => {
   setUser(userData);
+  if (userKey) {
+    await supabase.from('user_profiles').upsert({
+      user_id: userKey,
+      name: userData.name,
+      bankroll: userData.bankroll,
+      goal: userData.goal,
+    });
+  }
 };
 
   const addBet = (bet) => setBets(p => [bet, ...p]);
