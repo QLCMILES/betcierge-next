@@ -5,27 +5,24 @@ export const dynamic = 'force-dynamic';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
+  process.env.SUPABASE_SERVICE_ROLE_KEY  // ✅ fixed
 );
 
 export async function GET(request) {
-  // Verify this is called by Vercel Cron or manually with secret
   const authHeader = request.headers.get('authorization');
-const isVercelCron = request.headers.get('x-vercel-cron') === '1';
-if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-  return Response.json({ error: 'Unauthorized' }, { status: 401 });
-}
+  const isVercelCron = request.headers.get('x-vercel-cron') === '1';
+  if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
   try {
     const today = new Date().toISOString().split('T')[0];
 
-    // Deactivate old picks
     await supabase
       .from('daily_picks')
       .update({ status: 'inactive' })
       .eq('date', today);
 
-    // Fetch today's odds
     const oddsRes = await fetch('https://betcierge-next.vercel.app/api/odds');
     const oddsData = await oddsRes.json();
     const now = new Date();
@@ -49,9 +46,10 @@ if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
       });
 
     const gamesContext = JSON.stringify(slimGames);
-    const today_display = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    const today_display = new Date().toLocaleDateString('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+    });
 
-    // Call Claude with web search for deep research
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -61,12 +59,25 @@ if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-5',
-        max_tokens: 4000,
+        max_tokens: 8000,  // ✅ bumped for long breakdowns
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        system: 'You are Hunter, an elite sports betting analyst and professional handicapper. Today is ' + today_display + '. You have web search — use it aggressively for every pick. For each pick research: line movement, injury reports, last 10 game form, head to head, home/away splits. MLB: pitcher ERA xERA xFIP WHIP bullpen weather ballpark. NBA: starter/bench PPG defensive rating rebounds turnovers rest back-to-backs. NFL: QB metrics offensive/defensive efficiency special teams weather. NHL: goalie save% power play back-to-back. Soccer: form xG squad rotation. MMA: styles matchup reach weight cut. Pick only games with strong edges. Never force a pick.',
+        system: `You are Hunter, an elite sports betting analyst and professional handicapper. Today is ${today_display}.
+
+You have web search — use it aggressively. Search for EACH pick before writing about it. You are looking for:
+- Current injury reports and lineup confirmations
+- Starting pitcher stats: ERA, xERA, xFIP, WHIP, last 6 start splits, home/away splits, advanced metrics (whiff%, K%, barrel%)
+- Bullpen ERA, usage last 7 days, save situation
+- Team offensive stats: wRC+, OPS, road/home records, last 10 game form
+- Line movement from open to current — where is sharp money?
+- Head-to-head history, weather, ballpark factors
+
+Write each insight like a PROFESSIONAL HANDICAPPER making a case. Use bold section headers. Cite specific numbers. Name the pitchers. Show the mismatch. Make it compelling and detailed — this is what bettors are paying for. Minimum 150 words per insight. Never be vague. Every claim needs a real stat behind it.`,
         messages: [{
           role: 'user',
-          content: 'Today is ' + today_display + '. Available games: ' + gamesContext + '. Research and find the 3 best pre-game plays today using web search. Return ONLY raw JSON with no markdown: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"3-4 sentences with specific stats and trends","units":1}]}'
+          content: `Today is ${today_display}. Available games with current lines: ${gamesContext}
+
+Search the web for today's matchup data, then select the 3 best pre-game plays. Return ONLY raw JSON, no markdown:
+{"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"DETAILED multi-paragraph breakdown with bold headers, specific stats, pitcher names, line movement, and sharp money context. Minimum 150 words.","units":1}]}`
         }],
       }),
     });
