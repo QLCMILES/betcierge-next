@@ -400,6 +400,27 @@ return (
   );
 }
 
+// ── Insight Formatter ──────────────────────────────────────────────────────
+function formatInsight(text) {
+  if (!text) return null;
+  const clean = text.replace(/<cite[^>]*>|<\/cite>/g, '');
+  return clean.split('\n').map((line, i) => {
+    if (line.trim() === '') return <div key={i} style={{ height: 8 }} />;
+    if (line.startsWith('**') && line.endsWith('**')) {
+      return <div key={i} style={{ color: "#f5a623", fontFamily: "'Cormorant Garamond',serif", fontSize: 14, fontWeight: 700, marginTop: 10, marginBottom: 4 }}>{line.replace(/\*\*/g, '')}</div>;
+    }
+    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+    return (
+      <div key={i} style={{ marginBottom: 4 }}>
+        {parts.map((part, k) =>
+          part.startsWith('**') && part.endsWith('**')
+            ? <span key={k} style={{ color: "#fff", fontWeight: 700 }}>{part.slice(2, -2)}</span>
+            : <span key={k}>{part.replace(/<cite[^>]*>|<\/cite>/g, '')}</span>
+        )}
+      </div>
+    );
+  });
+}
 // ── Picks Tab ──────────────────────────────────────────────────────────────
 function PicksTab({ userKey }) {
   const [picks, setPicks] = useState([]);
@@ -470,7 +491,9 @@ function PicksTab({ userKey }) {
             <span style={{ color: "#fff", fontSize: 16, fontWeight: 700 }}>{pick.pick}</span>
             <span style={{ color: "#f5a623", fontSize: 14, fontWeight: 600 }}>{pick.odds}</span>
           </div>
-          <div style={{ color: "#888", fontSize: 13, lineHeight: 1.5, background: "#13131a", borderRadius: 8, padding: "8px 10px" }}>💡 {pick.insight}</div>
+          <div style={{ color: "#888", fontSize: 13, lineHeight: 1.6, background: "#13131a", borderRadius: 8, padding: "12px 14px" }}>
+            {formatInsight(pick.insight)}
+          </div>
         </div>
       ))}
     </div>
