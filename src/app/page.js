@@ -23,8 +23,12 @@ import LoginScreen from "../lib/LoginScreen";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const calcProfit = (amount, odds) => {
-  const o = parseFloat(odds), a = parseFloat(amount);
-  if (!o || !a) return null;
+  if (!odds || !amount) return null;
+  const oddsStr = String(odds).trim().toLowerCase();
+  if (oddsStr === 'even' || oddsStr === '+100') return parseFloat(amount);
+  const o = parseFloat(odds);
+  const a = parseFloat(amount);
+  if (isNaN(o) || isNaN(a)) return null;
   return o > 0 ? (o / 100) * a : (100 / Math.abs(o)) * a;
 };
 const fmt = (n) => `$${Math.abs(n || 0).toFixed(2)}`;
@@ -170,7 +174,7 @@ function SnapToLog({ onConfirm, onCancel }) {
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
           max_tokens: 1000,
-          system: `You are Hunter. Extract bet details from a sportsbook screenshot. Return ONLY raw JSON: {"sport":"...","game":"...","betType":"...","pick":"...","odds":"...","amount":0,"toWin":0,"confidence":95}. If unclear: {"error":"reason"}`,
+          system: `You are Hunter. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). Simplify the pick to essential info only (e.g. "Angels -1.5" not full pitcher strings). Return ONLY raw JSON: {"sport":"...","game":"...","betType":"...","pick":"...","odds":"...","amount":0,"toWin":0,"confidence":95}. If unclear: {"error":"reason"}`,
           messages: [{ role: "user", content: [
             { type: "image", source: { type: "base64", media_type: file.type || "image/jpeg", data: base64 } },
             { type: "text", text: "Extract the bet details from this slip." }
