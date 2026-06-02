@@ -321,9 +321,21 @@ function BetsyChat({ user, bets, userKey }) {
     // Save user message to Supabase
     await supabase.from('user_conversations').insert({ user_id: userKey, role: 'user', content: userMsg });
 
-    try {
-      const recentMessages = [...messages, newUserMsg].slice(-20);
-      const result = await callClaude(
+    // Fetch today's picks to inject into Betsy's context
+let todayPicksContext = "";
+try {
+  const picksRes = await fetch("/api/claude");
+  const picksData = await picksRes.json();
+  if (picksData.picks && picksData.picks.length > 0) {
+    todayPicksContext = "\n\nTODAY'S PICKS YOU GENERATED:\n" + picksData.picks.map((p, i) =>
+      `${i+1}. ${p.sport} — ${p.game}: ${p.pick} (${p.odds}) — ${p.insight}`
+    ).join("\n");
+  }
+} catch(e) {}
+
+try {
+    const recentMessages = [...messages, newUserMsg].slice(-20);
+    const result = await callClaude(
         recentMessages.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })),
         `You are Betsy, the sharp AI sports betting concierge inside Betcierge. Today is ${todayDisplay()}.
 
@@ -357,7 +369,7 @@ College Baseball: same factors as MLB plus mid-week vs weekend rotation impact, 
 STYLE:
 Be sharp, warm, direct. Give a clear recommendation with your confidence level. Lead with the most important insight. Use headers to organize. Never hedge excessively — take a stance. You are their trusted advisor, not a disclaimer machine.
 
-You remember this user's history from previous conversations.`,
+You remember this user's history from previous conversations.${todayPicksContext}`,
         true,
         null,
         2000
