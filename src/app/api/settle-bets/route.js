@@ -61,7 +61,7 @@ export async function GET(request) {
     // Only fetch scores for sports with pending bets
     const apiKey = process.env.ODDS_API_KEY;
     const scoresPromises = [...sportsNeeded].map(sport =>
-      fetch(`https://api.the-odds-api.com/v4/sports/${sport}/scores/?apiKey=${apiKey}&daysFrom=1&dateFormat=iso`)
+      fetch(`https://api.the-odds-api.com/v4/sports/${sport}/scores/?apiKey=${apiKey}&daysFrom=2&dateFormat=iso`)
         .then(r => r.json())
         .catch(() => [])
     );
@@ -125,7 +125,7 @@ function determineResult(bet, game) {
   }
 
   // Spread
-  if (bet.bet_type === 'Spread') {
+  if (bet.bet_type === 'Spread' || bet.bet_type === 'Straight') {
     const spreadMatch = pick.match(/([+-]?\d+\.?\d*)/);
     if (!spreadMatch) return null;
     const spread = parseFloat(spreadMatch[1]);
@@ -135,7 +135,7 @@ function determineResult(bet, game) {
   }
 
   // Total O/U
-  if (bet.bet_type === 'Total (O/U)') {
+  if (bet.bet_type === 'Total (O/U)' || bet.bet_type === 'Under' || bet.bet_type === 'Over') {
     const totalMatch = pick.match(/(\d+\.?\d*)/);
     if (!totalMatch) return null;
     const total = parseFloat(totalMatch[1]);
