@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const apiKey = process.env.ODDS_API_KEY;
