@@ -216,6 +216,7 @@ function SnapToLog({ onConfirm, onCancel }) {
       {stage === "confirm" && extractedBet && (
         <div style={{ padding: 16 }}>
           <div style={{ color: "#2ecc71", fontSize: 17, fontWeight: 700, marginBottom: 12 }}>✅ Betsy read your slip</div>
+          <div style={{ color: "#888", fontSize: 12, marginBottom: 8 }}>Review the details below — tap Edit Manually if anything needs correcting.</div>
           {imagePreview && <img src={imagePreview} alt="slip" style={{ width: "100%", maxHeight: 160, objectFit: "contain", marginBottom: 12 }} />}
           <div style={{ background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 14, padding: 16, marginBottom: 14 }}>
             {[["Sport", extractedBet.sport], ["Game", extractedBet.game], ["Pick", extractedBet.pick], ["Odds", extractedBet.odds], ["Wager", `$${extractedBet.amount}`], ["To Win", `$${extractedBet.toWin}`], ["Game Date", extractedBet.gameDate || ""], ["Game Time", extractedBet.gameTime || ""]].map(([l, v]) => (
