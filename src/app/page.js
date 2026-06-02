@@ -174,7 +174,7 @@ function SnapToLog({ onConfirm, onCancel }) {
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
           max_tokens: 1000,
-          system: `You are Betsy. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). Simplify the pick to essential info only (e.g. "Angels -1.5" not full pitcher strings). Return ONLY raw JSON: {"sport":"...","game":"...","betType":"...","pick":"...","odds":"...","amount":0,"toWin":0,"gameDate":"YYYY-MM-DD","gameTime":"HH:MM","confidence":95}. If unclear: {"error":"reason"}. For gameDate use the game start date in ET. For gameTime use 24hr format in ET. If no date/time found, use today's date and empty string for time.`,
+          system: `You are Betsy. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). Simplify the pick to essential info only (e.g. "Angels -1.5" not full pitcher strings). Return ONLY raw JSON: {"sport":"...","game":"...","betType":"...","pick":"...","odds":"...","amount":0,"toWin":0,"gameDate":"YYYY-MM-DD","gameTime":"HH:MM","confidence":95}. If unclear: {"error":"reason"}. IMPORTANT: Never guess team names, player names, or any text you cannot clearly read. Use empty string "" for any field not clearly visible in the image. For gameDate use the game start date in ET. For gameTime use 24hr format in ET. If no date/time found, use today's date and empty string for time.`,
           messages: [{ role: "user", content: [
             { type: "image", source: { type: "base64", media_type: file.type || "image/jpeg", data: base64 } },
             { type: "text", text: "Extract the bet details from this slip." }
@@ -226,7 +226,7 @@ function SnapToLog({ onConfirm, onCancel }) {
             ))}
           </div>
           <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={onCancel} style={S.snap.editBtn}>Edit Manually</button>
+            <button onClick={() => onCancel(extractedBet)} style={S.snap.editBtn}>Edit Manually</button>
             <button onClick={() => onConfirm({ sport: extractedBet.sport, game: extractedBet.game, betType: extractedBet.betType, pick: extractedBet.pick, odds: extractedBet.odds, amount: extractedBet.amount, type: "Planned", result: "Pending", profit: 0, isToday: true, id: Date.now(), gameDate: extractedBet.gameDate || new Date().toISOString().split('T')[0], gameTime: extractedBet.gameTime || "" })} style={S.snap.confirmBtn}>✅ Log This Bet</button>
           </div>
         </div>
@@ -631,6 +631,20 @@ function BetLogger({ onSave, onNav }) {
   const [saved, setSaved] = useState(false);
   const [gameDate, setGameDate] = useState(new Date().toISOString().split('T')[0]);
   const [gameTime, setGameTime] = useState("");
+  const [prefill, setPrefill] = useState({});
+
+  useEffect(() => {
+  if (prefill && prefill.sport) {
+    setSport(prefill.sport || "NBA");
+    setBetType(prefill.betType || "Spread");
+    setGame(prefill.game || "");
+    setPick(prefill.pick || "");
+    setOdds(prefill.odds || "");
+    setAmount(prefill.amount ? String(prefill.amount) : "");
+    setGameDate(prefill.gameDate || new Date().toISOString().split('T')[0]);
+    setGameTime(prefill.gameTime || "");
+  }
+}, [prefill]);
 
   const isParlay = betType === "Parlay";
   const needsLine = ["Total (O/U)", "Spread", "Team Total"].includes(betType);
@@ -669,7 +683,7 @@ function BetLogger({ onSave, onNav }) {
   if (mode === "snap") return (
     <div style={S.screen}>
       <div style={S.backRow}><button style={S.backBtn} onClick={() => onNav("dashboard")}>← Back</button><div style={S.logo}>BETCIERGE</div></div>
-      <SnapToLog onConfirm={(bet) => { onSave(bet); setMode("choose"); onNav("card"); }} onCancel={() => setMode("manual")} />
+      <SnapToLog onConfirm={(bet) => { onSave(bet); setMode("choose"); onNav("card"); }} onCancel={(prefillData) => { setPrefill(prefillData || {}); setMode("manual"); }} />
     </div>
   );
 
