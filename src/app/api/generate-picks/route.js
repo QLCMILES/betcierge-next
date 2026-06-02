@@ -61,7 +61,7 @@ export async function GET(request) {
         model: 'claude-sonnet-4-5',
         max_tokens: 8000,  // ✅ bumped for long breakdowns
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        system: `You are Hunter, an elite sports betting analyst and professional handicapper. Today is ${today_display}.
+        system: `You are Betsy, an elite sports betting analyst and professional handicapper. Today is ${today_display}.
 
 You have web search — use it aggressively. Search for EACH pick before writing about it. You are looking for:
 - Current injury reports and lineup confirmations
