@@ -227,7 +227,7 @@ function SnapToLog({ onConfirm, onCancel }) {
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={onCancel} style={S.snap.editBtn}>Edit Manually</button>
-            <button onClick={() => onConfirm({ sport: extractedBet.sport, game: extractedBet.game, betType: extractedBet.betType, pick: extractedBet.pick, odds: extractedBet.odds, amount: extractedBet.amount, type: "Planned", result: "Pending", profit: 0, isToday: true, id: Date.now() })} style={S.snap.confirmBtn}>✅ Log This Bet</button>
+            <button onClick={() => onConfirm({ sport: extractedBet.sport, game: extractedBet.game, betType: extractedBet.betType, pick: extractedBet.pick, odds: extractedBet.odds, amount: extractedBet.amount, type: "Planned", result: "Pending", profit: 0, isToday: true, id: Date.now(), gameDate: new Date().toISOString().split('T')[0] })} style={S.snap.confirmBtn}>✅ Log This Bet</button>
           </div>
         </div>
       )}
@@ -660,7 +660,7 @@ function BetLogger({ onSave, onNav }) {
     if (!validate()) return;
     const finalOdds = isParlay ? parlayOdds() : odds;
     const finalPick = isParlay ? legs.map(l => l.pick).join(" + ") : needsLine ? `${pick} ${line}` : pick;
-    onSave({ sport, game, betType, pick: finalPick, odds: finalOdds, amount: parseFloat(amount), type: category, result: "Pending", profit: 0, isToday: true, id: Date.now() });
+    onSave({ sport, game, betType, pick: finalPick, odds: finalOdds, amount: parseFloat(amount), type: category, result: "Pending", profit: 0, isToday: true, id: Date.now(), gameDate });
     setSaved(true);
     setTimeout(() => { setSaved(false); setGame(""); setPick(""); setLine(""); setOdds(""); setAmount(""); setLegs([{ pick: "", odds: "" }, { pick: "", odds: "" }]); setErrors({}); setMode("choose"); }, 1500);
   };
