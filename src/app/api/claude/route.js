@@ -64,6 +64,7 @@ export async function PUT(request) {
   status: 'active',
   created_at: new Date().toISOString(),
 }));
+    
 
     const { data, error } = await supabase
       .from('daily_picks')
