@@ -11,6 +11,7 @@ export async function GET() {
       )
     );
 
+    console.log('results:', JSON.stringify(results).slice(0, 500));
     const games = results.flat().filter(g => g && g.id);
     return Response.json({ games }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
