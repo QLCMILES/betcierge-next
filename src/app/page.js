@@ -891,6 +891,7 @@ useEffect(() => {
       type: bet.type,
       result: bet.result,
       is_today: bet.isToday,
+      game_date: bet.gameDate ?? null,
     });
   }
 };
