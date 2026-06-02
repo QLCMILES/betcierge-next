@@ -629,6 +629,7 @@ function BetLogger({ onSave, onNav }) {
   const [legs, setLegs] = useState([{ pick: "", odds: "" }, { pick: "", odds: "" }]);
   const [errors, setErrors] = useState({});
   const [saved, setSaved] = useState(false);
+  const [gameDate, setGameDate] = useState(new Date().toISOString().split('T')[0]);
 
   const isParlay = betType === "Parlay";
   const needsLine = ["Total (O/U)", "Spread", "Team Total"].includes(betType);
