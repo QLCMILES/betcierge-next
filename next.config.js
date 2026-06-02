@@ -2,6 +2,8 @@
 const nextConfig = {
   experimental: {
     appDir: true,
+    fetchCache: 'force-no-store',
   },
-}
-module.exports = nextConfig
+};
+
+module.exports = nextConfig;
