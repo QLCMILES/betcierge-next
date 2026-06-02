@@ -116,16 +116,17 @@ function determineResult(bet, game) {
   if (isNaN(homeScore) || isNaN(awayScore)) return null;
 
   const pick = bet.pick.toLowerCase();
+  const betType = bet.bet_type?.toLowerCase().replace(/[^a-z]/g, '');
 
   // Moneyline
-  if (bet.bet_type === 'Moneyline') {
+  if (betType === 'moneyline') {
     const homeWon = homeScore > awayScore;
     const pickedHome = pick.includes(game.home_team.toLowerCase().split(' ').pop());
     return (homeWon === pickedHome) ? 'Win' : 'Loss';
   }
 
-  // Spread
-  if (bet.bet_type === 'Spread' || bet.bet_type === 'Straight') {
+  // Spread / Run Line / Straight
+  if (['spread', 'straight', 'runline'].includes(betType)) {
     const spreadMatch = pick.match(/([+-]?\d+\.?\d*)/);
     if (!spreadMatch) return null;
     const spread = parseFloat(spreadMatch[1]);
@@ -134,13 +135,13 @@ function determineResult(bet, game) {
     return (diff + spread > 0) ? 'Win' : (diff + spread === 0) ? 'Pending' : 'Loss';
   }
 
-  // Total O/U
-  if (bet.bet_type === 'Total (O/U)' || bet.bet_type === 'Under' || bet.bet_type === 'Over') {
+  // Total O/U / Over / Under
+  if (['totalou', 'total', 'over', 'under'].includes(betType)) {
     const totalMatch = pick.match(/(\d+\.?\d*)/);
     if (!totalMatch) return null;
     const total = parseFloat(totalMatch[1]);
     const actual = homeScore + awayScore;
-    const isOver = pick.includes('over');
+    const isOver = pick.includes('over') || betType === 'over';
     return isOver ? (actual > total ? 'Win' : actual === total ? 'Pending' : 'Loss')
                   : (actual < total ? 'Win' : actual === total ? 'Pending' : 'Loss');
   }
