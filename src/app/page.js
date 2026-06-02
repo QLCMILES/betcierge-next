@@ -200,7 +200,8 @@ if (!parsed.gameDate || !parsed.gameTime) {
     });
     const lookupData = await lookupResponse.json();
     const lookupText = (lookupData.content || []).filter(c => c.type === "text").map(c => c.text).join("");
-    const lookupParsed = JSON.parse(lookupText.replace(/```json|```/g, "").trim());
+    const jsonMatch = lookupText.match(/\{[^}]+\}/);
+const lookupParsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
     if (lookupParsed.gameDate && !parsed.gameDate) parsed.gameDate = lookupParsed.gameDate;
     if (lookupParsed.gameTime && !parsed.gameTime) parsed.gameTime = lookupParsed.gameTime;
   } catch (e) {
