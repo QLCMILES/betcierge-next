@@ -252,7 +252,7 @@ const lookupParsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={() => onCancel(extractedBet)} style={S.snap.editBtn}>Edit Manually</button>
-            <button onClick={() => onConfirm({ sport: extractedBet.sport, game: extractedBet.game, betType: extractedBet.betType, pick: extractedBet.pick, odds: extractedBet.odds, amount: extractedBet.amount, type: "Planned", result: "Pending", profit: 0, isToday: true, id: Date.now(), gameDate: extractedBet.gameDate || new Date().toISOString().split('T')[0], gameTime: extractedBet.gameTime || "" })} style={S.snap.confirmBtn}>✅ Log This Bet</button>
+            <button onClick={() => onConfirm(extractedBet)} style={S.snap.confirmBtn}>Log This Bet</button>
           </div>
         </div>
       )}
