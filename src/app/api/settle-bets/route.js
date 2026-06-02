@@ -99,12 +99,16 @@ export async function GET(request) {
 
 function findMatchingGame(bet, scores) {
   const betGame = bet.game.toLowerCase();
+  const betDate = bet.game_date;
   return scores.find(g => {
     const home = g.home_team.toLowerCase();
     const away = g.away_team.toLowerCase();
-    return betGame.includes(home) || betGame.includes(away) ||
+    const gameDate = g.commence_time?.split('T')[0];
+    const dateMatch = !betDate || !gameDate || gameDate === betDate;
+    const teamMatch = betGame.includes(home) || betGame.includes(away) ||
       home.split(' ').some(w => w.length > 3 && betGame.includes(w)) ||
       away.split(' ').some(w => w.length > 3 && betGame.includes(w));
+    return dateMatch && teamMatch;
   });
 }
 
