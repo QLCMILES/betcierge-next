@@ -1013,3 +1013,4 @@ const S = {
     nextBtn: { width: "100%", background: "linear-gradient(135deg,#f5a623,#f7c948)", color: "#000", border: "none", borderRadius: 14, padding: 16, fontSize: 16, fontWeight: 700, cursor: "pointer", marginTop: 12 },
   },
 };
+
