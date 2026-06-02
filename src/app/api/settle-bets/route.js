@@ -103,12 +103,15 @@ function findMatchingGame(bet, scores) {
   return scores.find(g => {
     const home = g.home_team.toLowerCase();
     const away = g.away_team.toLowerCase();
-    const gameDate = g.commence_time?.split('T')[0];
+    const gameDate = g.commence_time ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) : null;
     const dateMatch = !betDate || !gameDate || gameDate === betDate;
+    const betHour = bet.game_time ? parseInt(bet.game_time.split(':')[0]) : null;
+const gameHour = g.commence_time ? parseInt(new Date(g.commence_time).toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false })) : null;
+const timeMatch = !betHour || !gameHour || Math.abs(gameHour - betHour) <= 1;
     const teamMatch = betGame.includes(home) || betGame.includes(away) ||
       home.split(' ').some(w => w.length > 3 && betGame.includes(w)) ||
       away.split(' ').some(w => w.length > 3 && betGame.includes(w));
-    return dateMatch && teamMatch;
+    return dateMatch && teamMatch && timeMatch;
   });
 }
 

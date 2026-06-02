@@ -174,7 +174,7 @@ function SnapToLog({ onConfirm, onCancel }) {
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
           max_tokens: 1000,
-          system: `You are Betsy. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). Simplify the pick to essential info only (e.g. "Angels -1.5" not full pitcher strings). Return ONLY raw JSON: {"sport":"...","game":"...","betType":"...","pick":"...","odds":"...","amount":0,"toWin":0,"confidence":95}. If unclear: {"error":"reason"}`,
+          system: `You are Betsy. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). Simplify the pick to essential info only (e.g. "Angels -1.5" not full pitcher strings). Return ONLY raw JSON: {"sport":"...","game":"...","betType":"...","pick":"...","odds":"...","amount":0,"toWin":0,"gameDate":"YYYY-MM-DD","gameTime":"HH:MM","confidence":95}. If unclear: {"error":"reason"}. For gameDate use the game start date in ET. For gameTime use 24hr format in ET. If no date/time found, use today's date and empty string for time.`,
           messages: [{ role: "user", content: [
             { type: "image", source: { type: "base64", media_type: file.type || "image/jpeg", data: base64 } },
             { type: "text", text: "Extract the bet details from this slip." }
@@ -218,7 +218,7 @@ function SnapToLog({ onConfirm, onCancel }) {
           <div style={{ color: "#2ecc71", fontSize: 17, fontWeight: 700, marginBottom: 12 }}>✅ Betsy read your slip</div>
           {imagePreview && <img src={imagePreview} alt="slip" style={{ width: "100%", maxHeight: 160, objectFit: "contain", marginBottom: 12 }} />}
           <div style={{ background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 14, padding: 16, marginBottom: 14 }}>
-            {[["Sport", extractedBet.sport], ["Game", extractedBet.game], ["Pick", extractedBet.pick], ["Odds", extractedBet.odds], ["Wager", `$${extractedBet.amount}`], ["To Win", `$${extractedBet.toWin}`]].map(([l, v]) => (
+            {[["Sport", extractedBet.sport], ["Game", extractedBet.game], ["Pick", extractedBet.pick], ["Odds", extractedBet.odds], ["Wager", `$${extractedBet.amount}`], ["To Win", `$${extractedBet.toWin}`], ["Game Date", extractedBet.gameDate || ""], ["Game Time", extractedBet.gameTime || ""]].map(([l, v]) => (
               <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #1a1a24" }}>
                 <span style={{ color: "#666", fontSize: 13 }}>{l}</span>
                 <span style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{v}</span>
@@ -227,7 +227,7 @@ function SnapToLog({ onConfirm, onCancel }) {
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={onCancel} style={S.snap.editBtn}>Edit Manually</button>
-            <button onClick={() => onConfirm({ sport: extractedBet.sport, game: extractedBet.game, betType: extractedBet.betType, pick: extractedBet.pick, odds: extractedBet.odds, amount: extractedBet.amount, type: "Planned", result: "Pending", profit: 0, isToday: true, id: Date.now(), gameDate: new Date().toISOString().split('T')[0] })} style={S.snap.confirmBtn}>✅ Log This Bet</button>
+            <button onClick={() => onConfirm({ sport: extractedBet.sport, game: extractedBet.game, betType: extractedBet.betType, pick: extractedBet.pick, odds: extractedBet.odds, amount: extractedBet.amount, type: "Planned", result: "Pending", profit: 0, isToday: true, id: Date.now(), gameDate: extractedBet.gameDate || new Date().toISOString().split('T')[0], gameTime: extractedBet.gameTime || "" })} style={S.snap.confirmBtn}>✅ Log This Bet</button>
           </div>
         </div>
       )}
@@ -630,6 +630,7 @@ function BetLogger({ onSave, onNav }) {
   const [errors, setErrors] = useState({});
   const [saved, setSaved] = useState(false);
   const [gameDate, setGameDate] = useState(new Date().toISOString().split('T')[0]);
+  const [gameTime, setGameTime] = useState("");
 
   const isParlay = betType === "Parlay";
   const needsLine = ["Total (O/U)", "Spread", "Team Total"].includes(betType);
@@ -660,7 +661,7 @@ function BetLogger({ onSave, onNav }) {
     if (!validate()) return;
     const finalOdds = isParlay ? parlayOdds() : odds;
     const finalPick = isParlay ? legs.map(l => l.pick).join(" + ") : needsLine ? `${pick} ${line}` : pick;
-    onSave({ sport, game, betType, pick: finalPick, odds: finalOdds, amount: parseFloat(amount), type: category, result: "Pending", profit: 0, isToday: true, id: Date.now(), gameDate });
+    onSave({ sport, game, betType, pick: finalPick, odds: finalOdds, amount: parseFloat(amount), type: category, result: "Pending", profit: 0, isToday: true, id: Date.now(), gameDate, gameTime });
     setSaved(true);
     setTimeout(() => { setSaved(false); setGame(""); setPick(""); setLine(""); setOdds(""); setAmount(""); setLegs([{ pick: "", odds: "" }, { pick: "", odds: "" }]); setErrors({}); setMode("choose"); }, 1500);
   };
@@ -704,6 +705,8 @@ function BetLogger({ onSave, onNav }) {
         {errors.game && <div style={S.err}>{errors.game}</div>}
          <label style={S.label}>Game Date</label>
 <input style={S.input} type="date" value={gameDate} onChange={e => setGameDate(e.target.value)} />
+<label style={S.label}>Game Time (ET)</label>
+<input style={S.input} type="time" value={gameTime} onChange={e => setGameTime(e.target.value)} />
         {!isParlay && <>
           <label style={S.label}>Your Pick</label>
           <input style={{ ...S.input, ...(errors.pick ? { borderColor: "#e74c3c" } : {}) }} placeholder={betType === "Total (O/U)" ? "Over or Under" : "e.g. Spurs ML"} value={pick} onChange={e => setPick(e.target.value)} />
@@ -895,6 +898,7 @@ useEffect(() => {
       result: bet.result,
       is_today: bet.isToday,
       game_date: bet.gameDate ?? null,
+      game_time: bet.gameTime ?? null,
     });
   }
 };
