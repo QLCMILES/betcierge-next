@@ -702,6 +702,8 @@ function BetLogger({ onSave, onNav }) {
         <label style={S.label}>Game / Matchup</label>
         <input style={{ ...S.input, ...(errors.game ? { borderColor: "#e74c3c" } : {}) }} placeholder="e.g. Spurs vs OKC Thunder" value={game} onChange={e => setGame(e.target.value)} />
         {errors.game && <div style={S.err}>{errors.game}</div>}
+         <label style={S.label}>Game Date</label>
+<input style={S.input} type="date" value={gameDate} onChange={e => setGameDate(e.target.value)} />
         {!isParlay && <>
           <label style={S.label}>Your Pick</label>
           <input style={{ ...S.input, ...(errors.pick ? { borderColor: "#e74c3c" } : {}) }} placeholder={betType === "Total (O/U)" ? "Over or Under" : "e.g. Spurs ML"} value={pick} onChange={e => setPick(e.target.value)} />
