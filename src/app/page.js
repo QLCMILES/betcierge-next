@@ -332,6 +332,27 @@ try {
     ).join("\n");
   }
 } catch(e) {}
+let todayOddsContext = "";
+try {
+  const oddsRes = await fetch("/api/odds");
+  const oddsData = await oddsRes.json();
+  if (oddsData.games && oddsData.games.length > 0) {
+    todayOddsContext = "\n\nLIVE ODDS FROM BETCIERGE (use ONLY these odds, never guess):\n" +
+      oddsData.games.slice(0, 20).map(g => {
+        const bk = g.bookmakers?.[0];
+        if (!bk) return null;
+        const h2h = bk.markets?.find(m => m.key === "h2h");
+        const spread = bk.markets?.find(m => m.key === "spreads");
+        const total = bk.markets?.find(m => m.key === "totals");
+        const lines = [
+          h2h ? `ML: ${h2h.outcomes.map(o => `${o.name} ${o.price > 0 ? '+' : ''}${o.price}`).join(' / ')}` : null,
+          spread ? `RL/Spread: ${spread.outcomes.map(o => `${o.name} ${o.point > 0 ? '+' : ''}${o.point} (${o.price > 0 ? '+' : ''}${o.price})`).join(' / ')}` : null,
+          total ? `Total: ${total.outcomes.map(o => `${o.name} ${o.point} (${o.price > 0 ? '+' : ''}${o.price})`).join(' / ')}` : null,
+        ].filter(Boolean).join(' | ');
+        return `${g.away_team} @ ${g.home_team}: ${lines}`;
+      }).filter(Boolean).join("\n");
+  }
+} catch(e) {}
 
 try {
     const recentMessages = [...messages, newUserMsg].slice(-20);
@@ -369,7 +390,7 @@ College Baseball: same factors as MLB plus mid-week vs weekend rotation impact, 
 STYLE:
 Be sharp, warm, direct. Give a clear recommendation with your confidence level. Lead with the most important insight. Use headers to organize. Never hedge excessively — take a stance. You are their trusted advisor, not a disclaimer machine.
 
-You remember this user's history from previous conversations.${todayPicksContext}`,
+You remember this user's history from previous conversations.${todayPicksContext}${todayOddsContext}`,
         true,
         null,
         2000
