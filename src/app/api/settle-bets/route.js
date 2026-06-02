@@ -8,7 +8,25 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const SPORTS = ['basketball_nba', 'americanfootball_nfl', 'baseball_mlb', 'icehockey_nhl'];
+// Map from bet sport names to Odds API sport keys
+const SPORT_MAP = {
+  'mlb': 'baseball_mlb',
+  'baseball': 'baseball_mlb',
+  'nba': 'basketball_nba',
+  'basketball': 'basketball_nba',
+  'nfl': 'americanfootball_nfl',
+  'football': 'americanfootball_nfl',
+  'nhl': 'icehockey_nhl',
+  'hockey': 'icehockey_nhl',
+  'mls': 'soccer_usa_mls',
+  'soccer': 'soccer_usa_mls',
+  'ncaab': 'basketball_ncaab',
+  'college basketball': 'basketball_ncaab',
+  'ncaaf': 'americanfootball_ncaaf',
+  'college football': 'americanfootball_ncaaf',
+  'ufc': 'mma_mixed_martial_arts',
+  'mma': 'mma_mixed_martial_arts',
+};
 
 export async function GET(request) {
   const authHeader = request.headers.get('authorization');
@@ -29,9 +47,20 @@ export async function GET(request) {
       return Response.json({ message: 'No pending bets', settled: 0 });
     }
 
-    // Fetch completed scores from Odds API for each sport
+    // Determine which sports we actually need to query
+    const sportsNeeded = new Set();
+    for (const bet of pendingBets) {
+      const key = SPORT_MAP[bet.sport?.toLowerCase()];
+      if (key) sportsNeeded.add(key);
+    }
+
+    if (sportsNeeded.size === 0) {
+      return Response.json({ message: 'No matching sports to query', settled: 0 });
+    }
+
+    // Only fetch scores for sports with pending bets
     const apiKey = process.env.ODDS_API_KEY;
-    const scoresPromises = SPORTS.map(sport =>
+    const scoresPromises = [...sportsNeeded].map(sport =>
       fetch(`https://api.the-odds-api.com/v4/sports/${sport}/scores/?apiKey=${apiKey}&daysFrom=1&dateFormat=iso`)
         .then(r => r.json())
         .catch(() => [])
@@ -56,7 +85,12 @@ export async function GET(request) {
       settled++;
     }
 
-    return Response.json({ success: true, settled, total: pendingBets.length });
+    return Response.json({ 
+      success: true, 
+      settled, 
+      total: pendingBets.length,
+      sportsQueried: [...sportsNeeded]
+    });
 
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
@@ -82,7 +116,6 @@ function determineResult(bet, game) {
   if (isNaN(homeScore) || isNaN(awayScore)) return null;
 
   const pick = bet.pick.toLowerCase();
-  const odds = bet.odds;
 
   // Moneyline
   if (bet.bet_type === 'Moneyline') {
