@@ -107,7 +107,7 @@ function findMatchingGame(bet, scores) {
     const dateMatch = !betDate || !gameDate || gameDate === betDate;
     const betHour = bet.game_time ? parseInt(bet.game_time.split(':')[0]) : null;
 const gameHour = g.commence_time ? parseInt(new Date(g.commence_time).toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false })) : null;
-const timeMatch = !betHour || !gameHour || Math.abs(gameHour - betHour) <= 1;
+const timeMatch = true;
     const teamMatch = betGame.includes(home) || betGame.includes(away) ||
       home.split(' ').some(w => w.length > 3 && betGame.includes(w)) ||
       away.split(' ').some(w => w.length > 3 && betGame.includes(w));
