@@ -208,7 +208,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
     }
 
     try {
-      const oddsRes = await fetch("/api/odds");
+      const oddsRes = await fetch("/api/odds", { method: "POST" });
       const oddsData = await oddsRes.json();
       if (oddsData.games) {
         const game = parsed.game?.toLowerCase() || "";
@@ -350,7 +350,7 @@ try {
 } catch(e) {}
 let todayOddsContext = "";
 try {
-  const oddsRes = await fetch("/api/odds");
+  const oddsRes = await fetch("/api/odds", { method: "POST" });
   const oddsData = await oddsRes.json();
   if (oddsData.games && oddsData.games.length > 0) {
     todayOddsContext = "\n\nLIVE ODDS FROM BETCIERGE (use ONLY these odds, never guess):\n" +

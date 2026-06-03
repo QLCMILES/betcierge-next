@@ -1,21 +1,58 @@
+export const dynamic = 'force-dynamic';
+
+const SPORTS = [
+  'baseball_mlb',
+  'basketball_nba',
+  'americanfootball_nfl',
+  'icehockey_nhl',
+  'basketball_ncaab',
+  'americanfootball_ncaaf',
+  'mma_mixed_martial_arts',
+  'soccer_usa_mls',
+];
+
+async function fetchOdds(apiKey) {
+  const now = Date.now();
+  const from = new Date(now - 2 * 60 * 60 * 1000).toISOString();  // 2hrs ago (catch games in progress)
+  const to = new Date(now + 48 * 60 * 60 * 1000).toISOString();   // 48hrs ahead
+
+  const results = await Promise.all(
+    SPORTS.map(sport =>
+      fetch(
+        `https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american&commenceTimeFrom=${from}&commenceTimeTo=${to}`,
+        { cache: 'no-store' }
+      )
+        .then(r => r.ok ? r.json() : [])
+        .catch(() => [])
+    )
+  );
+
+  return results.flat().filter(g => g && g.id);
+}
+
+// POST — used by client at bet-log time (never cached by Vercel)
+export async function POST() {
+  try {
+    const apiKey = process.env.ODDS_API_KEY;
+    if (!apiKey) return Response.json({ error: 'No API key' }, { status: 500 });
+    const games = await fetchOdds(apiKey);
+    return Response.json({ games }, {
+      headers: { 'Cache-Control': 'no-store' }
+    });
+  } catch (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// GET — kept for Betsy's system prompt injection (settle-bets, internal use)
 export async function GET() {
   try {
     const apiKey = process.env.ODDS_API_KEY;
-    
-    // Fetch today's NFL, NBA, MLB, NHL games with odds
-    const sports = ['basketball_nba', 'americanfootball_nfl', 'baseball_mlb', 'icehockey_nhl'];
-    
- const results = await Promise.all(
-  sports.map(sport => {
-    const from = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-    const to = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-    return fetch(`https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american&commenceTimeFrom=${from}&commenceTimeTo=${to}`)
-      .then(r => r.json())
-  })
-);
-
-    const games = results.flat().filter(g => g && g.id);
-    return Response.json({ games });
+    if (!apiKey) return Response.json({ error: 'No API key' }, { status: 500 });
+    const games = await fetchOdds(apiKey);
+    return Response.json({ games }, {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
+    });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }
