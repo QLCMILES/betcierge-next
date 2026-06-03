@@ -61,7 +61,7 @@ export async function GET(request) {
     // Only fetch scores for sports with pending bets
     const apiKey = process.env.ODDS_API_KEY;
     const scoresPromises = [...sportsNeeded].map(sport =>
-      fetch(`https://api.the-odds-api.com/v4/sports/${sport}/scores/?apiKey=${apiKey}&daysFrom=2&dateFormat=iso`)
+      fetch(`https://api.the-odds-api.com/v4/sports/${sport}/scores/?apiKey=${apiKey}&daysFrom=3&dateFormat=iso`)
         .then(r => r.json())
         .catch(() => [])
     );
@@ -78,9 +78,9 @@ export async function GET(request) {
       if (!result) continue;
 
       await supabase
-        .from('user_bets')
-        .update({ result })
-        .eq('id', bet.id);
+  .from('user_bets')
+  .update({ result, type: result })
+  .eq('id', bet.id);
 
       settled++;
     }
