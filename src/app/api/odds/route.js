@@ -12,16 +12,16 @@ const SPORTS = [
 ];
 
 async function fetchOdds(apiKey) {
-  
   const results = await Promise.all(
-    fetch(
-      `https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american`,
-      { cache: 'no-store' }
+    SPORTS.map(sport =>
+      fetch(
+        `https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american`,
+        { cache: 'no-store' }
+      )
+        .then(r => r.ok ? r.json() : [])
+        .catch(() => [])
     )
-      .then(r => r.ok ? r.json() : [])
-      .catch(() => [])
   );
-
   return results.flat().filter(g => g && g.id);
 }
 
