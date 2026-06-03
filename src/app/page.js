@@ -990,7 +990,7 @@ const updateBet = async (id, result) => {
   </div>
 );
 if (!session) return <LoginScreen onAuth={(s) => setSession(s)} />;
-if (!user) return <Onboarding onComplete={handleComplete} />;
+if (!user?.name) return <Onboarding onComplete={handleComplete} />;
 
   return (
     <div style={{ background: "#0a0a0f", minHeight: "100vh", maxWidth: 430, margin: "0 auto", fontFamily: "'Outfit',sans-serif", paddingBottom: 80 }}>
