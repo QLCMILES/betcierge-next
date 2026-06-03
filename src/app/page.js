@@ -591,7 +591,8 @@ function Dashboard({ user, bets, onNav, userKey }) {
   const atRisk = pending.reduce((s, b) => s + b.amount, 0);
 
   const alerts = [];
-  const todayBets = bets.filter(b => b.isToday).length;
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+const todayBets = bets.filter(b => b.gameDate === today).length;
   if (todayBets >= 5) alerts.push({ msg: `${todayBets} bets today. Your edge drops after bet 4.`, type: "warning" });
   if (netPL < -(user.goal * 0.5) && bets.length > 0) alerts.push({ msg: "Down over 50% of your weekly goal. Protect the bankroll.", type: "danger" });
   if (netPL >= user.goal) alerts.push({ msg: `🎉 Weekly goal hit! Consider locking in the profit.`, type: "success" });
@@ -665,9 +666,9 @@ function TodayCard({ bets, onNav }) {
     <div style={S.screen}>
       <div style={S.backRow}><button style={S.backBtn} onClick={() => onNav("dashboard")}>← Back</button><div style={S.logo}>BETCIERGE</div></div>
       <div style={S.secTitle}>Today's Card 🎯</div>
-      {bets.filter(b => b.isToday).length === 0 ? (
+      bets.filter(b => b.gameDate === new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })).length === 0 ? (
         <div style={S.empty}>No bets locked in yet today.</div>
-      ) : bets.filter(b => b.isToday).map(bet => (
+      ) : bets.filter(b => b.gameDate === new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })).map(bet => (
         <div key={bet.id} style={S.betCard}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
             <span style={S.betSport}>{bet.sport}</span>
