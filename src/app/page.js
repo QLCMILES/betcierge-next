@@ -186,34 +186,50 @@ function SnapToLog({ onConfirm, onCancel }) {
       const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
       // Second call: look up game date/time via web search if missing from slip
 if (!parsed.gameDate || !parsed.gameTime) {
-  try {
-    const lookupResponse = await fetch("/api/claude", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 200,
-        system: `You are a sports schedule lookup assistant. Return ONLY raw JSON with no markdown: {"gameDate":"YYYY-MM-DD","gameTime":"HH:MM"}. Use 24hr ET timezone. If not found return {"gameDate":"","gameTime":""}. Today is ${new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })}.`,
-        messages: [{ role: "user", content: `What date and time does this game start: ${parsed.sport} - ${parsed.game}?` }],
-        tools: [{ type: "web_search_20250305", name: "web_search" }]
-      })
-    });
-    const lookupData = await lookupResponse.json();
-    const lookupText = (lookupData.content || []).filter(c => c.type === "text").map(c => c.text).join("");
-    const jsonMatch = lookupText.match(/\{[^}]+\}/);
-const lookupParsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-    if (lookupParsed.gameDate && !parsed.gameDate) parsed.gameDate = lookupParsed.gameDate;
-    if (lookupParsed.gameTime && !parsed.gameTime) parsed.gameTime = lookupParsed.gameTime;
-  } catch (e) {
-    // Silent fail — date/time just stay empty, user can fill manually
-  }
-}
-      if (parsed.error) { setErrorMsg(parsed.error); setStage("error"); }
-      else { setExtractedBet(parsed); setStage("confirm"); }
-    } catch (e) {
-      setErrorMsg("Couldn't read the slip. Try a clearer screenshot.");
-      setStage("error");
+      try {
+        const lookupResponse = await fetch("/api/claude", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 200,
+            system: `You are a sports schedule lookup assistant. Return ONLY raw JSON with no markdown: {"gameDate":"YYYY-MM-DD","gameTime":"HH:MM"}. Use 24hr ET timezone.`,
+            messages: [{ role: "user", content: `What date and time does this game start: ${parsed.sport} - ${parsed.game}?` }],
+            tools: [{ type: "web_search_20250305", name: "web_search" }]
+          }),
+        });
+        const lookupData = await lookupResponse.json();
+        const lookupText = (lookupData.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+        const jsonMatch = lookupText.match(/\{[^}]+\}/);
+        const lookupParsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+        if (lookupParsed.gameDate && !parsed.gameDate) parsed.gameDate = lookupParsed.gameDate;
+        if (lookupParsed.gameTime && !parsed.gameTime) parsed.gameTime = lookupParsed.gameTime;
+      } catch(e) {}
     }
+
+    try {
+      const oddsRes = await fetch("/api/odds");
+      const oddsData = await oddsRes.json();
+      if (oddsData.games) {
+        const game = parsed.game?.toLowerCase() || "";
+        const match = oddsData.games.find(g => {
+          const home = g.home_team.toLowerCase();
+          const away = g.away_team.toLowerCase();
+          return game.includes(home.split(' ').pop()) || game.includes(away.split(' ').pop()) ||
+            home.split(' ').some(w => w.length > 3 && game.includes(w)) ||
+            away.split(' ').some(w => w.length > 3 && game.includes(w));
+        });
+        if (match) parsed.gameId = match.id;
+      }
+    } catch(e) {}
+
+    if (parsed.error) { setErrorMsg(parsed.error); setStage("error"); }
+    else { setExtractedBet(parsed); setStage("confirm"); }
+
+  } catch (e) {
+    setErrorMsg("Couldn't read the slip. Try a clearer screenshot.");
+    setStage("error");
+  }
   };
 
   return (
@@ -971,6 +987,7 @@ useEffect(() => {
       is_today: bet.isToday,
       game_date: bet.gameDate ?? null,
       game_time: bet.gameTime ?? null,
+      game_id: bet.gameId ?? null,
     });
   }
 };
