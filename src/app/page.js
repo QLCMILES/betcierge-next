@@ -662,13 +662,14 @@ const todayBets = bets.filter(b => b.gameDate === today).length;
 
 // ── Today's Card ───────────────────────────────────────────────────────────
 function TodayCard({ bets, onNav }) {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
   return (
     <div style={S.screen}>
       <div style={S.backRow}><button style={S.backBtn} onClick={() => onNav("dashboard")}>← Back</button><div style={S.logo}>BETCIERGE</div></div>
       <div style={S.secTitle}>Today's Card 🎯</div>
-      bets.filter(b => b.gameDate === new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })).length === 0 ? (
+      {bets.filter(b => b.gameDate === today).length === 0 ? (
         <div style={S.empty}>No bets locked in yet today.</div>
-      ) : bets.filter(b => b.gameDate === new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })).map(bet => (
+      ) : bets.filter(b => b.gameDate === today).map(bet => (
         <div key={bet.id} style={S.betCard}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
             <span style={S.betSport}>{bet.sport}</span>
@@ -849,25 +850,147 @@ function BetLogger({ onSave, onNav }) {
   );
 }
 
-// ── History ────────────────────────────────────────────────────────────────
+// — History ————————————————————————————————————————
 function History({ bets, onUpdate, onNav }) {
   const [filterSport, setFilterSport] = useState("All");
-  const filtered = bets.filter(b => filterSport === "All" || b.sport === filterSport);
+  const [filterResult, setFilterResult] = useState("All");
+  const [expandedGroups, setExpandedGroups] = useState({});
+
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
+  // Apply filters
+  const filtered = bets.filter(b => {
+    const sportMatch = filterSport === "All" || b.sport === filterSport;
+    const resultMatch = filterResult === "All" || b.result === filterResult;
+    return sportMatch && resultMatch;
+  });
+
+  // Group bets by game_date
+  const groups = {};
+  filtered.forEach(bet => {
+    const key = bet.gameDate || "Unknown Date";
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(bet);
+  });
+
+  // Sort dates newest first
+  const sortedDates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+
+  // Get current week's Monday
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  monday.setHours(0, 0, 0, 0);
+
+  const isThisWeek = (dateStr) => {
+    if (!dateStr || dateStr === "Unknown Date") return false;
+    const d = new Date(dateStr + "T00:00:00");
+    return d >= monday;
+  };
+
+  const formatDateLabel = (dateStr) => {
+    if (!dateStr || dateStr === "Unknown Date") return "Unknown Date";
+    const d = new Date(dateStr + "T00:00:00");
+    const diffDays = Math.round((new Date(today + "T00:00:00") - d) / 86400000);
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Yesterday";
+    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+  };
+
+  const formatMonthLabel = (dateStr) => {
+    const d = new Date(dateStr + "T00:00:00");
+    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  };
+
+  const toggleGroup = (key) => {
+    setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // Split into this week vs older, then group older by month
+  const thisWeekDates = sortedDates.filter(isThisWeek);
+  const olderDates = sortedDates.filter(d => !isThisWeek(d));
+
+  const olderByMonth = {};
+  olderDates.forEach(dateStr => {
+    const monthKey = formatMonthLabel(dateStr);
+    if (!olderByMonth[monthKey]) olderByMonth[monthKey] = [];
+    olderByMonth[monthKey].push(dateStr);
+  });
+
+  // All-time stats
   const settled = filtered.filter(b => b.result !== "Pending");
   const wins = filtered.filter(b => b.result === "Win");
   const losses = filtered.filter(b => b.result === "Loss");
-  const netPL = wins.reduce((s, b) => s + (calcProfit(b.amount, b.odds) || 0), 0) - losses.reduce((s, b) => s + b.amount, 0);
+  const netPL = wins.reduce((s, b) => s + (calcProfit(b.amount, b.odds) || 0), 0)
+              - losses.reduce((s, b) => s + b.amount, 0);
   const winRate = settled.length > 0 ? ((wins.length / settled.length) * 100).toFixed(0) : 0;
+
+  const BetCard = ({ bet }) => (
+    <div key={bet.id} style={S.betCard}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <span style={S.betSport}>{bet.sport}</span>
+          <span style={{ ...S.tag, background: bet.type === "Planned" ? "#1a2e1a" : "#2a1a00", color: bet.type === "Planned" ? "#2ecc71" : "#f5a623" }}>
+            {bet.type === "Planned" ? "✅ Planned" : "⚡ Impulse"}
+          </span>
+        </div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {["Win", "Loss", "Pending"].map(r => (
+            <button key={r} onClick={() => onUpdate(bet.id, r)} style={{ background: bet.result === r ? (r === "Win" ? "#1a2e1a" : r === "Loss" ? "#2a0f0f" : "#1a1500") : "#1a1a1a", color: r === "Win" ? "#2ecc71" : r === "Loss" ? "#e74c3c" : "#f5a623", border: `1px solid ${bet.result === r ? (r === "Win" ? "#2ecc71" : r === "Loss" ? "#e74c3c" : "#f5a623") : "#333"}`, borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>
+              {r === "Win" ? "W" : r === "Loss" ? "L" : "P"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ color: "#fff", fontSize: 14, fontWeight: 600, marginBottom: 8 }}>{bet.game}</div>
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <div><span style={{ color: "#f5a623", fontWeight: 700 }}>{bet.pick}</span><span style={{ color: "#888", fontSize: 13, marginLeft: 8 }}>{bet.odds}</span></div>
+        <span style={{ color: "#ccc", fontSize: 13 }}>{bet.amount} → <span style={{ color: "#f5a623" }}>{fmt(calcProfit(bet.amount, bet.odds))}</span></span>
+      </div>
+      <div style={{ marginTop: 8, display: "inline-block", background: bet.result === "Win" ? "#1a2e1a" : bet.result === "Loss" ? "#2a0f0f" : "#1a1500", color: bet.result === "Win" ? "#2ecc71" : bet.result === "Loss" ? "#e74c3c" : "#f5a623", borderRadius: 4, padding: "2px 10px", fontSize: 12 }}>
+        {bet.result === "Win" ? "✅ WIN" : bet.result === "Loss" ? "❌ LOSS" : "⏳ PENDING"}
+      </div>
+    </div>
+  );
+
+  const DaySection = ({ dateStr }) => {
+    const dayBets = groups[dateStr];
+    const isExpanded = expandedGroups[dateStr] !== false; // default open
+    const dayWins = dayBets.filter(b => b.result === "Win").length;
+    const dayLosses = dayBets.filter(b => b.result === "Loss").length;
+    const dayPL = dayBets.filter(b => b.result === "Win").reduce((s, b) => s + (calcProfit(b.amount, b.odds) || 0), 0)
+                - dayBets.filter(b => b.result === "Loss").reduce((s, b) => s + b.amount, 0);
+    return (
+      <div style={{ marginBottom: 12 }}>
+        <div onClick={() => toggleGroup(dateStr)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#1a1a1a", borderRadius: 8, cursor: "pointer", marginBottom: isExpanded ? 8 : 0 }}>
+          <div>
+            <span style={{ color: "#fff", fontWeight: 600, fontSize: 14 }}>{formatDateLabel(dateStr)}</span>
+            <span style={{ color: "#555", fontSize: 12, marginLeft: 8 }}>{dayBets.length} bet{dayBets.length !== 1 ? "s" : ""}</span>
+          </div>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <span style={{ fontSize: 12, color: "#2ecc71" }}>{dayWins}W</span>
+            <span style={{ fontSize: 12, color: "#e74c3c" }}>{dayLosses}L</span>
+            <span style={{ fontSize: 12, color: dayPL >= 0 ? "#2ecc71" : "#e74c3c" }}>{dayPL >= 0 ? "+" : ""}{fmt(dayPL)}</span>
+            <span style={{ color: "#555", fontSize: 12 }}>{isExpanded ? "▲" : "▼"}</span>
+          </div>
+        </div>
+        {isExpanded && dayBets.map(bet => <BetCard key={bet.id} bet={bet} />)}
+      </div>
+    );
+  };
 
   return (
     <div style={S.screen}>
       <div style={S.backRow}><button style={S.backBtn} onClick={() => onNav("dashboard")}>← Back</button><div style={S.logo}>BETCIERGE</div></div>
-      <div style={S.secTitle}>Bet History 📊</div>
+      <div style={S.secTitle}>Bet History 📋</div>
+
+      {/* All-time stats */}
       <div style={S.statsRow}>
         {[
           { val: `${winRate}%`, lbl: "Win Rate", color: "#f5a623" },
           { val: `${wins.length}W-${losses.length}L`, lbl: "Record", color: "#fff" },
-          { val: `${netPL >= 0 ? "+" : ""}$${netPL.toFixed(0)}`, lbl: "Net P&L", color: netPL >= 0 ? "#2ecc71" : "#e74c3c" },
+          { val: `${netPL >= 0 ? "+" : ""}${fmt(netPL)}`, lbl: "Net P&L", color: netPL >= 0 ? "#2ecc71" : "#e74c3c" },
         ].map((s, i) => (
           <div key={i} style={{ ...S.statBox, flex: 1 }}>
             <div style={{ ...S.statVal, color: s.color, fontSize: 16 }}>{s.val}</div>
@@ -875,35 +998,53 @@ function History({ bets, onUpdate, onNav }) {
           </div>
         ))}
       </div>
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 14 }}>
+
+      {/* Filters */}
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 8 }}>
         {["All", ...SPORT_OPTIONS.filter(s => bets.some(b => b.sport === s))].map(s => (
-          <button key={s} onClick={() => setFilterSport(s)} style={{ background: filterSport === s ? "#1a1500" : "#13131a", border: `1px solid ${filterSport === s ? "#f5a623" : "#222"}`, color: filterSport === s ? "#f5a623" : "#666", borderRadius: 20, padding: "6px 14px", cursor: "pointer", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600 }}>
+          <button key={s} onClick={() => setFilterSport(s)} style={{ background: filterSport === s ? "#1a1500" : "#131313a", border: `1px solid ${filterSport === s ? "#f5a623" : "#333"}`, color: filterSport === s ? "#f5a623" : "#888", borderRadius: 20, padding: "4px 12px", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
             {s}
           </button>
         ))}
       </div>
-      {filtered.length === 0 ? <div style={S.empty}>No bets yet.</div> : filtered.map(bet => (
-        <div key={bet.id} style={S.betCard}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-            <div style={{ display: "flex", gap: 8 }}>
-              <span style={S.betSport}>{bet.sport}</span>
-              <span style={{ ...S.tag, background: bet.type === "Planned" ? "#1a2e1a" : "#2a1a00", color: bet.type === "Planned" ? "#2ecc71" : "#f5a623" }}>{bet.type === "Planned" ? "✅" : "⚡"} {bet.type}</span>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {["All", "Win", "Loss", "Pending"].map(r => (
+          <button key={r} onClick={() => setFilterResult(r)} style={{ background: filterResult === r ? "#1a1500" : "#131313", border: `1px solid ${filterResult === r ? "#f5a623" : "#333"}`, color: filterResult === r ? "#f5a623" : "#888", borderRadius: 20, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>
+            {r}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div style={S.empty}>No bets match this filter.</div>
+      ) : (
+        <div>
+          {/* This week — expanded by default, collapsible by day */}
+          {thisWeekDates.length > 0 && (
+            <div>
+              <div style={{ color: "#555", fontSize: 11, fontWeight: 600, letterSpacing: 1, marginBottom: 8, textTransform: "uppercase" }}>This Week</div>
+              {thisWeekDates.map(dateStr => <DaySection key={dateStr} dateStr={dateStr} />)}
             </div>
-            <div style={{ display: "flex", gap: 4 }}>
-              {["Win", "Loss", "Pending"].map(r => (
-                <button key={r} onClick={() => onUpdate(bet.id, r)} style={{ background: bet.result === r ? (r === "Win" ? "#1a2e1a" : r === "Loss" ? "#2a0f0f" : "#1a1500") : "#0f0f18", border: `1px solid ${bet.result === r ? (r === "Win" ? "#2ecc71" : r === "Loss" ? "#e74c3c" : "#f5a623") : "#2a2a38"}`, borderRadius: 6, width: 28, height: 28, color: bet.result === r ? (r === "Win" ? "#2ecc71" : r === "Loss" ? "#e74c3c" : "#f5a623") : "#555", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                  {r === "Win" ? "W" : r === "Loss" ? "L" : "P"}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div style={{ color: "#fff", fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{bet.game}</div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "#f5a623", fontWeight: 700 }}>{bet.pick} <span style={{ color: "#888", fontWeight: 400 }}>{bet.odds}</span></span>
-            <span style={{ color: "#ccc", fontSize: 13 }}>${bet.amount} → <span style={{ color: "#f5a623" }}>{fmt(calcProfit(bet.amount, bet.odds))}</span></span>
-          </div>
+          )}
+
+          {/* Older — grouped by month, collapsed by default */}
+          {Object.keys(olderByMonth).map(monthKey => {
+            const isMonthExpanded = expandedGroups[monthKey] === true; // default closed
+            return (
+              <div key={monthKey} style={{ marginBottom: 16 }}>
+                <div onClick={() => toggleGroup(monthKey)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#111", borderRadius: 8, cursor: "pointer", marginBottom: isMonthExpanded ? 8 : 0, border: "1px solid #222" }}>
+                  <span style={{ color: "#888", fontWeight: 600, fontSize: 13 }}>{monthKey}</span>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <span style={{ color: "#555", fontSize: 12 }}>{olderByMonth[monthKey].reduce((s, d) => s + groups[d].length, 0)} bets</span>
+                    <span style={{ color: "#555", fontSize: 12 }}>{isMonthExpanded ? "▲" : "▼"}</span>
+                  </div>
+                </div>
+                {isMonthExpanded && olderByMonth[monthKey].map(dateStr => <DaySection key={dateStr} dateStr={dateStr} />)}
+              </div>
+            );
+          })}
         </div>
-      ))}
+      )}
     </div>
   );
 }
