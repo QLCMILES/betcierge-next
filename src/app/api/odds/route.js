@@ -12,19 +12,14 @@ const SPORTS = [
 ];
 
 async function fetchOdds(apiKey) {
-  const now = Date.now();
-  const from = new Date(now - 2 * 60 * 60 * 1000).toISOString();  // 2hrs ago (catch games in progress)
-  const to = new Date(now + 48 * 60 * 60 * 1000).toISOString();   // 48hrs ahead
-
+  
   const results = await Promise.all(
-    SPORTS.map(sport =>
-      fetch(
-        `https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american&commenceTimeFrom=${from}&commenceTimeTo=${to}`,
-        { cache: 'no-store' }
-      )
-        .then(r => r.ok ? r.json() : [])
-        .catch(() => [])
+    fetch(
+      `https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american`,
+      { cache: 'no-store' }
     )
+      .then(r => r.ok ? r.json() : [])
+      .catch(() => [])
   );
 
   return results.flat().filter(g => g && g.id);
