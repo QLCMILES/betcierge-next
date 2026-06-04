@@ -26,9 +26,10 @@ export async function GET(request) {
     const oddsRes = await fetch('https://betcierge-next.vercel.app/api/odds', { method: 'POST' });
     const oddsData = await oddsRes.json();
     const now = new Date();
-    const cutoff = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-    const slimGames = (oddsData.games || [])
-      .filter(g => new Date(g.commence_time) > cutoff)
+const cutoff = new Date(now.getTime() + 15 * 60 * 1000);
+const upperBound = new Date(now.getTime() + 14 * 60 * 60 * 1000);
+const slimGames = (oddsData.games || [])
+  .filter(g => new Date(g.commence_time) > cutoff && new Date(g.commence_time) < upperBound)
       .slice(0, 12)
       .map(g => {
         const bm = g.bookmakers?.[0];
