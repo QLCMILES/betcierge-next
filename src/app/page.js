@@ -361,9 +361,13 @@ let todayOddsContext = "";
 try {
   const oddsRes = await fetch("/api/odds", { method: "POST" });
   const oddsData = await oddsRes.json();
-  if (oddsData.games && oddsData.games.length > 0) {
+  const now = new Date();
+const cutoff = new Date(now.getTime() + 15 * 60 * 1000);
+const upperBound = new Date(now.getTime() + 14 * 60 * 60 * 1000);
+const filteredGames = oddsData.games.filter(g => new Date(g.commence_time) > cutoff && new Date(g.commence_time) < upperBound);
+if (filteredGames.length > 0) {
     todayOddsContext = "\n\nLIVE ODDS FROM BETCIERGE (use ONLY these odds, never guess):\n" +
-      oddsData.games.slice(0, 20).map(g => {
+      filteredGames.slice(0, 20).map(g => {
         const bk = g.bookmakers?.[0];
         if (!bk) return null;
         const h2h = bk.markets?.find(m => m.key === "h2h");
