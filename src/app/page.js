@@ -37,7 +37,7 @@ const todayDisplay = () => new Date().toLocaleDateString("en-US", { weekday: "lo
 // ── API Call Helper ────────────────────────────────────────────────────────
 const callClaude = async (messages, system, useSearch = false, imageBase64 = null, maxTokens = 1500) => {
   const body = {
-    model: "claude-haiku-4-5-20251001",
+    model: "claude-sonnet-4-6-20251001",
     max_tokens: maxTokens,
     system,
     messages,
@@ -172,7 +172,7 @@ function SnapToLog({ onConfirm, onCancel }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
+          model: "claude-sonnet-4-6-20251001",
           max_tokens: 1000,
           system: `You are Hunter. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). Simplify the pick to essential info only (e.g. "Angels -1.5" not full pitcher strings). Return ONLY raw JSON: {"sport":"...","game":"...","betType":"...","pick":"...","odds":"...","amount":0,"toWin":0,"gameDate":"YYYY-MM-DD","gameTime":"HH:MM","confidence":95}. If unclear: {"error":"reason"}. IMPORTANT: Never guess team names, player names, or any text you cannot clearly read. Use empty string "" for any field not clearly visible in the image. For gameDate use the game start date in ET. For gameTime use 24hr format in ET. If no date/time found, use today's date and empty string for time.`,
           messages: [{ role: "user", content: [
@@ -191,7 +191,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
+            model: "claude-sonnet-4-6-20251001",
             max_tokens: 200,
             system: `You are a sports schedule lookup assistant. Return ONLY raw JSON with no markdown: {"gameDate":"YYYY-MM-DD","gameTime":"HH:MM"}. Use 24hr ET timezone.`,
             messages: [{ role: "user", content: `What date and time does this game start: ${parsed.sport} - ${parsed.game}?` }],
