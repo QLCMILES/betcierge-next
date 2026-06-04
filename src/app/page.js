@@ -1114,6 +1114,9 @@ useEffect(() => {
       type: b.type,
       result: b.result,
       isToday: b.is_today,
+      gameDate: b.game_date,
+      gameTime: b.game_time,
+      gameId: b.game_id,
     })));
   };
   loadBets();
