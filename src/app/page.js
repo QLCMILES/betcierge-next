@@ -130,7 +130,7 @@ function Onboarding({ onComplete }) {
         <button style={{ ...S.ob.nextBtn, ...(canNext[step]() ? {} : { opacity: 0.3, cursor: "not-allowed" }) }}
           onClick={() => canNext[step]() && (step < 4 ? setStep(step + 1) : onComplete({ ...form, bankroll: parseFloat(form.bankroll), goal: parseFloat(form.goal) }))}
           disabled={!canNext[step]()}>
-          {step === 4 ? "Start My Free Month →" : step < 3 ? "Continue →" : "Meet Betsy →"}
+          {step === 4 ? "Start My Free Month →" : step < 3 ? "Continue →" : "Meet Hunter →"}
         </button>
       </div>
     </div>
@@ -174,7 +174,7 @@ function SnapToLog({ onConfirm, onCancel }) {
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
           max_tokens: 1000,
-          system: `You are Betsy. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). Simplify the pick to essential info only (e.g. "Angels -1.5" not full pitcher strings). Return ONLY raw JSON: {"sport":"...","game":"...","betType":"...","pick":"...","odds":"...","amount":0,"toWin":0,"gameDate":"YYYY-MM-DD","gameTime":"HH:MM","confidence":95}. If unclear: {"error":"reason"}. IMPORTANT: Never guess team names, player names, or any text you cannot clearly read. Use empty string "" for any field not clearly visible in the image. For gameDate use the game start date in ET. For gameTime use 24hr format in ET. If no date/time found, use today's date and empty string for time.`,
+          system: `You are Hunter. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). Simplify the pick to essential info only (e.g. "Angels -1.5" not full pitcher strings). Return ONLY raw JSON: {"sport":"...","game":"...","betType":"...","pick":"...","odds":"...","amount":0,"toWin":0,"gameDate":"YYYY-MM-DD","gameTime":"HH:MM","confidence":95}. If unclear: {"error":"reason"}. IMPORTANT: Never guess team names, player names, or any text you cannot clearly read. Use empty string "" for any field not clearly visible in the image. For gameDate use the game start date in ET. For gameTime use 24hr format in ET. If no date/time found, use today's date and empty string for time.`,
           messages: [{ role: "user", content: [
             { type: "image", source: { type: "base64", media_type: file.type || "image/jpeg", data: base64 } },
             { type: "text", text: "Extract the bet details from this slip." }
@@ -256,12 +256,12 @@ if (!parsed.gameDate || !parsed.gameTime) {
       {stage === "reading" && (
         <div style={{ padding: 32, textAlign: "center" }}>
           {imagePreview && <img src={imagePreview} alt="slip" style={{ width: "100%", maxHeight: 200, objectFit: "contain", marginBottom: 16 }} />}
-          <div style={{ color: "#f5a623", fontWeight: 700, fontSize: 16 }}>Betsy is reading your slip...</div>
+          <div style={{ color: "#f5a623", fontWeight: 700, fontSize: 16 }}>Hunter is reading your slip...</div>
         </div>
       )}
       {stage === "confirm" && extractedBet && (
         <div style={{ padding: 16 }}>
-          <div style={{ color: "#2ecc71", fontSize: 17, fontWeight: 700, marginBottom: 12 }}>✅ Betsy read your slip</div>
+          <div style={{ color: "#2ecc71", fontSize: 17, fontWeight: 700, marginBottom: 12 }}>✅ Hunter read your slip</div>
           <div style={{ color: "#888", fontSize: 12, marginBottom: 8 }}>Review the details below — tap Edit Manually if anything needs correcting.</div>
           {imagePreview && <img src={imagePreview} alt="slip" style={{ width: "100%", maxHeight: 160, objectFit: "contain", marginBottom: 12 }} />}
           <div style={{ background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 14, padding: 16, marginBottom: 14 }}>
@@ -293,8 +293,8 @@ if (!parsed.gameDate || !parsed.gameTime) {
   );
 }
 
-// ── Betsy Chat ────────────────────────────────────────────────────────────
-function BetsyChat({ user, bets, userKey }) {
+// ── Hunter Chat ────────────────────────────────────────────────────────────
+function HunterChat({ user, bets, userKey }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -321,7 +321,7 @@ function BetsyChat({ user, bets, userKey }) {
         setMessages(data.map(m => ({ role: m.role, text: m.content })));
       } else {
         // First time — set a welcome message
-        const welcome = { role: 'assistant', text: `Hey ${user.name.split(' ')[0]} 👋 I'm Betsy, your personal betting concierge. I'm here to help you find edges, stay disciplined, and build your bankroll. What's on your mind today?` };
+        const welcome = { role: 'assistant', text: `Hey ${user.name.split(' ')[0]} 👋 I'm Hunter, your personal betting concierge. I'm here to help you find edges, stay disciplined, and build your bankroll. What's on your mind today?` };
         setMessages([welcome]);
         await supabase.from('user_conversations').insert({ user_id: userKey, role: 'assistant', content: welcome.text });
       }
@@ -343,7 +343,7 @@ function BetsyChat({ user, bets, userKey }) {
     // Save user message to Supabase
     await supabase.from('user_conversations').insert({ user_id: userKey, role: 'user', content: userMsg });
 
-    // Fetch today's picks to inject into Betsy's context
+    // Fetch today's picks to inject into Hunter's context
 let todayPicksContext = "";
 try {
   const picksRes = await fetch("/api/claude");
@@ -380,7 +380,7 @@ try {
     const recentMessages = [...messages, newUserMsg].slice(-20);
     const result = await callClaude(
         recentMessages.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })),
-        `You are Betsy, the sharp AI sports betting concierge inside Betcierge. Today is ${todayDisplay()}.
+        `You are Hunter, the sharp AI sports betting concierge inside Betcierge. Today is ${todayDisplay()}.
 
 USER CONTEXT:
 The user is ${user.name.split(" ")[0]}. Weekly bankroll: $${user.bankroll}. Weekly goal: +$${user.goal}. Current P&L: ${netPL >= 0 ? "+" : ""}$${netPL.toFixed(2)}. Bets logged this week: ${bets.filter(b => b.isToday).length}.
@@ -430,13 +430,13 @@ You remember this user's history from previous conversations.${todayPicksContext
   };
 
   return (
-    <div style={S.Betsy.wrap}>
-      <div style={S.Betsy.header}>
+    <div style={S.Hunter.wrap}>
+      <div style={S.Hunter.header}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={S.Betsy.avatar}>H</div>
+          <div style={S.Hunter.avatar}>H</div>
           <div>
-            <div style={S.Betsy.name}>Betsy — Your Betcierge</div>
-            <div style={S.Betsy.sub}>AI-powered · Always in your corner</div>
+            <div style={S.Hunter.name}>Hunter — Your Betcierge</div>
+            <div style={S.Hunter.sub}>AI-powered · Always in your corner</div>
           </div>
         </div>
       </div>
@@ -470,13 +470,13 @@ return (
               ) : m.text}
             </div>
           ))}
-        {loading && <div style={{ maxWidth: "88%", padding: "10px 14px", borderRadius: 16, fontSize: 13, background: "#1e1e2e", color: "#555", fontStyle: "italic", alignSelf: "flex-start" }}>Betsy is thinking...</div>}
+        {loading && <div style={{ maxWidth: "88%", padding: "10px 14px", borderRadius: 16, fontSize: 13, background: "#1e1e2e", color: "#555", fontStyle: "italic", alignSelf: "flex-start" }}>Hunter is thinking...</div>}
         <div ref={bottomRef} />
       </div>
 
       <div style={{ display: "flex", gap: 8, padding: "12px 14px", borderTop: "1px solid #1e1e2e" }}>
         <input style={{ flex: 1, background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 12, padding: "10px 14px", color: "#fff", fontSize: 14, outline: "none" }}
-          placeholder="Ask Betsy anything..."
+          placeholder="Ask Hunter anything..."
           value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMessage()} />
         <button style={{ background: "linear-gradient(135deg,#f5a623,#f7c948)", color: "#000", border: "none", borderRadius: 12, width: 44, fontWeight: 700, fontSize: 18, cursor: "pointer" }} onClick={sendMessage}>→</button>
       </div>
@@ -556,7 +556,7 @@ function PicksTab({ userKey }) {
         <div style={{ textAlign: "center", padding: 40 }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🕐</div>
           <div style={{ color: "#fff", fontSize: 16, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginBottom: 8 }}>Picks drop at 11 AM</div>
-          <div style={{ color: "#555", fontSize: 13 }}>Betsy researches every morning and posts his top plays for the day.</div>
+          <div style={{ color: "#555", fontSize: 13 }}>Hunter researches every morning and posts his top plays for the day.</div>
         </div>
       )}
 
@@ -657,10 +657,10 @@ const todayBets = bets.filter(b => b.gameDate === today).length;
         </div>
       </div>
 
-      {/* Betsy Chat — Front and Center */}
+      {/* Hunter Chat — Front and Center */}
       <div style={{ marginBottom: 8 }}>
-        <div style={S.secTitle}>Talk to Betsy 🤖</div>
-        <BetsyChat user={user} bets={bets} userKey={userKey} />
+        <div style={S.secTitle}>Talk to Hunter 🤖</div>
+        <HunterChat user={user} bets={bets} userKey={userKey} />
       </div>
     </div>
   );
@@ -776,7 +776,7 @@ function BetLogger({ onSave, onNav }) {
       <button onClick={() => setMode("snap")} style={S.logChoice.snap}>
         <div style={{ fontSize: 40, marginBottom: 12 }}>📸</div>
         <div style={S.logChoice.snapTitle}>Snap to Log</div>
-        <div style={S.logChoice.snapSub}>Upload a screenshot. Betsy reads it automatically.</div>
+        <div style={S.logChoice.snapSub}>Upload a screenshot. Hunter reads it automatically.</div>
         <div style={S.logChoice.snapBadge}>RECOMMENDED</div>
       </button>
       <button onClick={() => setMode("manual")} style={S.logChoice.manual}>
@@ -1211,7 +1211,7 @@ const S = {
   err: { color: "#e74c3c", fontSize: 12, marginBottom: 6 },
   hint: { background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 8, padding: "8px 12px", color: "#888", fontSize: 13, marginBottom: 8 },
   saveBtn: { width: "100%", background: "linear-gradient(135deg,#f5a623,#f7c948)", color: "#000", border: "none", borderRadius: 12, padding: 16, fontSize: 16, fontWeight: 700, cursor: "pointer", marginTop: 8 },
-  Betsy: {
+  Hunter: {
     wrap: { background: "#13131a", border: "1px solid #222", borderRadius: 20, overflow: "hidden", marginBottom: 16 },
     header: { background: "#1a1500", borderBottom: "1px solid #2a2000", padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" },
     avatar: { width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg,#f5a623,#f7c948)", color: "#000", fontWeight: 900, fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Cormorant Garamond',serif" },
