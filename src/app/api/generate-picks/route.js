@@ -23,7 +23,7 @@ export async function GET(request) {
       .update({ status: 'inactive' })
       .eq('date', today);
 
-    const oddsRes = await fetch('https://betcierge-next.vercel.app/api/odds');
+    const oddsRes = await fetch('https://betcierge-next.vercel.app/api/odds', { method: 'POST' });
     const oddsData = await oddsRes.json();
     const now = new Date();
     const cutoff = new Date(now.getTime() + 2 * 60 * 60 * 1000);
@@ -61,7 +61,7 @@ export async function GET(request) {
         model: 'claude-sonnet-4-5',
         max_tokens: 8000,  // ✅ bumped for long breakdowns
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        system: `You are Betsy, an elite sports betting analyst and professional handicapper. Today is ${today_display}.
+        system: `You are Hunter, an elite sports betting analyst and professional handicapper. Today is ${today_display}.
 
 You have web search — use it aggressively. Search for EACH pick before writing about it. You are looking for:
 - Current injury reports and lineup confirmations
@@ -77,7 +77,7 @@ Write each insight like a PROFESSIONAL HANDICAPPER making a case. Use bold secti
           content: `Today is ${today_display}. Available games with current lines: ${gamesContext}
 
 Search the web for today's matchup data, then select the 3 best pre-game plays. Return ONLY raw JSON, no markdown:
-{"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"DETAILED multi-paragraph breakdown with bold headers, specific stats, pitcher names, line movement, and sharp money context. Minimum 150 words.","units":1}]}`
+{"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"DETAILED multi-paragraph breakdown with bold headers, specific stats, pitcher names, line movement, and sharp money context. Minimum 150 words.","units":1,"game_time":"H:MM PM ET"}]}`
         }],
       }),
     });
@@ -95,17 +95,18 @@ Search the web for today's matchup data, then select the 3 best pre-game plays. 
     if (!parsed.picks) throw new Error('Invalid format');
 
     const rows = parsed.picks.map(p => ({
-      date: today,
-      sport: p.sport,
-      game: p.game,
-      pick: p.pick,
-      odds: p.odds,
-      confidence: p.confidence,
-      insight: p.insight,
-      units: parseInt(p.units) || 1,
-      status: 'active',
-      created_at: new Date().toISOString(),
-    }));
+  date: today,
+  sport: p.sport,
+  game: p.game,
+  pick: p.pick,
+  odds: p.odds,
+  confidence: p.confidence,
+  insight: p.insight,
+  units: parseInt(p.units) || 1,
+  game_time: p.game_time || null,
+  status: 'active',
+  created_at: new Date().toISOString(),
+}));
 
     const { data: insertData, error } = await supabase
       .from('daily_picks')
