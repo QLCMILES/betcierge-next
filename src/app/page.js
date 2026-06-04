@@ -569,7 +569,7 @@ function PicksTab({ userKey }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <span style={{ background: "#1a1a00", color: "#f5a623", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6 }}>{pick.sport}</span>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {pick.game_time && <span style={{ color: "#555", fontSize: 11 }}>{pick.game_time}</span>}
+              {pick.game_time && <span style={{ color: "#f5a623", fontSize: 12, fontWeight: 600, background: "#2a1a00", padding: "2px 8px", borderRadius: 4 }}>🕐 {(() => { const [h, m] = pick.game_time.split(':'); const hour = parseInt(h); return `${hour > 12 ? hour - 12 : hour || 12}:${m} ${hour >= 12 ? 'PM' : 'AM'} ET`; })()}</span>}
               <span style={{ color: "#666", fontSize: 12 }}>{pick.units}U</span>
               <span style={{ background: confBg(pick.confidence), color: confColor(pick.confidence), border: `1px solid ${confColor(pick.confidence)}`, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>{pick.confidence}</span>
             </div>
