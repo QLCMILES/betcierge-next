@@ -1019,6 +1019,137 @@ function BetLogger({ onSave, onNav }) {
 }
 
 // — History ————————————————————————————————————————
+function Gamecast({ bets, onNav }) {
+  const [scores, setScores] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [lastUpdated, setLastUpdated] = React.useState(null);
+
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const activeBets = bets.filter(b => b.gameDate === today && b.gameId);
+  const gameIds = [...new Set(activeBets.map(b => b.gameId))];
+
+  const fetchScores = async () => {
+    if (!gameIds.length) { setLoading(false); return; }
+    try {
+      const res = await fetch('/api/live-scores', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gameIds })
+      });
+      const data = await res.json();
+      setScores(data.scores || []);
+      setLastUpdated(new Date());
+    } catch (e) {
+      console.error('Gamecast fetch error:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchScores();
+    const interval = setInterval(fetchScores, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const getSportEmoji = (sport) => {
+    if (sport?.includes('baseball')) return '⚾';
+    if (sport?.includes('basketball')) return '🏀';
+    if (sport?.includes('hockey')) return '🏒';
+    return '🎯';
+  };
+
+  const getStatusColor = (status) => {
+    if (status === 'final') return '#666';
+    if (status === 'live') return '#2ecc71';
+    return '#f5a623';
+  };
+
+  const getStatusLabel = (status) => {
+    if (status === 'final') return 'FINAL';
+    if (status === 'live') return '● LIVE';
+    return 'UPCOMING';
+  };
+
+  return (
+    <div style={S.screen}>
+      <div style={S.backRow}>
+        <button onClick={() => onNav('dashboard')} style={S.backBtn}>← Back</button>
+        <span style={S.logo}>BETCIERGE</span>
+        <button onClick={fetchScores} style={{ background: 'none', border: '1px solid #333', color: '#f5a623', borderRadius: 8, padding: '8px 14px', cursor: 'pointer', fontSize: 13 }}>↻ Refresh</button>
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ color: '#fff', fontFamily: "'Cormorant Garamond',serif", fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Gamecast</div>
+        {lastUpdated && <div style={{ color: '#555', fontSize: 11 }}>Updated {lastUpdated.toLocaleTimeString()}</div>}
+      </div>
+
+      {loading ? (
+        <div style={{ color: '#555', textAlign: 'center', padding: 40 }}>Loading scores...</div>
+      ) : activeBets.length === 0 ? (
+        <div style={{ color: '#555', textAlign: 'center', padding: 40, fontSize: 14 }}>No active bets today with game IDs tracked.</div>
+      ) : (
+        gameIds.map(gameId => {
+          const score = scores.find(s => s.game_id === gameId);
+          const gameBets = activeBets.filter(b => b.gameId === gameId);
+          const firstBet = gameBets[0];
+
+          return (
+            <div key={gameId} style={{ ...S.card, marginBottom: 16 }}>
+              {/* Game Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <span style={{ fontSize: 20 }}>{getSportEmoji(score?.sport)}</span>
+                <span style={{ color: getStatusColor(score?.status), fontSize: 11, fontWeight: 700, letterSpacing: 1 }}>
+                  {score ? getStatusLabel(score.status) : 'PENDING'}
+                </span>
+              </div>
+
+              {/* Score Board */}
+              {score ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, background: '#0f0f18', borderRadius: 12, padding: '14px 16px' }}>
+                  <div style={{ textAlign: 'center', flex: 1 }}>
+                    <div style={{ color: '#fff', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{score.away_team}</div>
+                    <div style={{ color: '#f5a623', fontSize: 32, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700 }}>{score.away_score}</div>
+                  </div>
+                  <div style={{ color: '#333', fontSize: 18, fontWeight: 700, padding: '0 12px' }}>@</div>
+                  <div style={{ textAlign: 'center', flex: 1 }}>
+                    <div style={{ color: '#fff', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{score.home_team}</div>
+                    <div style={{ color: '#f5a623', fontSize: 32, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700 }}>{score.home_score}</div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ background: '#0f0f18', borderRadius: 12, padding: '14px 16px', marginBottom: 16, textAlign: 'center' }}>
+                  <div style={{ color: '#fff', fontSize: 14, fontWeight: 600 }}>{firstBet?.game}</div>
+                  <div style={{ color: '#555', fontSize: 12, marginTop: 4 }}>{firstBet?.gameTime || 'Time TBD'}</div>
+                </div>
+              )}
+
+              {/* Your Bets on this game */}
+              <div style={{ color: '#666', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Your Bets</div>
+              {gameBets.map(bet => {
+                const isWinning = score && (
+                  (bet.pick?.includes(score.home_team) && score.home_score > score.away_score) ||
+                  (bet.pick?.includes(score.away_team) && score.away_score > score.home_score)
+                );
+                return (
+                  <div key={bet.id} style={{ background: '#0a0a0f', borderRadius: 10, padding: '10px 12px', marginBottom: 8, border: `1px solid ${bet.result === 'Win' ? '#2ecc7130' : bet.result === 'Loss' ? '#e74c3c30' : '#1e1e2e'}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>{bet.pick}</div>
+                      <div style={{ color: bet.result === 'Win' ? '#2ecc71' : bet.result === 'Loss' ? '#e74c3c' : isWinning ? '#2ecc71' : '#f5a623', fontSize: 11, fontWeight: 700 }}>
+                        {bet.result === 'Win' ? '✓ WIN' : bet.result === 'Loss' ? '✗ LOSS' : isWinning ? '↑ WINNING' : 'PENDING'}
+                      </div>
+                    </div>
+                    <div style={{ color: '#555', fontSize: 11, marginTop: 4 }}>{bet.betType} · {bet.odds > 0 ? '+' : ''}{bet.odds} · ${bet.amount} to win ${bet.toWin}</div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
 function History({ bets, onUpdate, onNav }) {
   const [filterSport, setFilterSport] = useState("All");
   const [filterResult, setFilterResult] = useState("All");
@@ -1328,6 +1459,7 @@ if (!user?.name) return <Onboarding onComplete={handleComplete} />;
       {screen === "dashboard" && <Dashboard user={user} bets={bets} onNav={setScreen} userKey={userKey} />}
       {screen === "picks" && <PicksTab userKey={userKey} />}
       {screen === "card" && <TodayCard bets={bets} onNav={setScreen} />}
+{screen === "gamecast" && <Gamecast bets={bets} onNav={setScreen} />}
       {screen === "logger" && <BetLogger onSave={addBet} onNav={setScreen} />}
       {screen === "history" && <History bets={bets} onUpdate={updateBet} onNav={setScreen} />}
 
@@ -1337,7 +1469,7 @@ if (!user?.name) return <Onboarding onComplete={handleComplete} />;
           { id: "dashboard", icon: "🏠", lbl: "Home" },
           { id: "picks", icon: "🎯", lbl: "Picks" },
           { id: "logger", icon: "📝", lbl: "Log" },
-          { id: "card", icon: "📋", lbl: "Card" },
+          { id: "gamecast", icon: "📡", lbl: "Gamecast" },
           { id: "history", icon: "📊", lbl: "History" },
         ].map(n => (
           <button key={n.id} onClick={() => setScreen(n.id)} style={{ flex: 1, background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer", padding: "6px 0", opacity: screen === n.id ? 1 : 0.4 }}>
