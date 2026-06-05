@@ -1020,9 +1020,9 @@ function BetLogger({ onSave, onNav }) {
 
 // — History ————————————————————————————————————————
 function Gamecast({ bets, onNav }) {
-  const [scores, setScores] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
-  const [lastUpdated, setLastUpdated] = React.useState(null);
+  const [scores, setScores] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
   const activeBets = bets.filter(b => b.gameDate === today && b.gameId);
@@ -1046,7 +1046,7 @@ function Gamecast({ bets, onNav }) {
     }
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     fetchScores();
     const interval = setInterval(fetchScores, 60000);
     return () => clearInterval(interval);
