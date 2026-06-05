@@ -637,9 +637,9 @@ return (
       </div>
 
       <div style={{ display: "flex", gap: 8, padding: "12px 14px", borderTop: "1px solid #1e1e2e" }}>
-        <input style={{ flex: 1, background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 12, padding: "10px 14px", color: "#fff", fontSize: 14, outline: "none" }}
+        <textarea style={{ flex: 1, background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 12, padding: "10px 14px", color: "#fff", fontSize: 14, outline: "none", resize: "none", minHeight: 44, maxHeight: 120, lineHeight: "1.5", fontFamily: "'Outfit',sans-serif" }}
           placeholder="Ask Hunter anything..."
-          value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMessage()} />
+          value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}></textarea>
         <button style={{ background: "linear-gradient(135deg,#f5a623,#f7c948)", color: "#000", border: "none", borderRadius: 12, width: 44, fontWeight: 700, fontSize: 18, cursor: "pointer" }} onClick={sendMessage}>→</button>
       </div>
     </div>
