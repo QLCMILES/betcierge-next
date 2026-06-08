@@ -121,3 +121,7 @@ Search the web for today's matchup data, then select the 3 best pre-game plays. 
     return Response.json({ error: error.message }, { status: 500 });
   }
 }
+
+export async function POST(request) {
+  return GET(request);
+}

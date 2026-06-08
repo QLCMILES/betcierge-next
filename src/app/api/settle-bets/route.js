@@ -326,3 +326,6 @@ function determineResult(bet, game) {
 
   return null;
 }
+export async function POST(request) {
+  return GET(request);
+}
