@@ -585,8 +585,8 @@ You remember this user's history from previous conversations.${todayPicksContext
       // Save assistant message to Supabase
       const { error: saveError } = await supabase.from('user_conversations').insert({ user_id: userKey, role: 'assistant', content: result.text });
 if (saveError) console.error('Failed to save assistant message:', saveError);
-    } catch {
-      setMessages(m => [...m, { role: "assistant", text: "Having a connection issue. Try again in a second." }]);
+    } catch(e) {
+      setMessages(m => [...m, { role: "assistant", text: `Having a connection issue: ${e?.message || String(e)}. Try again in a second.` }]);
     }
     setLoading(false);
   };
