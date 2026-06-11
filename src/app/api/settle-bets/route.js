@@ -27,7 +27,6 @@ const SPORT_MAP = {
   'mma': 'mma_mixed_martial_arts',
 };
 
-// Maps prop stat keywords from pick text to MLB Stats API stat fields
 const PROP_STAT_MAP = {
   'strikeout': { type: 'pitching', field: 'strikeOuts' },
   'strikeouts': { type: 'pitching', field: 'strikeOuts' },
@@ -53,36 +52,71 @@ const PROP_STAT_MAP = {
   'earned runs': { type: 'pitching', field: 'earnedRuns' },
 };
 
-// Parse a prop pick string into components
-// e.g. "Kyle Harrison Over 6.5 Strikeouts" -> { player, direction, line, statKey }
+const NBA_PROP_STAT_MAP = {
+  'point': 'PTS',
+  'points': 'PTS',
+  'pts': 'PTS',
+  'rebound': 'REB',
+  'rebounds': 'REB',
+  'reb': 'REB',
+  'assist': 'AST',
+  'assists': 'AST',
+  'ast': 'AST',
+  'steal': 'STL',
+  'steals': 'STL',
+  'block': 'BLK',
+  'blocks': 'BLK',
+  'turnover': 'TO',
+  'turnovers': 'TO',
+  'three': 'FG3M',
+  'threes': 'FG3M',
+  '3-pointer': 'FG3M',
+  '3-pointers': 'FG3M',
+  'three pointer': 'FG3M',
+  'three pointers': 'FG3M',
+};
+
+const NHL_PROP_STAT_MAP = {
+  'goal': 'goals',
+  'goals': 'goals',
+  'assist': 'assists',
+  'assists': 'assists',
+  'point': 'points',
+  'points': 'points',
+  'save': 'saves',
+  'saves': 'saves',
+  'shot': 'shots',
+  'shots': 'shots',
+};
+
 function parsePropPick(pick) {
   const lower = pick.toLowerCase();
   const directionMatch = lower.match(/\b(over|under)\b/);
   if (!directionMatch) return null;
   const direction = directionMatch[1];
-
   const lineMatch = lower.match(/(\d+\.?\d*)/);
   if (!lineMatch) return null;
   const line = parseFloat(lineMatch[1]);
-
-  // Find stat type
   let statKey = null;
-  for (const keyword of Object.keys(PROP_STAT_MAP)) {
-    if (lower.includes(keyword)) {
-      statKey = keyword;
-      break;
-    }
+  for (const keyword of Object.keys({...PROP_STAT_MAP, ...NBA_PROP_STAT_MAP, ...NHL_PROP_STAT_MAP})) {
+    if (lower.includes(keyword)) { statKey = keyword; break; }
   }
   if (!statKey) return null;
-
-  // Extract player name — everything before "over" or "under"
   const playerPart = pick.substring(0, directionMatch.index).trim();
   if (!playerPart) return null;
-
   return { player: playerPart, direction, line, statKey };
 }
 
-// Fetch MLB gamePks for a given date
+function matchPlayerName(propPlayer, fullName) {
+  const prop = propPlayer.toLowerCase().trim();
+  const full = fullName.toLowerCase().trim();
+  if (full.includes(prop) || prop.includes(full)) return true;
+  const propLast = prop.split(' ').pop();
+  const fullLast = full.split(' ').pop();
+  if (propLast && fullLast && propLast === fullLast && propLast.length > 3) return true;
+  return false;
+}
+
 async function fetchMLBGamePks(date) {
   try {
     const res = await fetch(
@@ -92,17 +126,10 @@ async function fetchMLBGamePks(date) {
     const games = data.dates?.[0]?.games || [];
     return games
       .filter(g => g.status?.abstractGameState === 'Final')
-      .map(g => ({
-        gamePk: g.gamePk,
-        awayTeam: g.teams?.away?.team?.name,
-        homeTeam: g.teams?.home?.team?.name,
-      }));
-  } catch {
-    return [];
-  }
+      .map(g => ({ gamePk: g.gamePk, awayTeam: g.teams?.away?.team?.name, homeTeam: g.teams?.home?.team?.name }));
+  } catch { return []; }
 }
 
-// Fetch box score and return all players with their game stats
 async function fetchBoxScorePlayers(gamePk) {
   try {
     const res = await fetch(`https://statsapi.mlb.com/api/v1/game/${gamePk}/boxscore`);
@@ -111,85 +138,194 @@ async function fetchBoxScorePlayers(gamePk) {
     for (const side of ['away', 'home']) {
       const teamPlayers = data.teams?.[side]?.players || {};
       for (const player of Object.values(teamPlayers)) {
-        players.push({
-          fullName: player.person?.fullName || '',
-          stats: player.stats || {},
-        });
+        players.push({ fullName: player.person?.fullName || '', stats: player.stats || {} });
       }
     }
     return players;
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
-// Match player name — handles partial matches e.g. "K. Harrison" vs "Kyle Harrison"
-function matchPlayerName(propPlayer, fullName) {
-  const prop = propPlayer.toLowerCase().trim();
-  const full = fullName.toLowerCase().trim();
-  if (full.includes(prop) || prop.includes(full)) return true;
-  // Try last name match
-  const propLast = prop.split(' ').pop();
-  const fullLast = full.split(' ').pop();
-  if (propLast && fullLast && propLast === fullLast && propLast.length > 3) return true;
-  return false;
-}
-
-// Settle a single prop bet using MLB Stats API
 async function settleMLBProp(bet) {
   if (!bet.game_date) return null;
-
   const parsed = parsePropPick(bet.pick);
   if (!parsed) return null;
-
   const { player, direction, line, statKey } = parsed;
   const statDef = PROP_STAT_MAP[statKey];
   if (!statDef) return null;
-
-  // Get all final games for the bet's date
   const games = await fetchMLBGamePks(bet.game_date);
   if (!games.length) return null;
-
-  // If we have a game_id, try to find the matching gamePk via team name
-  // Otherwise search all games that day
   let gamePksToSearch = games.map(g => g.gamePk);
-
   if (bet.game) {
     const betGame = bet.game.toLowerCase();
     const matchingGame = games.find(g => {
       const away = g.awayTeam?.toLowerCase() || '';
       const home = g.homeTeam?.toLowerCase() || '';
-      return betGame.includes(away.split(' ').pop()) ||
-             betGame.includes(home.split(' ').pop()) ||
-             away.split(' ').some(w => w.length > 3 && betGame.includes(w)) ||
-             home.split(' ').some(w => w.length > 3 && betGame.includes(w));
+      return betGame.includes(away.split(' ').pop()) || betGame.includes(home.split(' ').pop()) ||
+        away.split(' ').some(w => w.length > 3 && betGame.includes(w)) ||
+        home.split(' ').some(w => w.length > 3 && betGame.includes(w));
     });
     if (matchingGame) gamePksToSearch = [matchingGame.gamePk];
   }
-
-  // Search each game's box score for the player
   for (const gamePk of gamePksToSearch) {
     const players = await fetchBoxScorePlayers(gamePk);
     const playerData = players.find(p => matchPlayerName(player, p.fullName));
     if (!playerData) continue;
-
     const statValue = playerData.stats[statDef.type]?.[statDef.field];
     if (statValue === undefined || statValue === null) continue;
-
-    // innings pitched is a string like "6.1" — convert to numeric outs
-    let actual = statDef.field === 'inningsPitched'
-      ? parseFloat(statValue)
-      : parseInt(statValue);
-
+    let actual = statDef.field === 'inningsPitched' ? parseFloat(statValue) : parseInt(statValue);
     if (isNaN(actual)) continue;
-
-    if (direction === 'over') {
-      return actual > line ? 'Win' : actual === line ? 'Pending' : 'Loss';
-    } else {
-      return actual < line ? 'Win' : actual === line ? 'Pending' : 'Loss';
-    }
+    return direction === 'over' ? (actual > line ? 'Win' : actual === line ? 'Pending' : 'Loss')
+                                : (actual < line ? 'Win' : actual === line ? 'Pending' : 'Loss');
   }
+  return null;
+}
 
+async function fetchNBAGames(date) {
+  try {
+    const res = await fetch(
+      `https://stats.nba.com/stats/scoreboardV2?DayOffset=0&LeagueID=00&gameDate=${date}`,
+      { headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Referer': 'https://www.nba.com/',
+        'Origin': 'https://www.nba.com',
+        'x-nba-stats-origin': 'stats',
+        'x-nba-stats-token': 'true',
+        'Accept': 'application/json',
+      }}
+    );
+    const data = await res.json();
+    const games = data.resultSets?.find(r => r.name === 'GameHeader');
+    if (!games) return [];
+    const h = games.headers;
+    const gameIdIdx = h.indexOf('GAME_ID');
+    const statusIdx = h.indexOf('GAME_STATUS_TEXT');
+    return games.rowSet
+      .filter(row => row[statusIdx]?.toLowerCase().includes('final'))
+      .map(row => ({ gameId: row[gameIdIdx] }));
+  } catch(e) {
+    console.error('fetchNBAGames error:', e.message);
+    return [];
+  }
+}
+
+async function fetchNBABoxScorePlayers(gameId) {
+  try {
+    const res = await fetch(
+      `https://stats.nba.com/stats/boxscoretraditionalv2?GameID=${gameId}&StartPeriod=0&EndPeriod=10&StartRange=0&EndRange=28800&RangeType=0`,
+      { headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Referer': 'https://www.nba.com/',
+        'Origin': 'https://www.nba.com',
+        'x-nba-stats-origin': 'stats',
+        'x-nba-stats-token': 'true',
+        'Accept': 'application/json',
+      }}
+    );
+    const data = await res.json();
+    const playerStats = data.resultSets?.find(r => r.name === 'PlayerStats');
+    if (!playerStats) return [];
+    const h = playerStats.headers;
+    const nameIdx = h.indexOf('PLAYER_NAME');
+    return playerStats.rowSet.map(row => ({
+      fullName: row[nameIdx],
+      stats: {
+        PTS: row[h.indexOf('PTS')],
+        REB: row[h.indexOf('REB')],
+        AST: row[h.indexOf('AST')],
+        STL: row[h.indexOf('STL')],
+        BLK: row[h.indexOf('BLK')],
+        TO: row[h.indexOf('TO')],
+        FG3M: row[h.indexOf('FG3M')],
+      }
+    }));
+  } catch(e) {
+    console.error('fetchNBABoxScorePlayers error:', e.message);
+    return [];
+  }
+}
+
+async function settleNBAProp(bet) {
+  if (!bet.game_date) return null;
+  const parsed = parsePropPick(bet.pick);
+  if (!parsed) return null;
+  const { player, direction, line, statKey } = parsed;
+  const statField = NBA_PROP_STAT_MAP[statKey];
+  if (!statField) return null;
+  const games = await fetchNBAGames(bet.game_date);
+  if (!games.length) return null;
+  for (const game of games) {
+    const players = await fetchNBABoxScorePlayers(game.gameId);
+    const playerData = players.find(p => matchPlayerName(player, p.fullName));
+    if (!playerData) continue;
+    const actual = parseInt(playerData.stats[statField]);
+    if (isNaN(actual)) continue;
+    return direction === 'over' ? (actual > line ? 'Win' : actual === line ? 'Pending' : 'Loss')
+                                : (actual < line ? 'Win' : actual === line ? 'Pending' : 'Loss');
+  }
+  return null;
+}
+
+async function fetchNHLGames(date) {
+  try {
+    const res = await fetch(`https://api-web.nhle.com/v1/score/${date}`);
+    const data = await res.json();
+    return (data.games || [])
+      .filter(g => g.gameState === 'OFF' || g.gameState === 'FINAL')
+      .map(g => ({ gameId: g.id }));
+  } catch(e) {
+    console.error('fetchNHLGames error:', e.message);
+    return [];
+  }
+}
+
+async function fetchNHLBoxScorePlayers(gameId) {
+  try {
+    const res = await fetch(`https://api-web.nhle.com/v1/gamecenter/${gameId}/boxscore`);
+    const data = await res.json();
+    const players = [];
+    for (const side of ['homeTeam', 'awayTeam']) {
+      const team = data.playerByGameStats?.[side];
+      if (!team) continue;
+      for (const cat of ['forwards', 'defense', 'goalies']) {
+        for (const p of team[cat] || []) {
+          players.push({
+            fullName: `${p.firstName?.default || ''} ${p.lastName?.default || ''}`.trim(),
+            stats: {
+              goals: p.goals ?? 0,
+              assists: p.assists ?? 0,
+              points: (p.goals ?? 0) + (p.assists ?? 0),
+              saves: p.saveShotsAgainst ?? 0,
+              shots: p.shots ?? 0,
+            }
+          });
+        }
+      }
+    }
+    return players;
+  } catch(e) {
+    console.error('fetchNHLBoxScorePlayers error:', e.message);
+    return [];
+  }
+}
+
+async function settleNHLProp(bet) {
+  if (!bet.game_date) return null;
+  const parsed = parsePropPick(bet.pick);
+  if (!parsed) return null;
+  const { player, direction, line, statKey } = parsed;
+  const statField = NHL_PROP_STAT_MAP[statKey];
+  if (!statField) return null;
+  const games = await fetchNHLGames(bet.game_date);
+  if (!games.length) return null;
+  for (const game of games) {
+    const players = await fetchNHLBoxScorePlayers(game.gameId);
+    const playerData = players.find(p => matchPlayerName(player, p.fullName));
+    if (!playerData) continue;
+    const actual = parseFloat(playerData.stats[statField]);
+    if (isNaN(actual)) continue;
+    return direction === 'over' ? (actual > line ? 'Win' : actual === line ? 'Pending' : 'Loss')
+                                : (actual < line ? 'Win' : actual === line ? 'Pending' : 'Loss');
+  }
   return null;
 }
 
@@ -217,7 +353,6 @@ export async function GET(request) {
       if (key) sportsNeeded.add(key);
     }
 
-    // Fetch game scores for straight/spread/total bets
     const apiKey = process.env.ODDS_API_KEY;
     const scoresPromises = [...sportsNeeded].map(sport =>
       fetch(`https://api.the-odds-api.com/v4/sports/${sport}/scores/?apiKey=${apiKey}&daysFrom=3&dateFormat=iso`)
@@ -232,17 +367,21 @@ export async function GET(request) {
 
     for (const bet of pendingBets) {
       const betType = bet.bet_type?.toLowerCase().replace(/[^a-z]/g, '');
+      const sport = bet.sport?.toLowerCase();
       let result = null;
 
-      // Route prop bets to MLB Stats API
       if (betType?.includes('prop')) {
-        const sport = bet.sport?.toLowerCase();
         if (sport === 'mlb' || sport === 'baseball') {
           result = await settleMLBProp(bet);
           settlementLog.push({ id: bet.id, pick: bet.pick, method: 'mlb_stats', result });
+        } else if (sport === 'nba' || sport === 'basketball') {
+          result = await settleNBAProp(bet);
+          settlementLog.push({ id: bet.id, pick: bet.pick, method: 'nba_stats', result });
+        } else if (sport === 'nhl' || sport === 'hockey') {
+          result = await settleNHLProp(bet);
+          settlementLog.push({ id: bet.id, pick: bet.pick, method: 'nhl_stats', result });
         }
       } else {
-        // Straight/spread/total — use Odds API scores
         const match = findMatchingGame(bet, allScores);
         if (match) {
           result = determineResult(bet, match);
@@ -281,21 +420,18 @@ function findMatchingGame(bet, scores) {
     const away = g.away_team.toLowerCase();
     const gameDate = g.commence_time ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) : null;
     const dateMatch = !betDate || !gameDate || gameDate === betDate;
-    const timeMatch = true;
     const teamMatch = betGame.includes(home) || betGame.includes(away) ||
       home.split(' ').some(w => w.length > 3 && betGame.includes(w)) ||
       away.split(' ').some(w => w.length > 3 && betGame.includes(w));
-    return dateMatch && teamMatch && timeMatch;
+    return dateMatch && teamMatch;
   });
 }
 
 function determineResult(bet, game) {
   if (!game.scores || game.scores.length < 2) return null;
-
   const homeScore = parseInt(game.scores.find(s => s.name === game.home_team)?.score);
   const awayScore = parseInt(game.scores.find(s => s.name === game.away_team)?.score);
   if (isNaN(homeScore) || isNaN(awayScore)) return null;
-
   const pick = bet.pick.toLowerCase();
   const betType = bet.bet_type?.toLowerCase().replace(/[^a-z]/g, '');
 
@@ -326,6 +462,7 @@ function determineResult(bet, game) {
 
   return null;
 }
+
 export async function POST(request) {
   return GET(request);
 }
