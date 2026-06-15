@@ -1259,7 +1259,7 @@ function History({ bets, onUpdate, onNav }) {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {bet.isParlay ? (
             <span style={{ ...S.tag, background: "#1a0a2e", color: "#a855f7" }}>
-              {bet.betType?.toUpperCase() || "PARLAY"} · {bet.numLegs} Legs
+              {bet.betType?.toUpperCase() || 'PARLAY'} · {bet.numLegs} Legs
             </span>
           ) : (
             <>
@@ -1278,6 +1278,7 @@ function History({ bets, onUpdate, onNav }) {
           ))}
         </div>
       </div>
+
       {bet.isParlay ? (
         <div>
           {(bet.legs || []).map((leg, i) => (
@@ -1307,11 +1308,11 @@ function History({ bets, onUpdate, onNav }) {
           </div>
         </>
       )}
+
       <div style={{ marginTop: 8, display: "inline-block", background: bet.result === "Win" ? "#1a2e1a" : bet.result === "Loss" ? "#2a0f0f" : "#1a1500", color: bet.result === "Win" ? "#2ecc71" : bet.result === "Loss" ? "#e74c3c" : "#f5a623", borderRadius: 4, padding: "2px 10px", fontSize: 12 }}>
         {bet.result === "Win" ? "✅ WIN" : bet.result === "Loss" ? "❌ LOSS" : "⏳ PENDING"}
       </div>
     </div>
-  );
 
   const DaySection = ({ dateStr }) => {
     const dayBets = groups[dateStr];
@@ -1589,7 +1590,12 @@ useEffect(() => {
 const updateBet = async (id, result) => {
   setBets(p => p.map(b => b.id === id ? { ...b, result } : b));
   if (userKey) {
-    await supabase.from('user_bets').update({ result }).eq('id', id);
+    const bet = bets.find(b => b.id === id);
+    if (bet?.isParlay) {
+      await supabase.from('parlays').update({ result }).eq('id', id);
+    } else {
+      await supabase.from('user_bets').update({ result }).eq('id', id);
+    }
   }
 };
 
