@@ -17,6 +17,16 @@ export async function GET(request) {
 
   try {
     const today = new Date().toISOString().split('T')[0];
+    // Check if picks already exist for today — prevent duplicates
+    const { data: existingPicks } = await supabase
+      .from('daily_picks')
+      .select('id')
+      .eq('date', today)
+      .eq('status', 'active')
+      .limit(1);
+    if (existingPicks && existingPicks.length > 0) {
+      return Response.json({ success: true, message: 'Picks already generated for today', skipped: true });
+    }
 
     await supabase
       .from('daily_picks')
