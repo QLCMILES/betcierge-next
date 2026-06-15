@@ -1314,6 +1314,7 @@ function History({ bets, onUpdate, onNav }) {
       </div>
     </div>
 
+  );
   const DaySection = ({ dateStr }) => {
     const dayBets = groups[dateStr];
     const isExpanded = expandedGroups[dateStr] !== false; // default open
