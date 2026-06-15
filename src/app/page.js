@@ -914,7 +914,7 @@ function PicksTab({ userKey }) {
           <div style={{ color: "#fff", fontSize: 15, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginBottom: 8 }}>{pick.game}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
             <span style={{ color: "#fff", fontSize: 16, fontWeight: 700 }}>{pick.pick}</span>
-            <span style={{ color: "#f5a623", fontSize: 14, fontWeight: 600 }}>{String(pick.odds).startsWith('-') ? pick.odds : `+${pick.odds}`}</span>
+            <span style={{ color: "#f5a623", fontSize: 14, fontWeight: 600 }}>{String(pick.odds).startsWith('+') ? pick.odds : pick.odds > 0 ? `+${pick.odds}` : pick.odds}</span>
           </div>
           <div style={{ color: "#888", fontSize: 13, lineHeight: 1.6, background: "#13131a", borderRadius: 8, padding: "12px 14px" }}>
             {formatInsight(pick.insight)}
