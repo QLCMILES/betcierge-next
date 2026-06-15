@@ -728,13 +728,13 @@ function PicksTab({ userKey }) {
         .from('daily_picks')
         .select('*')
         .gte('date', '2026-06-11')
+        .lt('date', new Date().toLocaleDateString('en-CA'))
         .eq('status', 'active')
         .order('date', { ascending: false })
         .order('id', { ascending: true });
       if (data) {
         setHistory(data);
-        const dates = [...new Set(data.map(p => p.date))];
-        if (dates[0]) setExpandedDates({ [dates[0]]: true });
+        setExpandedDates({});
       }
     } catch (e) {
       console.error(e);
