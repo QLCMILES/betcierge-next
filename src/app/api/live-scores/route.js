@@ -7,7 +7,28 @@ const supabase = createClient(
 );
 
 const ODDS_API_KEY = process.env.ODDS_API_KEY;
-const SPORTS = ["baseball_mlb", "basketball_nba", "icehockey_nhl"];
+const month = new Date().getMonth() + 1;
+const isEuropeanSoccerSeason = month >= 8 || month <= 5;
+const isMLSSeason = month >= 3 && month <= 11;
+
+const SPORTS = [
+  "baseball_mlb",
+  "basketball_nba",
+  "icehockey_nhl",
+  "mma_mixed_martial_arts",
+  ...(isMLSSeason ? ["soccer_usa_mls"] : []),
+  ...(isEuropeanSoccerSeason ? [
+    "soccer_epl",
+    "soccer_spain_la_liga",
+    "soccer_germany_bundesliga",
+    "soccer_italy_serie_a",
+    "soccer_france_ligue_one",
+    "soccer_uefa_champs_league",
+    "soccer_uefa_europa_league",
+  ] : []),
+  "soccer_conmebol_copa_libertadores",
+  "soccer_fifa_world_cup",
+];
 
 export async function GET(req) {
   try {

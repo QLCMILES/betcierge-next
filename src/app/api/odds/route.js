@@ -1,14 +1,35 @@
 export const dynamic = 'force-dynamic';
 
+const month = new Date().getMonth() + 1; // 1-12
+const isEuropeanSoccerSeason = month >= 8 || month <= 5; // Aug-May
+const isMLSSeason = month >= 3 && month <= 11; // Mar-Nov
+const isNFLSeason = month >= 8 || month <= 2; // Aug-Feb
+const isNBASeason = month >= 10 || month <= 6; // Oct-Jun
+const isNHLSeason = month >= 10 || month <= 6; // Oct-Jun
+const isMLBSeason = month >= 3 && month <= 10; // Mar-Oct
+const isNCAABSeason = month >= 11 || month <= 4; // Nov-Apr
+const isNCAAFSeason = month >= 8 && month <= 1; // Aug-Jan
+
 const SPORTS = [
-  'baseball_mlb',
-  'basketball_nba',
-  'americanfootball_nfl',
-  'icehockey_nhl',
-  'basketball_ncaab',
-  'americanfootball_ncaaf',
+  ...(isMLBSeason ? ['baseball_mlb'] : []),
+  ...(isNBASeason ? ['basketball_nba'] : []),
+  ...(isNFLSeason ? ['americanfootball_nfl'] : []),
+  ...(isNHLSeason ? ['icehockey_nhl'] : []),
+  ...(isNCAABSeason ? ['basketball_ncaab'] : []),
+  ...(isNCAAFSeason ? ['americanfootball_ncaaf'] : []),
   'mma_mixed_martial_arts',
-  'soccer_usa_mls',
+  ...(isMLSSeason ? ['soccer_usa_mls'] : []),
+  ...(isEuropeanSoccerSeason ? [
+    'soccer_epl',
+    'soccer_spain_la_liga',
+    'soccer_germany_bundesliga',
+    'soccer_italy_serie_a',
+    'soccer_france_ligue_one',
+    'soccer_uefa_champs_league',
+    'soccer_uefa_europa_league',
+  ] : []),
+  'soccer_conmebol_copa_libertadores',
+  'soccer_fifa_world_cup',
 ];
 
 async function fetchOdds(apiKey) {
