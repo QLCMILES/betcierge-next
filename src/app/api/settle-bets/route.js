@@ -306,6 +306,130 @@ async function settleNHLProp(bet) {
   return null;
 }
 
+
+// Calculate parlay odds from individual leg odds (American format)
+function calculateParlayOdds(legOdds) {
+  const decimals = legOdds.map(o => {
+    const n = parseFloat(o);
+    return n >= 0 ? (n / 100) + 1 : (100 / Math.abs(n)) + 1;
+  });
+  const combined = decimals.reduce((acc, d) => acc * d, 1);
+  const american = combined >= 2 ? Math.round((combined - 1) * 100) : Math.round(-100 / (combined - 1));
+  return american >= 0 ? `+${american}` : `${american}`;
+}
+
+// Settle a single parlay leg
+async function settleLeg(leg, allScores) {
+  const betType = leg.bet_type?.toLowerCase().replace(/[^a-z]/g, '') || '';
+  const sport = leg.sport?.toLowerCase() || '';
+  
+  if (betType?.includes('prop') || betType?.includes('player')) {
+    if (sport === 'mlb' || sport === 'baseball') return await settleMLBProp(leg);
+    if (sport === 'nba' || sport === 'basketball') return await settleNBAProp(leg);
+    if (sport === 'nhl' || sport === 'hockey') return await settleNHLProp(leg);
+    return null;
+  }
+  
+  const match = findMatchingGame(leg, allScores);
+  if (!match) return null;
+  return determineResult(leg, match);
+}
+
+// Settle all pending parlays
+async function settleParlays(allScores) {
+  const { data: pendingParlays, error } = await supabase
+    .from('parlays')
+    .select('*, parlay_legs(*)')
+    .eq('result', 'Pending');
+  
+  if (error || !pendingParlays?.length) return { settled: 0, log: [] };
+  
+  let settled = 0;
+  const log = [];
+
+  for (const parlay of pendingParlays) {
+    const legs = parlay.parlay_legs || [];
+    if (!legs.length) continue;
+
+    const legResults = [];
+
+    for (const leg of legs) {
+      // Build a bet-like object for the leg
+      const legBet = {
+        id: leg.id,
+        sport: leg.sport,
+        game: leg.game,
+        bet_type: leg.pick?.toLowerCase().includes('over') || leg.pick?.toLowerCase().includes('under') ? 'total' : 'moneyline',
+        pick: leg.pick,
+        odds: leg.odds,
+        amount: parlay.wager,
+        game_date: leg.game_date,
+        game_time: leg.game_time,
+        game_id: leg.game_id,
+      };
+
+      const result = await settleLeg(legBet, allScores);
+      legResults.push({ leg, result });
+
+      if (result && result !== leg.result) {
+        await supabase.from('parlay_legs').update({ result }).eq('id', leg.id);
+      }
+    }
+
+    // Determine parlay result
+    const isTeaser = parlay.bet_type === 'teaser';
+    const results = legResults.map(r => r.result);
+    const allSettled = results.every(r => r !== null);
+    
+    if (!allSettled) continue; // Wait for all legs to settle
+
+    let parlayResult = null;
+
+    if (isTeaser) {
+      // Teaser: any Loss or Push = Loss, all Win = Win
+      if (results.some(r => r === 'Loss' || r === 'Push')) parlayResult = 'Loss';
+      else if (results.every(r => r === 'Win')) parlayResult = 'Win';
+    } else {
+      // Parlay/SGP: any Loss = Loss, mix of Win+Push = Win with recalculated odds
+      if (results.some(r => r === 'Loss')) {
+        parlayResult = 'Loss';
+      } else if (results.every(r => r === 'Win' || r === 'Push')) {
+        parlayResult = 'Win';
+        // Recalculate odds if any legs pushed
+        const winningLegs = legResults.filter(r => r.result === 'Win');
+        if (winningLegs.length < legs.length) {
+          const winningOdds = winningLegs.map(r => r.leg.odds).filter(Boolean);
+          if (winningOdds.length > 0) {
+            const newOdds = winningOdds.length === 1 ? winningOdds[0] : calculateParlayOdds(winningOdds);
+            const newToWin = winningOdds.length === 0 ? parlay.wager :
+              parseFloat(newOdds) >= 0 
+                ? (parseFloat(newOdds) / 100) * parlay.wager
+                : (100 / Math.abs(parseFloat(newOdds))) * parlay.wager;
+            await supabase.from('parlays').update({ 
+              result: parlayResult, 
+              adjusted_odds: newOdds,
+              adjusted_to_win: Math.round(newToWin * 100) / 100
+            }).eq('id', parlay.id);
+          }
+        } else {
+          await supabase.from('parlays').update({ result: parlayResult }).eq('id', parlay.id);
+        }
+        settled++;
+        log.push({ id: parlay.id, type: parlay.bet_type, result: parlayResult, legs: results });
+        continue;
+      }
+    }
+
+    if (parlayResult) {
+      await supabase.from('parlays').update({ result: parlayResult }).eq('id', parlay.id);
+      settled++;
+      log.push({ id: parlay.id, type: parlay.bet_type, result: parlayResult, legs: results });
+    }
+  }
+
+  return { settled, log };
+}
+
 export async function GET(request) {
   const authHeader = request.headers.get('authorization');
   const isVercelCron = request.headers.get('x-vercel-cron') === '1';
@@ -376,12 +500,17 @@ export async function GET(request) {
       settled++;
     }
 
+    // Settle parlays
+    const { settled: parlaySettled, log: parlayLog } = await settleParlays(allScores);
+    settled += parlaySettled;
+
     return Response.json({
       success: true,
       settled,
       total: pendingBets.length,
       sportsQueried: [...sportsNeeded],
-      log: settlementLog,
+      log: [...settlementLog, ...parlayLog],
+      parlayLog,
     });
 
   } catch (error) {
