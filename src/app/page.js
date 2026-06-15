@@ -820,7 +820,12 @@ function PicksTab({ userKey }) {
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ marginBottom: 4 }}>
+              <button onClick={() => toggleDate('history')} style={{ width: '100%', background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 10, cursor: 'pointer', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase' }}>Last 14 Days</span>
+                <span style={{ color: '#444', fontSize: 12 }}>{expandedDates['history'] ? '▲' : '▼'}</span>
+              </button>
+              {expandedDates['history'] && <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {sortedDates.map(date => {
                 const dayPicks = byDate[date];
                 const isExpanded = expandedDates[date];
@@ -865,6 +870,7 @@ function PicksTab({ userKey }) {
                   </div>
                 );
               })}
+              </div>}
             </div>
           </>
         )}
