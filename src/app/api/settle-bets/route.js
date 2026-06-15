@@ -183,25 +183,13 @@ async function settleMLBProp(bet) {
 async function fetchNBAGames(date) {
   try {
     const res = await fetch(
-      `https://stats.nba.com/stats/scoreboardV2?DayOffset=0&LeagueID=00&gameDate=${date}`,
-      { headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        'Referer': 'https://www.nba.com/',
-        'Origin': 'https://www.nba.com',
-        'x-nba-stats-origin': 'stats',
-        'x-nba-stats-token': 'true',
-        'Accept': 'application/json',
-      }}
+      `https://api.balldontlie.io/v1/games?dates[]=${date}&per_page=30`,
+      { headers: { 'Authorization': process.env.BALLDONTLIE_API_KEY || 'balldontlie' } }
     );
     const data = await res.json();
-    const games = data.resultSets?.find(r => r.name === 'GameHeader');
-    if (!games) return [];
-    const h = games.headers;
-    const gameIdIdx = h.indexOf('GAME_ID');
-    const statusIdx = h.indexOf('GAME_STATUS_TEXT');
-    return games.rowSet
-      .filter(row => row[statusIdx]?.toLowerCase().includes('final'))
-      .map(row => ({ gameId: row[gameIdIdx] }));
+    return (data.data || [])
+      .filter(g => g.status === 'Final')
+      .map(g => ({ gameId: g.id }));
   } catch(e) {
     console.error('fetchNBAGames error:', e.message);
     return [];
@@ -211,31 +199,20 @@ async function fetchNBAGames(date) {
 async function fetchNBABoxScorePlayers(gameId) {
   try {
     const res = await fetch(
-      `https://stats.nba.com/stats/boxscoretraditionalv2?GameID=${gameId}&StartPeriod=0&EndPeriod=10&StartRange=0&EndRange=28800&RangeType=0`,
-      { headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        'Referer': 'https://www.nba.com/',
-        'Origin': 'https://www.nba.com',
-        'x-nba-stats-origin': 'stats',
-        'x-nba-stats-token': 'true',
-        'Accept': 'application/json',
-      }}
+      `https://api.balldontlie.io/v1/stats?game_ids[]=${gameId}&per_page=50`,
+      { headers: { 'Authorization': process.env.BALLDONTLIE_API_KEY || 'balldontlie' } }
     );
     const data = await res.json();
-    const playerStats = data.resultSets?.find(r => r.name === 'PlayerStats');
-    if (!playerStats) return [];
-    const h = playerStats.headers;
-    const nameIdx = h.indexOf('PLAYER_NAME');
-    return playerStats.rowSet.map(row => ({
-      fullName: row[nameIdx],
+    return (data.data || []).map(p => ({
+      fullName: `${p.player?.first_name || ''} ${p.player?.last_name || ''}`.trim(),
       stats: {
-        PTS: row[h.indexOf('PTS')],
-        REB: row[h.indexOf('REB')],
-        AST: row[h.indexOf('AST')],
-        STL: row[h.indexOf('STL')],
-        BLK: row[h.indexOf('BLK')],
-        TO: row[h.indexOf('TO')],
-        FG3M: row[h.indexOf('FG3M')],
+        PTS: p.pts,
+        REB: p.reb,
+        AST: p.ast,
+        STL: p.stl,
+        BLK: p.blk,
+        TO: p.turnover,
+        FG3M: p.fg3m,
       }
     }));
   } catch(e) {
