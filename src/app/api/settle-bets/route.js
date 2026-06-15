@@ -517,6 +517,9 @@ export async function GET(request) {
     const { settled: parlaySettled, log: parlayLog } = await settleParlays(allScores);
     settled += parlaySettled;
 
+    // Settle daily picks
+    const { settled: picksSettled, log: picksLog } = await settleDailyPicks(allScores);
+
     return Response.json({
       success: true,
       settled,
@@ -524,6 +527,8 @@ export async function GET(request) {
       sportsQueried: [...sportsNeeded],
       log: [...settlementLog, ...parlayLog],
       parlayLog,
+      picksSettled,
+      picksLog,
     });
 
   } catch (error) {
@@ -580,6 +585,55 @@ function determineResult(bet, game) {
   }
 
   return null;
+}
+
+async function settleDailyPicks(allScores) {
+  const { data: pendingPicks, error } = await supabase
+    .from('daily_picks')
+    .select('*')
+    .eq('result', 'Pending')
+    .eq('status', 'active');
+
+  if (error || !pendingPicks?.length) return { settled: 0, log: [] };
+
+  let settled = 0;
+  const log = [];
+
+  for (const pick of pendingPicks) {
+    const betLike = {
+      game: pick.game,
+      pick: pick.pick,
+      bet_type: pick.pick?.toLowerCase().includes('over') || pick.pick?.toLowerCase().includes('under') ? 'total' : 'moneyline',
+      odds: pick.odds,
+      amount: pick.units || 1,
+      game_date: pick.date,
+      sport: pick.sport,
+    };
+
+    const pickLower = pick.pick?.toLowerCase() || '';
+    const sport = pick.sport?.toLowerCase() || '';
+    const isProp = (pickLower.includes('over ') || pickLower.includes('under ')) && (pickLower.includes('strikeout') || pickLower.includes('point') || pickLower.includes('rebound') || pickLower.includes('assist') || pickLower.includes('hit') || pickLower.includes('goal') || pickLower.includes('save') || pickLower.includes('shot'));
+    let result = null;
+    if (isProp) {
+      const betLike2 = { pick: pick.pick, game: pick.game, game_date: pick.date, sport: pick.sport };
+      if (sport === 'mlb' || sport === 'baseball') result = await settleMLBProp(betLike2);
+      else if (sport === 'nba' || sport === 'basketball') result = await settleNBAProp(betLike2);
+      else if (sport === 'nhl' || sport === 'hockey') result = await settleNHLProp(betLike2);
+    } else {
+      const match = findMatchingGame(betLike, allScores);
+      if (match) result = determineResult(betLike, match);
+    }
+
+    await supabase
+      .from('daily_picks')
+      .update({ result })
+      .eq('id', pick.id);
+
+    settled++;
+    log.push({ id: pick.id, pick: pick.pick, game: pick.game, result });
+  }
+
+  return { settled, log };
 }
 
 export async function POST(request) {
