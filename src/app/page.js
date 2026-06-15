@@ -1419,12 +1419,21 @@ useEffect(() => {
   useEffect(() => {
   if (!userKey) return;
   const loadBets = async () => {
-    const { data } = await supabase
+    // Load straight bets
+    const { data: straightBets } = await supabase
       .from('user_bets')
       .select('*')
       .eq('user_id', userKey)
       .order('created_at', { ascending: false });
-    if (data) setBets(data.map(b => ({
+
+    // Load parlays with their legs
+    const { data: parlaysData } = await supabase
+      .from('parlays')
+      .select('*, parlay_legs(*)')
+      .eq('user_id', userKey)
+      .order('created_at', { ascending: false });
+
+    const mappedStraight = (straightBets || []).map(b => ({
       id: b.id,
       sport: b.sport,
       game: b.game,
@@ -1438,7 +1447,46 @@ useEffect(() => {
       gameDate: b.game_date,
       gameTime: b.game_time,
       gameId: b.game_id,
-    })));
+      isParlay: false,
+    }));
+
+    const mappedParlays = (parlaysData || []).map(p => ({
+      id: p.id,
+      isParlay: true,
+      betType: p.bet_type,
+      odds: p.odds,
+      amount: p.wager,
+      toWin: p.to_win,
+      result: p.result,
+      gameDate: p.game_date,
+      teaserPoints: p.teaser_points,
+      ticketNumber: p.ticket_number,
+      numLegs: p.num_legs,
+      legs: (p.parlay_legs || []).sort((a, b) => a.leg_number - b.leg_number).map(l => ({
+        id: l.id,
+        sport: l.sport,
+        game: l.game,
+        pick: l.pick,
+        odds: l.odds,
+        gameDate: l.game_date,
+        gameTime: l.game_time,
+        gameId: l.game_id,
+        result: l.result,
+        legNumber: l.leg_number,
+      })),
+      // For display purposes
+      pick: (p.parlay_legs || []).map(l => l.pick).join(', '),
+      game: (p.parlay_legs || []).map(l => l.game).join(' + '),
+      sport: p.parlay_legs?.[0]?.sport || 'Parlay',
+      createdAt: p.created_at,
+    }));
+
+    // Merge and sort by date
+    const allBets = [...mappedStraight, ...mappedParlays].sort((a, b) =>
+      new Date(b.createdAt || b.gameDate) - new Date(a.createdAt || a.gameDate)
+    );
+
+    setBets(allBets);
   };
   loadBets();
 }, [userKey]);
