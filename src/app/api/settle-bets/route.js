@@ -370,7 +370,7 @@ export async function GET(request) {
       const sport = bet.sport?.toLowerCase();
       let result = null;
 
-      if (betType?.includes('prop')) {
+      if (betType?.includes('prop') || betType?.includes('player')) {
         if (sport === 'mlb' || sport === 'baseball') {
           result = await settleMLBProp(bet);
           settlementLog.push({ id: bet.id, pick: bet.pick, method: 'mlb_stats', result });
@@ -450,7 +450,7 @@ function determineResult(bet, game) {
     return (diff + spread > 0) ? 'Win' : (diff + spread === 0) ? 'Pending' : 'Loss';
   }
 
-  if (['totalou', 'total', 'over', 'under'].includes(betType)) {
+  if (['totalou', 'total', 'over', 'under', 'totalrunsoverunder', 'overunder', 'totalpointsoverunder', 'totalgoalsoverunder'].includes(betType)) {
     const totalMatch = pick.match(/(\d+\.?\d*)/);
     if (!totalMatch) return null;
     const total = parseFloat(totalMatch[1]);
