@@ -855,7 +855,7 @@ function PicksTab({ userKey }) {
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 10 }}>
                                 {resultBadge(pick.result)}
-                                <span style={{ fontSize: 11, color: '#f5a623' }}>{pick.odds > 0 ? '+' : ''}{pick.odds}</span>
+                                <span style={{ fontSize: 11, color: '#f5a623' }}>{String(pick.odds).startsWith('+') ? pick.odds : pick.odds > 0 ? `+${pick.odds}` : pick.odds}</span>
                               </div>
                             </div>
                           </div>
