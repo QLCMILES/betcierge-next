@@ -219,10 +219,9 @@ if (!parsed.gameDate || !parsed.gameTime) {
       const gameDate = g.commence_time
         ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
         : null;
-      const dateMatch = !parsedDate || !gameDate || gameDate === parsedDate;
       const teamMatch = home.split(' ').some(w => w.length > 3 && game.includes(w)) ||
         away.split(' ').some(w => w.length > 3 && game.includes(w));
-      return dateMatch && teamMatch;
+      return teamMatch;
     });
     if (match) {
       parsed.gameId = match.id;
