@@ -232,8 +232,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
       // Clean up TryInk pitcher names from game field
       // "Philadelphia Phillies vs Z Wheeler" → "Philadelphia Phillies"
       // Stop at any word that looks like a pitcher name (single capital letter first name or "vs")
-      parsed.game = parsed.game.replace(/\s+(vs?\.?\s+)?[A-Z]\s+[A-Z][a-z]+.*$/i, '').trim();
-      parsed.game = parsed.game.replace(/\s+vs\s+.*$/i, '').trim();
+      parsed.game = parsed.game.replace(/\s+vs\.?\s+.*/i, '').trim();
     }
   }
 } catch(e) {}
