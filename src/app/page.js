@@ -1256,11 +1256,19 @@ function History({ bets, onUpdate, onNav }) {
   const BetCard = ({ bet }) => (
     <div key={bet.id} style={S.betCard}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          <span style={S.betSport}>{bet.sport}</span>
-          <span style={{ ...S.tag, background: bet.type === "Planned" ? "#1a2e1a" : "#2a1a00", color: bet.type === "Planned" ? "#2ecc71" : "#f5a623" }}>
-            {bet.type === "Planned" ? "✅ Planned" : "⚡ Impulse"}
-          </span>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {bet.isParlay ? (
+            <span style={{ ...S.tag, background: "#1a0a2e", color: "#a855f7" }}>
+              {bet.betType?.toUpperCase() || "PARLAY"} · {bet.numLegs} Legs
+            </span>
+          ) : (
+            <>
+              <span style={S.betSport}>{bet.sport}</span>
+              <span style={{ ...S.tag, background: bet.type === "Planned" ? "#1a2e1a" : "#2a1a00", color: bet.type === "Planned" ? "#2ecc71" : "#f5a623" }}>
+                {bet.type === "Planned" ? "✅ Planned" : "⚡ Impulse"}
+              </span>
+            </>
+          )}
         </div>
         <div style={{ display: "flex", gap: 4 }}>
           {["Win", "Loss", "Pending"].map(r => (
@@ -1270,11 +1278,35 @@ function History({ bets, onUpdate, onNav }) {
           ))}
         </div>
       </div>
-      <div style={{ color: "#fff", fontSize: 14, fontWeight: 600, marginBottom: 8 }}>{bet.game}</div>
-      <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <div><span style={{ color: "#f5a623", fontWeight: 700 }}>{bet.pick}</span><span style={{ color: "#888", fontSize: 13, marginLeft: 8 }}>{bet.odds}</span></div>
-        <span style={{ color: "#ccc", fontSize: 13 }}>{bet.amount} → <span style={{ color: "#f5a623" }}>{fmt(calcProfit(bet.amount, bet.odds))}</span></span>
-      </div>
+      {bet.isParlay ? (
+        <div>
+          {(bet.legs || []).map((leg, i) => (
+            <div key={i} style={{ borderBottom: "1px solid #1a1a24", padding: "8px 0" }}>
+              <div style={{ color: "#666", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Leg {leg.legNumber || i + 1} · {leg.sport}</div>
+              <div style={{ color: "#f5a623", fontWeight: 700, fontSize: 13 }}>{leg.pick}</div>
+              <div style={{ color: "#888", fontSize: 12 }}>{leg.game}</div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
+                <span style={{ color: "#555", fontSize: 11 }}>{leg.odds}</span>
+                <span style={{ color: leg.result === "Win" ? "#2ecc71" : leg.result === "Loss" ? "#e74c3c" : "#666", fontSize: 11, fontWeight: 700 }}>
+                  {leg.result === "Win" ? "✓ WIN" : leg.result === "Loss" ? "✗ LOSS" : leg.result === "Push" ? "PUSH" : "PENDING"}
+                </span>
+              </div>
+            </div>
+          ))}
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}>
+            <span style={{ color: "#fff", fontWeight: 700 }}>{bet.odds}</span>
+            <span style={{ color: "#ccc", fontSize: 13 }}>${bet.amount} → <span style={{ color: "#f5a623" }}>${bet.toWin}</span></span>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div style={{ color: "#fff", fontSize: 14, fontWeight: 600, marginBottom: 8 }}>{bet.game}</div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div><span style={{ color: "#f5a623", fontWeight: 700 }}>{bet.pick}</span><span style={{ color: "#888", fontSize: 13, marginLeft: 8 }}>{bet.odds}</span></div>
+            <span style={{ color: "#ccc", fontSize: 13 }}>{bet.amount} → <span style={{ color: "#f5a623" }}>{fmt(calcProfit(bet.amount, bet.odds))}</span></span>
+          </div>
+        </>
+      )}
       <div style={{ marginTop: 8, display: "inline-block", background: bet.result === "Win" ? "#1a2e1a" : bet.result === "Loss" ? "#2a0f0f" : "#1a1500", color: bet.result === "Win" ? "#2ecc71" : bet.result === "Loss" ? "#e74c3c" : "#f5a623", borderRadius: 4, padding: "2px 10px", fontSize: 12 }}>
         {bet.result === "Win" ? "✅ WIN" : bet.result === "Loss" ? "❌ LOSS" : "⏳ PENDING"}
       </div>
