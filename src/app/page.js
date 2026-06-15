@@ -927,18 +927,33 @@ function PicksTab({ userKey }) {
 // ── Dashboard ──────────────────────────────────────────────────────────────
 function Dashboard({ user, bets, onNav, userKey }) {
   const hour = new Date().getHours();
-  const wins = bets.filter(b => b.result === "Win");
-  const losses = bets.filter(b => b.result === "Loss");
-  const pending = bets.filter(b => b.result === "Pending");
+
+  // Weekly window: Monday through Sunday
+  const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const dayOfWeek = nowET.getDay();
+  const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const weekStart = new Date(nowET);
+  weekStart.setDate(nowET.getDate() - daysFromMonday);
+  weekStart.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
+  const weekStartStr = weekStart.toLocaleDateString('en-CA');
+  const weekEndStr = weekEnd.toLocaleDateString('en-CA');
+  const weekBets = bets.filter(b => b.gameDate >= weekStartStr && b.gameDate <= weekEndStr);
+  const weekLabel = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+
+  const wins = weekBets.filter(b => b.result === "Win");
+  const losses = weekBets.filter(b => b.result === "Loss");
+  const pending = weekBets.filter(b => b.result === "Pending");
   const netPL = wins.reduce((s, b) => s + (calcProfit(b.amount, b.odds) || 0), 0) - losses.reduce((s, b) => s + b.amount, 0);
   const currentBankroll = user.bankroll + netPL;
   const goalPct = user.goal > 0 ? (netPL / user.goal) * 100 : 0;
   const sliderPct = Math.min(98, Math.max(2, 50 + (netPL / (user.goal * 2)) * 50));
   const atRisk = pending.reduce((s, b) => s + b.amount, 0);
-
   const alerts = [];
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-const todayBets = bets.filter(b => b.gameDate === today).length;
+  const todayBets = bets.filter(b => b.gameDate === today).length;
   if (todayBets >= 5) alerts.push({ msg: `${todayBets} bets today. Your edge drops after bet 4.`, type: "warning" });
   if (netPL < -(user.goal * 0.5) && bets.length > 0) alerts.push({ msg: "Down over 50% of your weekly goal. Protect the bankroll.", type: "danger" });
   if (netPL >= user.goal) alerts.push({ msg: `🎉 Weekly goal hit! Consider locking in the profit.`, type: "success" });
@@ -963,7 +978,7 @@ const todayBets = bets.filter(b => b.gameDate === today).length;
             <div style={{ ...S.bigNum, color: netPL >= 0 ? "#f5a623" : "#e74c3c" }}>${currentBankroll.toFixed(0)}</div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={S.cardLbl}>Weekly Goal</div>
+            <div style={S.cardLbl}>Week of {weekLabel}</div>
             <div style={S.bigNum}>+${user.goal}</div>
           </div>
         </div>
@@ -987,7 +1002,7 @@ const todayBets = bets.filter(b => b.gameDate === today).length;
             { val: wins.length, lbl: "Wins", color: "#2ecc71" },
             { val: losses.length, lbl: "Losses", color: "#e74c3c" },
             { val: atRisk > 0 ? `$${atRisk}` : "—", lbl: "At Risk", color: "#f5a623" },
-            { val: `$${bets.reduce((s, b) => s + b.amount, 0)}`, lbl: "Wagered", color: "#f5a623" },
+            { val: `$${weekBets.reduce((s, b) => s + b.amount, 0)}`, lbl: "Wagered", color: "#f5a623" },
           ].map((s, i) => (
             <div key={i} style={S.statBox}>
               <div style={{ ...S.statVal, color: s.color }}>{s.val}</div>
