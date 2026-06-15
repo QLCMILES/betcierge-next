@@ -700,8 +700,11 @@ function PicksTab({ userKey }) {
   const [picks, setPicks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [expandedDates, setExpandedDates] = useState({});
 
-  useEffect(() => { loadPicks(); }, []);
+  useEffect(() => { loadPicks(); loadHistory(); }, []);
 
   const loadPicks = async () => {
     setLoading(true);
@@ -718,8 +721,70 @@ function PicksTab({ userKey }) {
     setLoading(false);
   };
 
+  const loadHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const { data } = await supabase
+        .from('daily_picks')
+        .select('*')
+        .gte('date', '2026-06-11')
+        .eq('status', 'active')
+        .order('date', { ascending: false })
+        .order('id', { ascending: true });
+      if (data) {
+        setHistory(data);
+        const dates = [...new Set(data.map(p => p.date))];
+        if (dates[0]) setExpandedDates({ [dates[0]]: true });
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setHistoryLoading(false);
+  };
+
   const confColor = (c) => ({ High: "#2ecc71", Medium: "#f5a623", Low: "#888" })[c] || "#888";
   const confBg = (c) => ({ High: "#1a2e1a", Medium: "#2a1f00", Low: "#1a1a1a" })[c] || "#1a1a1a";
+
+  const settled = history.filter(p => p.result === 'Win' || p.result === 'Loss');
+  const wins = settled.filter(p => p.result === 'Win').length;
+  const losses = settled.filter(p => p.result === 'Loss').length;
+  const winRate = settled.length > 0 ? ((wins / settled.length) * 100).toFixed(0) : null;
+  const unitsPnl = settled.reduce((acc, p) => p.result === 'Win' ? acc + (p.units || 1) : acc - (p.units || 1), 0);
+
+  const sortedSettled = [...settled].sort((a, b) => new Date(b.date) - new Date(a.date) || b.id - a.id);
+  let streak = 0, streakType = null;
+  for (const p of sortedSettled) {
+    if (!streakType) streakType = p.result;
+    if (p.result === streakType) streak++;
+    else break;
+  }
+
+  const byDate = history.reduce((acc, p) => { (acc[p.date] = acc[p.date] || []).push(p); return acc; }, {});
+  const sortedDates = Object.keys(byDate).sort((a, b) => new Date(b) - new Date(a));
+  const toggleDate = (d) => setExpandedDates(prev => ({ ...prev, [d]: !prev[d] }));
+  const formatDate = (s) => new Date(s + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+  const dayRecord = (dayPicks) => {
+    const w = dayPicks.filter(p => p.result === 'Win').length;
+    const l = dayPicks.filter(p => p.result === 'Loss').length;
+    if (!w && !l) return 'Pending';
+    return [w && `${w}W`, l && `${l}L`].filter(Boolean).join('-');
+  };
+
+  const dayColor = (dayPicks) => {
+    const w = dayPicks.filter(p => p.result === 'Win').length;
+    const l = dayPicks.filter(p => p.result === 'Loss').length;
+    if (!w && !l) return '#555';
+    if (!l) return '#2ecc71';
+    if (!w) return '#e74c3c';
+    return '#f5a623';
+  };
+
+  const resultBadge = (result) => {
+    if (!result || result === 'Pending') return <span style={{ background: '#1a1a1a', color: '#555', padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>PENDING</span>;
+    const c = { Win: { bg: '#0a2e0a', color: '#2ecc71' }, Loss: { bg: '#2e0a0a', color: '#e74c3c' } }[result] || { bg: '#1a1a1a', color: '#888' };
+    return <span style={{ background: c.bg, color: c.color, padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>{result.toUpperCase()}</span>;
+  };
 
   return (
     <div style={S.screen}>
@@ -727,6 +792,86 @@ function PicksTab({ userKey }) {
         <div style={S.greeting}>Today's Picks 🎯</div>
         <div style={S.logo}>BETCIERGE</div>
       </div>
+
+      {/* TRACKER */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>Hunter's Record · Since Jun 11</div>
+
+        {!historyLoading && (
+          <>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <div style={{ flex: 1, background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 10, padding: '10px 0', textAlign: 'center' }}>
+                <div style={{ fontSize: 17, fontWeight: 800, color: '#fff' }}>{wins}W-{losses}L</div>
+                <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>Record</div>
+              </div>
+              <div style={{ flex: 1, background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 10, padding: '10px 0', textAlign: 'center' }}>
+                <div style={{ fontSize: 17, fontWeight: 800, color: winRate >= 55 ? '#2ecc71' : '#fff' }}>{winRate}%</div>
+                <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>Win Rate</div>
+              </div>
+              <div style={{ flex: 1, background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 10, padding: '10px 0', textAlign: 'center' }}>
+                <div style={{ fontSize: 17, fontWeight: 800, color: unitsPnl >= 0 ? '#2ecc71' : '#e74c3c' }}>{unitsPnl >= 0 ? '+' : ''}{unitsPnl.toFixed(1)}u</div>
+                <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>Units</div>
+              </div>
+              <div style={{ flex: 1, background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 10, padding: '10px 0', textAlign: 'center' }}>
+                <div style={{ fontSize: 17, fontWeight: 800, color: streakType === 'Win' ? '#2ecc71' : streakType === 'Loss' ? '#e74c3c' : '#fff' }}>
+                  {streak}{streakType === 'Win' ? 'W' : streakType === 'Loss' ? 'L' : '—'}
+                </div>
+                <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>Streak</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {sortedDates.map(date => {
+                const dayPicks = byDate[date];
+                const isExpanded = expandedDates[date];
+                const rec = dayRecord(dayPicks);
+                const color = dayColor(dayPicks);
+                return (
+                  <div key={date} style={{ background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 10, overflow: 'hidden' }}>
+                    <button onClick={() => toggleDate(date)} style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{formatDate(date)}</span>
+                        <span style={{ fontSize: 11, color: '#555' }}>{dayPicks.length} picks</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color }}>{rec}</span>
+                        <span style={{ color: '#444', fontSize: 12 }}>{isExpanded ? '▲' : '▼'}</span>
+                      </div>
+                    </button>
+                    {isExpanded && (
+                      <div style={{ borderTop: '1px solid #1a1a28' }}>
+                        {dayPicks.map((pick, i) => (
+                          <div key={pick.id} style={{ padding: '10px 14px', borderBottom: i < dayPicks.length - 1 ? '1px solid #13131a' : 'none' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 3 }}>
+                                  <span style={{ fontSize: 9, background: '#1a1a00', color: '#f5a623', padding: '1px 6px', borderRadius: 4, fontWeight: 700, textTransform: 'uppercase' }}>{pick.sport}</span>
+                                  {pick.game_time && <span style={{ fontSize: 10, color: '#555' }}>{pick.game_time}</span>}
+                                </div>
+                                <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>{pick.game}</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{pick.pick}</div>
+                                {pick.insight && <div style={{ fontSize: 11, color: '#555', marginTop: 4, lineHeight: 1.4 }}>{pick.insight}</div>}
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 10 }}>
+                                {resultBadge(pick.result)}
+                                <span style={{ fontSize: 11, color: '#f5a623' }}>{pick.odds > 0 ? '+' : ''}{pick.odds}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div style={{ borderTop: '1px solid #1a1a28', marginBottom: 20 }} />
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Today's Picks</div>
 
       {lastUpdated && (
         <div style={{ color: "#555", fontSize: 12, marginBottom: 14 }}>
@@ -773,7 +918,6 @@ function PicksTab({ userKey }) {
     </div>
   );
 }
-
 // ── Dashboard ──────────────────────────────────────────────────────────────
 function Dashboard({ user, bets, onNav, userKey }) {
   const hour = new Date().getHours();
