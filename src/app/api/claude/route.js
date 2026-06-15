@@ -32,7 +32,9 @@ export async function GET(request) {
       .from('daily_picks')
       .select('*')
       .eq('date', today)
-      .eq('status', 'active');
+      .eq('status', 'active')
+      .limit(3)
+      .order('created_at', { ascending: true });
     if (error) throw error;
     return Response.json({ picks: data });
   } catch (error) {
