@@ -174,7 +174,7 @@ function SnapToLog({ onConfirm, onCancel }) {
         body: JSON.stringify({
           model: "claude-sonnet-4-5",
           max_tokens: 1000,
-            system: "You are Hunter. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). Return ONLY raw JSON: {\"sport\":\"...\",\"game\":\"...\",\"betType\":\"...\",\"odds\":\"...\",\"pick\":\"...\",\"amount\":0,\"toWin\":0,\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\",\"confidence\":95}. If unclear: {\"error\":\"reason\"}. TRYINK FORMAT: Bets show as [#]. [Team] [Pitcher1] - L or R [Pitcher2] - R LP [odds]. The PICK is team name + ML (e.g. Los Angeles Dodgers ML). Pitcher names are NOT the pick. Bet type is Moneyline. GENERAL RULES: Never guess any text you cannot clearly read. Use empty strings for missing fields. gameDate in ET. gameTime in 24hr ET format.",
+            system: "You are Hunter. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). For STRAIGHT BETS return ONLY raw JSON: {\"sport\":\"...\",\"game\":\"...\",\"betType\":\"...\",\"odds\":\"...\",\"pick\":\"...\",\"amount\":0,\"toWin\":0,\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\",\"confidence\":95}. For PARLAYS, TEASERS, and SGPs return ONLY raw JSON: {\"betType\":\"parlay\",\"ticketNumber\":\"...\",\"amount\":0,\"toWin\":0,\"odds\":\"...\",\"teaserPoints\":null,\"gameDate\":\"YYYY-MM-DD\",\"legs\":[{\"sport\":\"...\",\"game\":\"...\",\"pick\":\"...\",\"odds\":\"...\",\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\"}],\"confidence\":95}. For TEASERS set betType to \"teaser\" and teaserPoints to the point value. For SGPs set betType to \"sgp\". TRYINK FORMAT: Bets show as [#]. [Team] [Pitcher1] - L or R [Pitcher2] - R LP [odds]. The PICK is team name + ML. Pitcher names are NOT the pick. GENERAL RULES: Never guess any text you cannot clearly read. Use empty strings for missing fields. gameDate in ET. gameTime in 24hr ET format. If unclear: {\"error\":\"reason\"}.",
           messages: [{ role: "user", content: [
             { type: "image", source: { type: "base64", media_type: file.type || "image/jpeg", data: base64 } },
             { type: "text", text: "Extract the bet details from this slip." }
@@ -230,6 +230,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
 } catch(e) {}
 
     if (parsed.error) { setErrorMsg(parsed.error); setStage("error"); }
+    else if (parsed.legs && parsed.legs.length > 0) { setExtractedBet(parsed); setStage("confirmParlay"); }
     else { setExtractedBet(parsed); setStage("confirm"); }
 
   } catch (e) {
@@ -269,6 +270,33 @@ if (!parsed.gameDate || !parsed.gameTime) {
               <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #1a1a24" }}>
                 <span style={{ color: "#666", fontSize: 13 }}>{l}</span>
                 <span style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{v}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => onCancel(extractedBet)} style={S.snap.editBtn}>Edit Manually</button>
+            <button onClick={() => onConfirm(extractedBet)} style={S.snap.confirmBtn}>Log This Bet</button>
+          </div>
+        </div>
+      )}
+      {stage === "confirmParlay" && extractedBet && (
+        <div style={{ padding: 16 }}>
+          <div style={{ color: "#2ecc71", fontSize: 17, fontWeight: 700, marginBottom: 4 }}>✅ Hunter read your slip</div>
+          <div style={{ color: "#f5a623", fontSize: 13, fontWeight: 700, marginBottom: 12 }}>
+            {extractedBet.betType?.toUpperCase()} · {extractedBet.legs?.length} Legs · {extractedBet.odds} · ${extractedBet.amount} to win ${extractedBet.toWin}
+            {extractedBet.teaserPoints ? ` · ${extractedBet.teaserPoints} pts` : ""}
+          </div>
+          {imagePreview && <img src={imagePreview} alt="slip" style={{ width: "100%", maxHeight: 120, objectFit: "contain", marginBottom: 12 }} />}
+          <div style={{ background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 14, padding: 16, marginBottom: 14 }}>
+            {extractedBet.legs?.map((leg, i) => (
+              <div key={i} style={{ padding: "10px 0", borderBottom: "1px solid #1a1a24" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ color: "#f5a623", fontSize: 11, fontWeight: 700 }}>LEG {i + 1}</span>
+                  <span style={{ color: "#888", fontSize: 11 }}>{leg.gameTime || ""}</span>
+                </div>
+                <div style={{ color: "#fff", fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{leg.pick}</div>
+                <div style={{ color: "#666", fontSize: 12 }}>{leg.game}</div>
+                <div style={{ color: "#888", fontSize: 11, marginTop: 2 }}>{leg.sport} · {leg.odds}</div>
               </div>
             ))}
           </div>
@@ -1415,26 +1443,68 @@ useEffect(() => {
   loadBets();
 }, [userKey]);
 
+  const addParlay = async (bet) => {
+    if (!userKey) return;
+    try {
+      // Insert parlay record
+      const { data: parlayData, error: parlayError } = await supabase.from('parlays').insert({
+        user_id: userKey,
+        ticket_number: bet.ticketNumber || null,
+        bet_type: bet.betType || 'parlay',
+        wager: bet.amount,
+        to_win: bet.toWin,
+        odds: bet.odds,
+        num_legs: bet.legs?.length || 0,
+        result: 'Pending',
+        game_date: bet.gameDate ?? null,
+        teaser_points: bet.teaserPoints ?? null,
+      }).select().single();
+      if (parlayError) throw parlayError;
+
+      // Insert each leg
+      const legRows = (bet.legs || []).map((leg, i) => ({
+        parlay_id: parlayData.id,
+        user_id: userKey,
+        sport: leg.sport,
+        game: leg.game,
+        pick: leg.pick,
+        odds: leg.odds,
+        game_date: leg.gameDate ?? bet.gameDate ?? null,
+        game_time: leg.gameTime ?? null,
+        game_id: leg.gameId ?? null,
+        result: 'Pending',
+        leg_number: i + 1,
+      }));
+      await supabase.from('parlay_legs').insert(legRows);
+
+      // Add to local state as a parlay object
+      setBets(p => [{ ...bet, id: parlayData.id, isParlay: true, result: 'Pending' }, ...p]);
+    } catch(e) {
+      console.error('addParlay error:', e);
+    }
+  };
+
   const addBet = async (bet) => {
-  setBets(p => [bet, ...p]);
-  if (userKey) {
-    await supabase.from('user_bets').insert({
-      user_id: userKey,
-      sport: bet.sport,
-      game: bet.game,
-      bet_type: bet.betType,
-      pick: bet.pick,
-      odds: bet.odds,
-      amount: bet.amount,
-      type: bet.type,
-      result: bet.result,
-      is_today: bet.isToday,
-      game_date: bet.gameDate ?? null,
-      game_time: bet.gameTime ?? null,
-      game_id: bet.gameId ?? null,
-    });
-  }
-};
+    if (bet.legs && bet.legs.length > 0) { await addParlay(bet); return; }
+    setBets(p => [bet, ...p]);
+    if (userKey) {
+      await supabase.from('user_bets').insert({
+        user_id: userKey,
+        sport: bet.sport,
+        game: bet.game,
+        bet_type: bet.betType,
+        pick: bet.pick,
+        odds: bet.odds,
+        amount: bet.amount,
+        type: bet.type,
+        result: bet.result,
+        is_today: bet.isToday,
+        game_date: bet.gameDate ?? null,
+        game_time: bet.gameTime ?? null,
+        game_id: bet.gameId ?? null,
+      });
+    }
+  };
 
 const updateBet = async (id, result) => {
   setBets(p => p.map(b => b.id === id ? { ...b, result } : b));
