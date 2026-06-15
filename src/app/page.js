@@ -727,7 +727,7 @@ function PicksTab({ userKey }) {
       const { data } = await supabase
         .from('daily_picks')
         .select('*')
-        .gte('date', '2026-06-11')
+        .gte('date', (() => { const d = new Date(); d.setDate(d.getDate() - 14); return d.toLocaleDateString('en-CA'); })())
         .lt('date', new Date().toLocaleDateString('en-CA'))
         .eq('status', 'active')
         .order('date', { ascending: false })
