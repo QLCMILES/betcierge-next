@@ -35,7 +35,7 @@ const fmt = (n) => `$${Math.abs(n || 0).toFixed(2)}`;
 const todayDisplay = () => new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
 // ── API Call Helper ────────────────────────────────────────────────────────
-const callClaude = async (messages, system, useSearch = false, imageBase64 = null, maxTokens = 1500) => {
+const callClaude = async (messages, system, useSearch = false, imageBase64 = null, maxTokens = 4000) => {
   const body = {
     model: "claude-sonnet-4-5",
     max_tokens: maxTokens,
@@ -616,7 +616,7 @@ Be sharp, warm, direct. Give a clear recommendation with your confidence level. 
 You remember this user's history from previous conversations.${todayPicksContext}${todayOddsContext}`,
         true,
         null,
-        2000
+        4000
       );
 
       const assistantMsg = { role: "assistant", text: result.text };
