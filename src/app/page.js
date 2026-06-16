@@ -864,6 +864,7 @@ function PicksTab({ userKey }) {
                                 </div>
                                 <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>{pick.game}</div>
                                 <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{pick.pick}</div>
+                                <div style={{ fontSize: 10, color: '#f5a623', marginTop: 3 }}>{pick.units || 1}U</div>
                                 {pick.insight && <div style={{ fontSize: 11, color: '#555', marginTop: 4, lineHeight: 1.4 }}>{pick.insight}</div>}
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 10 }}>
