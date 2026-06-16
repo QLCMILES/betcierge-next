@@ -559,7 +559,8 @@ function determineResult(bet, game) {
   const pick = bet.pick.toLowerCase();
   const betType = bet.bet_type?.toLowerCase().replace(/[^a-z]/g, '');
 
-  if (betType === 'moneyline') {
+  const isMoneyline = betType === 'moneyline' || (betType === 'straight' && (pick.includes('ml') || !pick.match(/[+-]?\d+\.?\d+/)));
+  if (isMoneyline) {
     const homeWon = homeScore > awayScore;
     const pickedHome = pick.includes(game.home_team.toLowerCase().split(' ').pop());
     return (homeWon === pickedHome) ? 'Win' : 'Loss';
