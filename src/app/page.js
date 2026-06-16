@@ -1797,7 +1797,7 @@ if (!user?.name) return <Onboarding onComplete={handleComplete} />;
         {[
           { id: "dashboard", icon: "🤖", lbl: "Hunter" },
           { id: "picks", icon: "🎯", lbl: "BetC Picks" },
-          { id: "logger", icon: "📝", lbl: "Log" },
+          { id: "logger", icon: "📝", lbl: "Log Bet" },
           { id: "gamecast", icon: "📡", lbl: "My Bets" },
           { id: "history", icon: "📊", lbl: "Bet History" },
         ].map(n => (
