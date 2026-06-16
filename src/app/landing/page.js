@@ -1,5 +1,11 @@
 "use client";
 import { useState, useEffect } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
 const GOLD = "#f5a623";
 const DARK = "#0a0a0f";
@@ -52,7 +58,19 @@ const faqs = [
 export default function Landing({ onGetStarted }) {
   const countdown = useCountdown(FOUNDING_END);
   const [openFaq, setOpenFaq] = useState(null);
+  const [picks, setPicks] = useState([]);  // ← add this on line 61
   const go = () => { if (onGetStarted) onGetStarted(); };
+
+  useEffect(() => {   // ← add this block after line 61
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    supabase
+      .from('daily_picks')
+      .select('sport, game, pick, odds, game_time, confidence')
+      .eq('date', today)
+      .eq('status', 'active')
+      .limit(3)
+      .then(({ data }) => { if (data) setPicks(data); });
+  }, []);
 
   return (
     <div style={{ background: DARK, minHeight: "100vh", fontFamily: "'Outfit', sans-serif", color: "#fff" }}>
@@ -99,27 +117,23 @@ export default function Landing({ onGetStarted }) {
         <div style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 16, overflow: "hidden" }}>
           <div style={{ padding: "14px 18px", borderBottom: "1px solid #1e1e2e", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontWeight: 700, fontSize: 14 }}>Today's Slate</span>
-            <span style={{ color: GRAY, fontSize: 12 }}>Tue, Jun 16</span>
+            <span style={{ color: GRAY, fontSize: 12 }}>{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' })}</span>
           </div>
-          <div style={{ padding: "14px 18px", borderBottom: "1px solid #1e1e2e", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
-                <span style={{ background: "#1a1a00", color: GOLD, fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4 }}>MLB</span>
-                <span style={{ color: GRAY, fontSize: 11 }}>7:10 PM ET · High confidence</span>
-              </div>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>Cincinnati Reds ML</div>
-            </div>
-            <span style={{ background: "#0a2e0a", color: GREEN, fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6 }}>FREE</span>
-          </div>
-          {[{ sport: "MLB", label: "Philadelphia Phillies ML" }, { sport: "MLB", label: "Chicago Cubs -1.5" }].map((p, i) => (
-            <div key={i} style={{ padding: "14px 18px", borderBottom: i === 0 ? "1px solid #1e1e2e" : "none", display: "flex", justifyContent: "space-between", alignItems: "center", opacity: 0.5 }}>
+          {picks.length === 0 ? (
+            <div style={{ padding: "20px", textAlign: "center", color: GRAY, fontSize: 13 }}>Today's picks loading...</div>
+          ) : picks.map((p, i) => (
+            <div key={i} style={{ padding: "14px 18px", borderBottom: i < picks.length - 1 ? "1px solid #1e1e2e" : "none", display: "flex", justifyContent: "space-between", alignItems: "center", opacity: i === 0 ? 1 : 0.5 }}>
               <div>
-                <div style={{ marginBottom: 4 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
                   <span style={{ background: "#1a1a00", color: GOLD, fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4 }}>{p.sport}</span>
+                  {i === 0 && <span style={{ color: GRAY, fontSize: 11 }}>{p.game_time} · {p.confidence} confidence</span>}
                 </div>
-                <div style={{ fontWeight: 700, fontSize: 14, filter: "blur(4px)", userSelect: "none" }}>{p.label}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, filter: i > 0 ? "blur(4px)" : "none", userSelect: i > 0 ? "none" : "auto" }}>{p.pick}</div>
               </div>
-              <span style={{ color: GRAY, fontSize: 12, fontWeight: 600 }}>🔒 Locked</span>
+              {i === 0
+                ? <span style={{ background: "#0a2e0a", color: GREEN, fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6 }}>FREE</span>
+                : <span style={{ color: GRAY, fontSize: 12, fontWeight: 600 }}>🔒 Locked</span>
+              }
             </div>
           ))}
           <div style={{ padding: "12px 18px", background: "#0d0d18", textAlign: "center", fontSize: 12, color: GRAY }}>
