@@ -81,8 +81,11 @@ export default function Landing({ onGetStarted }) {
         <h1 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "clamp(36px, 8vw, 58px)", fontWeight: 700, lineHeight: 1.1, marginBottom: 16, color: "#fff" }}>
           Never bet <em style={{ color: GOLD, fontStyle: "italic" }}>alone</em> again.
         </h1>
-        <p style={{ fontSize: 17, color: GRAY, lineHeight: 1.7, maxWidth: 520, margin: "0 auto 32px" }}>
+        <p style={{ fontSize: 17, color: GRAY, lineHeight: 1.7, maxWidth: 520, margin: "0 auto 16px" }}>
           Your own betting team in your pocket. Picks, a real-time analyst, and guardrails that keep you in the game.
+        </p>
+        <p style={{ fontSize: 14, color: "#555", lineHeight: 1.7, maxWidth: 520, margin: "0 auto 32px", borderTop: "1px solid #1e1e2e", paddingTop: 16 }}>
+          Built from the brain of a sports bettor, powered by AI. The research depth, line movement analysis, and situational awareness Hunter brings to every game is unlike anything else on the market.
         </p>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
           <button onClick={go} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Join The Team — $29.99/mo</button>

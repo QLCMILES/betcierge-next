@@ -1801,8 +1801,8 @@ const updateBet = async (id, result) => {
     Loading...
   </div>
 );
-if (!session) return <Landing onGetStarted={() => setShowLogin(true)} />;
 if (showLogin) return <LoginScreen onAuth={(s) => { setSession(s); setShowLogin(false); }} />;
+if (!session) return <Landing onGetStarted={() => setShowLogin(true)} />;
 if (!user?.name) return <Onboarding onComplete={handleComplete} />;
 
   return (
