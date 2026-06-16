@@ -759,13 +759,8 @@ function PicksTab({ userKey }) {
   const winRate = settled.length > 0 ? ((wins / settled.length) * 100).toFixed(0) : null;
   const unitsPnl = settled.reduce((acc, p) => { const u = p.units || 1; const odds = parseInt(p.odds) || -110; if (p.result === 'Win') { const profit = odds > 0 ? u * (odds / 100) : u * (100 / Math.abs(odds)); return acc + profit; } if (p.result === 'Loss') return acc - u; return acc; }, 0);
 
-  const sortedSettled = [...settled].sort((a, b) => new Date(b.date) - new Date(a.date) || b.id - a.id);
-  let streak = 0, streakType = null;
-  for (const p of sortedSettled) {
-    if (!streakType) streakType = p.result;
-    if (p.result === streakType) streak++;
-    else break;
-  }
+  const totalRisked = settled.reduce((acc, p) => acc + (p.units || 1), 0);
+  const roi = totalRisked > 0 ? ((unitsPnl / totalRisked) * 100).toFixed(1) : '0.0';
 
   const byDate = history.reduce((acc, p) => { (acc[p.date] = acc[p.date] || []).push(p); return acc; }, {});
   const sortedDates = Object.keys(byDate).sort((a, b) => new Date(b) - new Date(a));
@@ -821,10 +816,10 @@ function PicksTab({ userKey }) {
                 <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>Units</div>
               </div>
               <div style={{ flex: 1, background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 10, padding: '10px 0', textAlign: 'center' }}>
-                <div style={{ fontSize: 17, fontWeight: 800, color: streakType === 'Win' ? '#2ecc71' : streakType === 'Loss' ? '#e74c3c' : '#fff' }}>
-                  {streak}{streakType === 'Win' ? 'W' : streakType === 'Loss' ? 'L' : '—'}
+                <div style={{ fontSize: 17, fontWeight: 800, color: parseFloat(roi) >= 0 ? '#2ecc71' : '#e74c3c' }}>
+                  {parseFloat(roi) >= 0 ? '+' : ''}{roi}%
                 </div>
-                <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>Streak</div>
+                <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>ROI</div>
               </div>
             </div>
 
