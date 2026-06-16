@@ -985,9 +985,9 @@ function Dashboard({ user, bets, onNav, userKey }) {
             <div style={{ fontSize: 26, fontWeight: 800, color: "#f5a623", letterSpacing: -0.5 }}>${currentBankroll.toFixed(0)}</div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>Week of {weekLabel}</div>
-            <div style={{ fontSize: 26, fontWeight: 800, color: netPL >= 0 ? "#2ecc71" : "#e74c3c" }}>{netPL >= 0 ? "+" : ""}{netPL.toFixed(0)}</div>
-            <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>{goalPct.toFixed(0)}% of ${user.goal} goal</div>
+            <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>This Week · {weekLabel}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: netPL >= 0 ? "#2ecc71" : "#e74c3c" }}>{netPL >= 0 ? "+$" : "-$"}{Math.abs(netPL).toFixed(0)}</div>
+            <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>Week P&L · {goalPct.toFixed(0)}% of ${user.goal} goal</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
