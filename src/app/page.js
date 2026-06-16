@@ -20,6 +20,7 @@ const SPORT_OPTIONS = ["MLB", "NBA", "NFL", "NHL", "Soccer", "UFC/MMA", "NCAAB",
 // ── Supabase + Auth ────────────────────────────────────────────────────────
 import { supabase } from "../lib/supabase";
 import LoginScreen from "../lib/LoginScreen";
+import Landing from "./landing/page";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const calcProfit = (amount, odds) => {
@@ -1575,6 +1576,7 @@ const [screen, setScreen] = useState("dashboard");
 const [bets, setBets] = useState([]);
 const [session, setSession] = useState(null);
 const [authLoading, setAuthLoading] = useState(true);
+const [showLogin, setShowLogin] = useState(false);
 const userKey = session?.user?.id ?? null;
 
 useEffect(() => {
@@ -1799,7 +1801,8 @@ const updateBet = async (id, result) => {
     Loading...
   </div>
 );
-if (!session) return <LoginScreen onAuth={(s) => setSession(s)} />;
+if (!session) return <Landing onGetStarted={() => setShowLogin(true)} />;
+if (showLogin) return <LoginScreen onAuth={(s) => { setSession(s); setShowLogin(false); }} />;
 if (!user?.name) return <Onboarding onComplete={handleComplete} />;
 
   return (
