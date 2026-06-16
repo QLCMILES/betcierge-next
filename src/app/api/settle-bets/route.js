@@ -101,6 +101,32 @@ const NHL_PROP_STAT_MAP = {
   'shot': 'shots',
   'shots': 'shots',
 };
+const NFL_PROP_STAT_MAP = {
+  'passing yard': 'passingYards',
+  'passing yards': 'passingYards',
+  'passing td': 'passingTouchdowns',
+  'passing tds': 'passingTouchdowns',
+  'passing touchdown': 'passingTouchdowns',
+  'passing touchdowns': 'passingTouchdowns',
+  'completion': 'completions',
+  'completions': 'completions',
+  'interception': 'interceptions',
+  'interceptions': 'interceptions',
+  'rushing yard': 'rushingYards',
+  'rushing yards': 'rushingYards',
+  'rushing td': 'rushingTouchdowns',
+  'rushing touchdown': 'rushingTouchdowns',
+  'receiving yard': 'receivingYards',
+  'receiving yards': 'receivingYards',
+  'reception': 'receptions',
+  'receptions': 'receptions',
+  'receiving td': 'receivingTouchdowns',
+  'receiving touchdown': 'receivingTouchdowns',
+  'sack': 'sacks',
+  'sacks': 'sacks',
+  'tackle': 'tackles',
+  'tackles': 'tackles',
+};
 
 function parsePropPick(pick) {
   const lower = pick.toLowerCase();
@@ -111,7 +137,7 @@ function parsePropPick(pick) {
   if (!lineMatch) return null;
   const line = parseFloat(lineMatch[1]);
   let statKey = null;
-  for (const keyword of Object.keys({...PROP_STAT_MAP, ...NBA_PROP_STAT_MAP, ...NHL_PROP_STAT_MAP})) {
+  for (const keyword of Object.keys({...PROP_STAT_MAP, ...NBA_PROP_STAT_MAP, ...NHL_PROP_STAT_MAP, ...NFL_PROP_STAT_MAP})) {
     if (lower.includes(keyword)) { statKey = keyword; break; }
   }
   if (!statKey) return null;
@@ -130,6 +156,89 @@ function matchPlayerName(propPlayer, fullName) {
   return false;
 }
 
+async function fetchNFLGames(date) {
+  try {
+    const dateFormatted = date.replace(/-/g, '');
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${dateFormatted}`
+    );
+    const data = await res.json();
+    return (data.events || [])
+      .filter(e => e.status?.type?.completed)
+      .map(e => ({ gameId: e.id, name: e.name }));
+  } catch(e) {
+    console.error('fetchNFLGames error:', e.message);
+    return [];
+  }
+}
+
+async function fetchNFLBoxScorePlayers(gameId) {
+  try {
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${gameId}`
+    );
+    const data = await res.json();
+    const players = [];
+    const boxscore = data.boxscore?.players || [];
+    for (const team of boxscore) {
+      for (const statGroup of team.statistics || []) {
+        const keys = statGroup.keys || [];
+        for (const athlete of statGroup.athletes || []) {
+          const stats = {};
+          athlete.stats?.forEach((val, i) => { stats[keys[i]] = val; });
+          const category = statGroup.name?.toLowerCase();
+          const playerStats = {};
+          if (category === 'passing') {
+            playerStats.passingYards = parseInt(stats['passingYards'] || stats['YDS'] || 0);
+            playerStats.passingTouchdowns = parseInt(stats['passingTouchdowns'] || stats['TD'] || 0);
+            playerStats.completions = parseInt((stats['completionsAttempts'] || stats['C/ATT'] || '0/0').split('/')[0]);
+            playerStats.interceptions = parseInt(stats['interceptions'] || stats['INT'] || 0);
+          } else if (category === 'rushing') {
+            playerStats.rushingYards = parseInt(stats['rushingYards'] || stats['YDS'] || 0);
+            playerStats.rushingTouchdowns = parseInt(stats['rushingTouchdowns'] || stats['TD'] || 0);
+          } else if (category === 'receiving') {
+            playerStats.receivingYards = parseInt(stats['receivingYards'] || stats['YDS'] || 0);
+            playerStats.receptions = parseInt(stats['receptions'] || stats['REC'] || 0);
+            playerStats.receivingTouchdowns = parseInt(stats['receivingTouchdowns'] || stats['TD'] || 0);
+          } else if (category === 'defensive') {
+            playerStats.sacks = parseFloat(stats['sacks'] || stats['SACKS'] || 0);
+            playerStats.tackles = parseInt(stats['totalTackles'] || stats['TOT'] || 0);
+            playerStats.interceptions = parseInt(stats['interceptions'] || stats['INT'] || 0);
+          }
+          players.push({
+            fullName: athlete.athlete?.displayName || '',
+            stats: playerStats,
+          });
+        }
+      }
+    }
+    return players;
+  } catch(e) {
+    console.error('fetchNFLBoxScorePlayers error:', e.message);
+    return [];
+  }
+}
+
+async function settleNFLProp(bet) {
+  if (!bet.game_date) return null;
+  const parsed = parsePropPick(bet.pick);
+  if (!parsed) return null;
+  const { player, direction, line, statKey } = parsed;
+  const statField = NFL_PROP_STAT_MAP[statKey];
+  if (!statField) return null;
+  const games = await fetchNFLGames(bet.game_date);
+  if (!games.length) return null;
+  for (const game of games) {
+    const players = await fetchNFLBoxScorePlayers(game.gameId);
+    const playerData = players.find(p => matchPlayerName(player, p.fullName));
+    if (!playerData) continue;
+    const actual = parseFloat(playerData.stats[statField]);
+    if (isNaN(actual)) continue;
+    return direction === 'over' ? (actual > line ? 'Win' : actual === line ? 'Pending' : 'Loss')
+                                : (actual < line ? 'Win' : actual === line ? 'Pending' : 'Loss');
+  }
+  return null;
+}
 async function fetchMLBGamePks(date) {
   try {
     const res = await fetch(
@@ -494,6 +603,9 @@ export async function GET(request) {
         } else if (sport === 'nhl' || sport === 'hockey') {
           result = await settleNHLProp(bet);
           settlementLog.push({ id: bet.id, pick: bet.pick, method: 'nhl_stats', result });
+        } else if (sport === 'nfl' || sport === 'football') {
+          result = await settleNFLProp(bet);
+          settlementLog.push({ id: bet.id, pick: bet.pick, method: 'nfl_espn', result });
         }
       } else {
         const match = findMatchingGame(bet, allScores);
