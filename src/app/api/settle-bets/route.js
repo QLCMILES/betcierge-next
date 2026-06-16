@@ -592,7 +592,7 @@ async function settleDailyPicks(allScores) {
   const { data: pendingPicks, error } = await supabase
     .from('daily_picks')
     .select('*')
-    .eq('result', 'Pending')
+    .or('result.eq.Pending,result.is.null')
     .eq('status', 'active');
 
   if (error || !pendingPicks?.length) return { settled: 0, log: [] };
@@ -604,7 +604,7 @@ async function settleDailyPicks(allScores) {
     const betLike = {
       game: pick.game,
       pick: pick.pick,
-      bet_type: pick.pick?.toLowerCase().includes('over') || pick.pick?.toLowerCase().includes('under') ? 'total' : 'moneyline',
+      bet_type: pick.pick?.toLowerCase().includes('over') || pick.pick?.toLowerCase().includes('under') ? 'total' : pick.pick?.match(/[+-]\d+\.?\d+/) ? 'runline' : 'moneyline',
       odds: pick.odds,
       amount: pick.units || 1,
       game_date: pick.date,
