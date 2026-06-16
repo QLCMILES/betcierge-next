@@ -972,7 +972,7 @@ function Dashboard({ user, bets, onNav, userKey }) {
           <div style={S.greeting}>{hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"}, {user.name.split(" ")[0]} 👋</div>
           <div style={{ color: "#555", fontSize: 13, marginTop: 2 }}>{todayDisplay()}</div>
         </div>
-        <div style={S.logo}>BETCIERGE</div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}><div style={S.logo}>BETCIERGE</div><button onClick={() => supabase.auth.signOut()} style={{ background: "none", border: "none", color: "#555", fontSize: 11, cursor: "pointer", padding: 0 }}>Sign out</button></div>
       </div>
 
       {alerts.map((a, i) => <Alert key={i} {...a} />)}
