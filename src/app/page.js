@@ -539,6 +539,10 @@ KEY NFL PROP PRINCIPLES:
 3. O-line injuries are the most underpriced market inefficiency
 4. Divisional games = lower scoring, tighter matchups historically
 5. Vegas totals tell the story — high totals open up prop opportunities
+6. KEY NUMBERS: -3, -7, -10, -14 are the most important margins in football. Never lay -3.5 when -3 was the open. Never take +2.5 when +3 is available. Always note if a spread is sitting on, off, or has moved through a key number — this is often the difference between a cover and a loss.
+7. ATS RECORDS MATTER: Always search team ATS records in specific situations — as home favorites, road dogs, divisional games, off a bye, off a loss. Certain teams consistently beat or fail to cover in specific spots.
+8. REVERSE LINE MOVEMENT: If public money is heavy on one side but the line moves the other way, that is sharp money taking the other side. This is one of the strongest signals in football betting.
+9. CLOSING LINE VALUE: The best bettors in the world beat the closing line consistently. If you can get a number better than where the line closes, you have positive CLV regardless of outcome.
 
 NBA PROP PLAYBOOK:
 POINTS PROPS:
