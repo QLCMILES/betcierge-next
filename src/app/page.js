@@ -977,43 +977,29 @@ function Dashboard({ user, bets, onNav, userKey }) {
 
       {alerts.map((a, i) => <Alert key={i} {...a} />)}
 
-      {/* Bankroll Card */}
-      <div style={S.card}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+      {/* Compact Weekly Card */}
+      <div style={{ background: "#0f0f18", border: "1px solid #1e1e2e", borderRadius: 14, padding: "14px 16px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
           <div>
-            <div style={S.cardLbl}>Current Bankroll</div>
-            <div style={{ ...S.bigNum, color: netPL >= 0 ? "#f5a623" : "#e74c3c" }}>${currentBankroll.toFixed(0)}</div>
+            <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>Bankroll</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: "#f5a623", letterSpacing: -0.5 }}>${currentBankroll.toFixed(0)}</div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={S.cardLbl}>Week of {weekLabel}</div>
-            <div style={S.bigNum}>+${user.goal}</div>
+            <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>Week of {weekLabel}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: netPL >= 0 ? "#2ecc71" : "#e74c3c" }}>{netPL >= 0 ? "+" : ""}{netPL.toFixed(0)}</div>
+            <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>{goalPct.toFixed(0)}% of ${user.goal} goal</div>
           </div>
         </div>
-        <div style={{ margin: "14px 0 16px" }}>
-          <div style={{ background: "#1e1e2e", borderRadius: 8, height: 8, position: "relative", overflow: "visible", marginBottom: 10 }}>
-            <div style={{ position: "absolute", left: "50%", top: -3, width: 2, height: 14, background: "#333", borderRadius: 1 }} />
-            <div style={{ position: "absolute", top: 0, height: "100%", borderRadius: 8, left: netPL >= 0 ? "50%" : `${sliderPct}%`, width: `${Math.abs(sliderPct - 50)}%`, background: netPL >= 0 ? "linear-gradient(90deg,#f5a623,#f7c948)" : "linear-gradient(90deg,#e74c3c,#c0392b)" }} />
-            <div style={{ position: "absolute", top: -6, width: 20, height: 20, borderRadius: "50%", left: `calc(${sliderPct}% - 10px)`, background: netPL >= 0 ? "#f5a623" : "#e74c3c", border: "2px solid #0a0a0f" }} />
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ color: "#e74c3c", fontSize: 11 }}>-${user.goal}</span>
-            <span style={{ color: netPL >= 0 ? "#f5a623" : "#e74c3c", fontWeight: 700, fontSize: 16 }}>
-              {netPL >= 0 ? "+" : ""}{netPL.toFixed(0)}
-              <span style={{ fontSize: 12, opacity: 0.7, marginLeft: 4 }}>({goalPct.toFixed(0)}% of goal)</span>
-            </span>
-            <span style={{ color: "#2ecc71", fontSize: 11 }}>+${user.goal}</span>
-          </div>
-        </div>
-        <div style={S.statsRow}>
+        <div style={{ display: "flex", gap: 8 }}>
           {[
-            { val: wins.length, lbl: "Wins", color: "#2ecc71" },
-            { val: losses.length, lbl: "Losses", color: "#e74c3c" },
+            { val: wins.length, lbl: "W", color: "#2ecc71" },
+            { val: losses.length, lbl: "L", color: "#e74c3c" },
             { val: atRisk > 0 ? `$${atRisk}` : "—", lbl: "At Risk", color: "#f5a623" },
-            { val: `$${weekBets.reduce((s, b) => s + b.amount, 0)}`, lbl: "Wagered", color: "#f5a623" },
+            { val: `$${weekBets.reduce((s, b) => s + b.amount, 0)}`, lbl: "Wagered", color: "#888" },
           ].map((s, i) => (
-            <div key={i} style={S.statBox}>
-              <div style={{ ...S.statVal, color: s.color }}>{s.val}</div>
-              <div style={S.statLbl}>{s.lbl}</div>
+            <div key={i} style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "8px 0", textAlign: "center" }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: s.color }}>{s.val}</div>
+              <div style={{ fontSize: 10, color: "#555", marginTop: 1 }}>{s.lbl}</div>
             </div>
           ))}
         </div>
