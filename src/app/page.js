@@ -1795,11 +1795,11 @@ if (!user?.name) return <Onboarding onComplete={handleComplete} />;
       {/* Nav Bar */}
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "#0d0d14", borderTop: "1px solid #1e1e2e", display: "flex", padding: "8px 0 12px" }}>
         {[
-          { id: "dashboard", icon: "🏠", lbl: "Home" },
-          { id: "picks", icon: "🎯", lbl: "Picks" },
+          { id: "dashboard", icon: "🤖", lbl: "Hunter" },
+          { id: "picks", icon: "🎯", lbl: "BetC Picks" },
           { id: "logger", icon: "📝", lbl: "Log" },
-          { id: "gamecast", icon: "📡", lbl: "Gamecast" },
-          { id: "history", icon: "📊", lbl: "History" },
+          { id: "gamecast", icon: "📡", lbl: "My Bets" },
+          { id: "history", icon: "📊", lbl: "Bet History" },
         ].map(n => (
           <button key={n.id} onClick={() => setScreen(n.id)} style={{ flex: 1, background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer", padding: "6px 0", opacity: screen === n.id ? 1 : 0.4 }}>
             <span style={{ fontSize: 20 }}>{n.icon}</span>
