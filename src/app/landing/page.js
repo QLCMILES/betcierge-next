@@ -259,5 +259,3 @@ export default function Landing({ onGetStarted }) {
     </div>
   );
 }
-EOF</parameter>
-<parameter name="description">Create landing page file</parameter>
