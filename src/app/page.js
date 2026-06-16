@@ -757,7 +757,7 @@ function PicksTab({ userKey }) {
   const wins = settled.filter(p => p.result === 'Win').length;
   const losses = settled.filter(p => p.result === 'Loss').length;
   const winRate = settled.length > 0 ? ((wins / settled.length) * 100).toFixed(0) : null;
-  const unitsPnl = settled.reduce((acc, p) => p.result === 'Win' ? acc + (p.units || 1) : acc - (p.units || 1), 0);
+  const unitsPnl = settled.reduce((acc, p) => { const u = p.units || 1; const odds = parseInt(p.odds) || -110; if (p.result === 'Win') { const profit = odds > 0 ? u * (odds / 100) : u * (100 / Math.abs(odds)); return acc + profit; } if (p.result === 'Loss') return acc - u; return acc; }, 0);
 
   const sortedSettled = [...settled].sort((a, b) => new Date(b.date) - new Date(a.date) || b.id - a.id);
   let streak = 0, streakType = null;
@@ -915,8 +915,7 @@ function PicksTab({ userKey }) {
             <span style={{ background: "#1a1a00", color: "#f5a623", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6 }}>{pick.sport}</span>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               {pick.game_time && <span style={{ color: "#f5a623", fontSize: 12, fontWeight: 600, background: "#2a1a00", padding: "2px 8px", borderRadius: 4 }}>🕐 {pick.game_time}</span>}
-              <span style={{ color: "#666", fontSize: 12 }}>{pick.units}U</span>
-              <span style={{ background: confBg(pick.confidence), color: confColor(pick.confidence), border: `1px solid ${confColor(pick.confidence)}`, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>{pick.confidence}</span>
+              <span style={{ background: '#1a1a00', color: '#f5a623', border: '1px solid #f5a623', fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>{pick.units}U</span>
             </div>
           </div>
           <div style={{ color: "#fff", fontSize: 15, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginBottom: 8 }}>{pick.game}</div>

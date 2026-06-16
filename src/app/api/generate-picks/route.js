@@ -90,7 +90,9 @@ Write each insight like a PROFESSIONAL HANDICAPPER making a case. Use bold secti
         content: `Today is ${today_display}. Available games with current lines: ${gamesContext}
 
 Search the web for today's matchup data, then select the 3 best pre-game plays. Return ONLY raw JSON, no markdown:
-{"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","insight":"DETAILED multi-paragraph breakdown with bold headers, specific stats, pitcher names, line movement, and sharp money context. Minimum 150 words.","units":1,"game_time":"H:MM PM ET"}]}`
+{"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"DETAILED multi-paragraph breakdown with bold headers, specific stats, pitcher names, line movement, and sharp money context. Minimum 150 words."}]}
+
+UNIT SIZING RULES: Set units based on your conviction level. High confidence = 2 units. Medium confidence = 1 unit. Low confidence = 0.5 units. Never recommend more than 2 units on any single play.``
       }],
     }),
   });
@@ -116,7 +118,7 @@ Search the web for today's matchup data, then select the 3 best pre-game plays. 
     odds: p.odds,
     confidence: p.confidence,
     insight: p.insight,
-    units: parseInt(p.units) || 1,
+    units: p.confidence === 'High' ? 2 : p.confidence === 'Low' ? 0.5 : parseFloat(p.units) || 1,
     game_time: p.game_time || null,
     status: 'active',
     created_at: new Date().toISOString(),
