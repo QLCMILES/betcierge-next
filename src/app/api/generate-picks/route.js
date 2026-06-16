@@ -92,7 +92,7 @@ Write each insight like a PROFESSIONAL HANDICAPPER making a case. Use bold secti
 Search the web for today's matchup data, then select the 3 best pre-game plays. Return ONLY raw JSON, no markdown:
 {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"DETAILED multi-paragraph breakdown with bold headers, specific stats, pitcher names, line movement, and sharp money context. Minimum 150 words."}]}
 
-UNIT SIZING RULES: Set units based on your conviction level. High confidence = 2 units. Medium confidence = 1 unit. Low confidence = 0.5 units. Never recommend more than 2 units on any single play.``
+UNIT SIZING RULES: Set units based on your conviction level. High confidence = 2 units. Medium confidence = 1 unit. Low confidence = 0.5 units. Never recommend more than 2 units on any single play.`
       }],
     }),
   });

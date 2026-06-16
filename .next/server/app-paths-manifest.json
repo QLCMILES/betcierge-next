@@ -1,0 +1,11 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/claude/route": "app/api/claude/route.js",
+  "/api/live-scores/route": "app/api/live-scores/route.js",
+  "/page": "app/page.js",
+  "/api/odds/route": "app/api/odds/route.js",
+  "/odds/route": "app/odds/route.js",
+  "/api/snapshot-closing-odds/route": "app/api/snapshot-closing-odds/route.js",
+  "/api/generate-picks/route": "app/api/generate-picks/route.js",
+  "/api/settle-bets/route": "app/api/settle-bets/route.js"
+}
