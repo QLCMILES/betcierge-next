@@ -1590,8 +1590,16 @@ useEffect(() => {
     }
     setAuthLoading(false);
   });
-  const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
     setSession(session);
+    if (session?.user?.id) {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .single();
+      if (data) setUser(data);
+    }
     setAuthLoading(false);
   });
   return () => subscription.unsubscribe();
