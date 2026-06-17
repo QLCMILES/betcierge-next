@@ -151,7 +151,7 @@ function Alert({ msg, type }) {
 }
 
 // ── Snap to Log ────────────────────────────────────────────────────────────
-function SnapToLog({ onConfirm, onCancel }) {
+function SnapToLog({ onConfirm, onCancel, onDone }) {
   const [stage, setStage] = useState("upload");
   const [extractedBet, setExtractedBet] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -328,7 +328,10 @@ if (!parsed.gameDate || !parsed.gameTime) {
 
   const skipSlip = () => {
     if (currentSlip < slips.length - 1) setCurrentSlip(currentSlip + 1);
-    else setStage("upload");
+    else {
+      if (onDone) onDone();
+      else setStage("upload");
+    }
   };
 
   const confirmSlip = async () => {
@@ -338,7 +341,8 @@ if (!parsed.gameDate || !parsed.gameTime) {
     if (nextIndex < slips.length) {
       setCurrentSlip(nextIndex);
     } else {
-      setStage("upload");
+      if (onDone) onDone();
+      else setStage("upload");
     }
   };
 
@@ -1247,7 +1251,7 @@ function BetLogger({ onSave, onNav }) {
   if (mode === "snap") return (
     <div style={S.screen}>
       <div style={S.backRow}><button style={S.backBtn} onClick={() => onNav("dashboard")}>← Back</button><div style={S.logo}>BETCIERGE</div></div>
-      <SnapToLog onConfirm={(bet) => { onSave(bet); setMode("choose"); onNav("card"); }} onCancel={(prefillData) => { setPrefill(prefillData || {}); setMode("manual"); }} />
+      <SnapToLog onConfirm={(bet) => { onSave(bet); }} onDone={() => { setMode("choose"); onNav("card"); }} onCancel={(prefillData) => { setPrefill(prefillData || {}); setMode("manual"); }} />
     </div>
   );
 
