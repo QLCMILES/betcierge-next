@@ -572,8 +572,16 @@ export async function GET(request) {
 
     const sportsNeeded = new Set();
     for (const bet of pendingBets) {
-      const key = SPORT_MAP[bet.sport?.toLowerCase()];
+      const sport = bet.sport?.toLowerCase();
+      const key = SPORT_MAP[sport];
       if (key) sportsNeeded.add(key);
+      if (sport === 'soccer') {
+        sportsNeeded.add('soccer_usa_mls');
+        sportsNeeded.add('soccer_fifa_world_cup');
+        sportsNeeded.add('soccer_uefa_champs_league');
+        sportsNeeded.add('soccer_uefa_europa_league');
+        sportsNeeded.add('soccer_conmebol_copa_libertadores');
+      }
     }
 
     const apiKey = process.env.ODDS_API_KEY;
