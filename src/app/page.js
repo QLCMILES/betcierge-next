@@ -156,6 +156,10 @@ function SnapToLog({ onConfirm, onCancel }) {
   const [extractedBet, setExtractedBet] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
+  const [slips, setSlips] = useState([]); // queue of parsed bets
+  const [currentSlip, setCurrentSlip] = useState(0); // index in queue
+  const [totalSlips, setTotalSlips] = useState(0);
+  const [processingIndex, setProcessingIndex] = useState(0);
   const fileRef = useRef(null);
 
   const handleFile = async (file) => {
@@ -247,6 +251,87 @@ if (!parsed.gameDate || !parsed.gameTime) {
     setStage("error");
   }
   };
+  const handleFiles = async (files) => {
+    if (!files || files.length === 0) return;
+    const fileArray = Array.from(files);
+    setTotalSlips(fileArray.length);
+    setSlips([]);
+    setCurrentSlip(0);
+    if (fileArray.length === 1) {
+      handleFile(fileArray[0]);
+      return;
+    }
+    setStage("reading");
+    const results = [];
+    for (let i = 0; i < fileArray.length; i++) {
+      setProcessingIndex(i + 1);
+      const file = fileArray[i];
+      const base64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(",")[1]);
+        r.onerror = () => rej(new Error("Read failed"));
+        r.readAsDataURL(file);
+      });
+      const preview = URL.createObjectURL(file);
+      try {
+        const response = await fetch("/api/claude", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-5",
+            max_tokens: 1000,
+            system: "You are Hunter. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). For STRAIGHT BETS return ONLY raw JSON: {\"sport\":\"...\",\"game\":\"...\",\"betType\":\"...\",\"odds\":\"...\",\"pick\":\"...\",\"amount\":0,\"toWin\":0,\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\",\"confidence\":95}. For PARLAYS, TEASERS, and SGPs return ONLY raw JSON: {\"betType\":\"parlay\",\"ticketNumber\":\"...\",\"amount\":0,\"toWin\":0,\"odds\":\"...\",\"teaserPoints\":null,\"gameDate\":\"YYYY-MM-DD\",\"legs\":[{\"sport\":\"...\",\"game\":\"...\",\"pick\":\"...\",\"odds\":\"...\",\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\"}],\"confidence\":95}. TRYINK FORMAT: Bets show as [#]. [Team] [Pitcher1] - R / [Pitcher2] - L LP [spread] [odds]. Extract ONLY the team name. SPREAD DETECTION: If you see -1½, -1.5, +1½, +1.5, this is a RUN LINE bet. Set pick to \"[Team] -1.5\" or \"[Team] +1.5\". If NO spread, set pick to \"[Team] ML\". GENERAL RULES: Never guess. Use empty strings for missing fields. gameDate in ET. gameTime in 24hr ET format. If unclear: {\"error\":\"reason\"}.",
+            messages: [{ role: "user", content: [
+              { type: "image", source: { type: "base64", media_type: file.type || "image/jpeg", data: base64 } },
+              { type: "text", text: "Extract the bet details from this slip." }
+            ]}]
+          })
+        });
+        const data = await response.json();
+        const text = (data.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+        const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+        try {
+          const oddsRes = await fetch("/api/odds", { method: "POST" });
+          const oddsData = await oddsRes.json();
+          if (oddsData.games) {
+            const game = parsed.game?.toLowerCase() || "";
+            const match = oddsData.games.find(g => {
+              const home = g.home_team.toLowerCase();
+              const away = g.away_team.toLowerCase();
+              return home.split(' ').some(w => w.length > 3 && game.includes(w)) ||
+                away.split(' ').some(w => w.length > 3 && game.includes(w));
+            });
+            if (match) {
+              parsed.gameId = match.id;
+              parsed.game = `${match.away_team} @ ${match.home_team}`;
+              parsed.gameDate = new Date(match.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+              parsed.gameTime = new Date(match.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
+            } else if (parsed.game) {
+              parsed.game = parsed.game.replace(/\s+vs\.?\s+.*/i, '').trim();
+            }
+          }
+        } catch(e) {}
+        results.push({ parsed, preview, error: null });
+      } catch(e) {
+        results.push({ parsed: null, preview, error: "Couldn't read this slip" });
+      }
+    }
+    setSlips(results);
+    setCurrentSlip(0);
+    setStage("queue");
+  };
+
+  const skipSlip = () => {
+    if (currentSlip < slips.length - 1) setCurrentSlip(currentSlip + 1);
+    else setStage("upload");
+  };
+
+  const confirmSlip = async () => {
+    const slip = slips[currentSlip];
+    if (slip?.parsed) await onConfirm(slip.parsed);
+    if (currentSlip < slips.length - 1) setCurrentSlip(currentSlip + 1);
+    else setStage("upload");
+  };
 
   return (
     <div style={S.snap.wrap}>
@@ -256,7 +341,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
       </div>
       {stage === "upload" && (
         <div style={S.snap.uploadZone} onClick={() => fileRef.current?.click()}>
-          <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
+          <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => handleFiles(e.target.files)} />
           <div style={{ fontSize: 48, marginBottom: 12 }}>📱</div>
           <div style={S.snap.uploadTitle}>Upload your bet slip</div>
           <div style={S.snap.uploadSub}>Screenshot from any sportsbook</div>
