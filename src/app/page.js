@@ -217,6 +217,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
   const oddsData = await oddsRes.json();
   if (oddsData.games) {
     const game = parsed.game?.toLowerCase() || "";
+    console.log("SNAP DEBUG game:", parsed.game, "pick:", parsed.pick);
     const parsedDate = parsed.gameDate || "";
     const match = oddsData.games.find(g => {
       const home = g.home_team.toLowerCase();
