@@ -1254,7 +1254,7 @@ function BetLogger({ onSave, onNav }) {
   if (mode === "snap") return (
     <div style={S.screen}>
       <div style={S.backRow}><button style={S.backBtn} onClick={() => onNav("dashboard")}>← Back</button><div style={S.logo}>BETCIERGE</div></div>
-      <SnapToLog onConfirm={async (bet) => { await onSave(bet); setMode("choose"); onNav("gamecast"); }} onDone={() => { setMode("choose"); onNav("card"); }} onCancel={(prefillData) => { setPrefill(prefillData || {}); setMode("manual"); }} />
+      <SnapToLog onConfirm={async (bet) => { await onSave(bet); }} onDone={() => { setMode("choose"); onNav("card"); }} onCancel={(prefillData) => { setPrefill(prefillData || {}); setMode("manual"); }} />
     </div>
   );
 
