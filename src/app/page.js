@@ -161,6 +161,7 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
   const [totalSlips, setTotalSlips] = useState(0);
   const [processingIndex, setProcessingIndex] = useState(0);
   const fileRef = useRef(null);
+  const [logging, setLogging] = useState(false);
 
   const handleFile = async (file) => {
     if (!file) return;
@@ -386,7 +387,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={() => onCancel(extractedBet)} style={S.snap.editBtn}>Edit Manually</button>
-            <button onClick={() => onConfirm(extractedBet)} style={S.snap.confirmBtn}>Log This Bet</button>
+            <button onClick={() => { if (!logging) { setLogging(true); onConfirm(extractedBet); }}} style={S.snap.confirmBtn}>Log This Bet</button>
           </div>
         </div>
       )}
@@ -1253,7 +1254,7 @@ function BetLogger({ onSave, onNav }) {
   if (mode === "snap") return (
     <div style={S.screen}>
       <div style={S.backRow}><button style={S.backBtn} onClick={() => onNav("dashboard")}>← Back</button><div style={S.logo}>BETCIERGE</div></div>
-      <SnapToLog onConfirm={(bet) => { onSave(bet); }} onDone={() => { setMode("choose"); onNav("card"); }} onCancel={(prefillData) => { setPrefill(prefillData || {}); setMode("manual"); }} />
+      <SnapToLog onConfirm={(bet) => { onSave(bet); setMode("choose"); onNav("card"); }} onDone={() => { setMode("choose"); onNav("card"); }} onCancel={(prefillData) => { setPrefill(prefillData || {}); setMode("manual"); }} />
     </div>
   );
 
