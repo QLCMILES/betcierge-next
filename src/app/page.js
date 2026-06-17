@@ -253,6 +253,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
   };
   const handleFiles = async (files) => {
     if (!files || files.length === 0) return;
+    try {
     const fileArray = Array.from(files);
     setTotalSlips(fileArray.length);
     setSlips([]);
@@ -319,6 +320,10 @@ if (!parsed.gameDate || !parsed.gameTime) {
     setSlips(results);
     setCurrentSlip(0);
     setStage("queue");
+    } catch(e) {
+      setErrorMsg("Couldn't process the slips. Try again.");
+      setStage("error");
+    }
   };
 
   const skipSlip = () => {
@@ -341,7 +346,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
       </div>
       {stage === "upload" && (
         <div style={S.snap.uploadZone} onClick={() => fileRef.current?.click()}>
-          <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => handleFiles(e.target.files)} />
+          <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => { if (e.target.files && e.target.files.length > 0) handleFiles(e.target.files); }} />
           <div style={{ fontSize: 48, marginBottom: 12 }}>📱</div>
           <div style={S.snap.uploadTitle}>Upload your bet slip</div>
           <div style={S.snap.uploadSub}>Screenshot from any sportsbook</div>
@@ -351,7 +356,9 @@ if (!parsed.gameDate || !parsed.gameTime) {
       {stage === "reading" && (
         <div style={{ padding: 32, textAlign: "center" }}>
           {imagePreview && <img src={imagePreview} alt="slip" style={{ width: "100%", maxHeight: 200, objectFit: "contain", marginBottom: 16 }} />}
-          <div style={{ color: "#f5a623", fontWeight: 700, fontSize: 16 }}>Hunter is reading your slip...</div>
+          <div style={{ color: "#f5a623", fontWeight: 700, fontSize: 16 }}>
+            {totalSlips > 1 ? `Hunter is reading slip ${processingIndex} of ${totalSlips}...` : "Hunter is reading your slip..."}
+          </div>
         </div>
       )}
       {stage === "confirm" && extractedBet && (
@@ -398,6 +405,43 @@ if (!parsed.gameDate || !parsed.gameTime) {
             <button onClick={() => onCancel(extractedBet)} style={S.snap.editBtn}>Edit Manually</button>
             <button onClick={() => onConfirm(extractedBet)} style={S.snap.confirmBtn}>Log This Bet</button>
           </div>
+        </div>
+      )}
+      {stage === "queue" && slips[currentSlip] && (
+        <div style={{ padding: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ color: "#2ecc71", fontSize: 15, fontWeight: 700 }}>✅ Slip {currentSlip + 1} of {slips.length}</div>
+            <div style={{ display: "flex", gap: 4 }}>
+              {slips.map((_, i) => (
+                <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: i === currentSlip ? "#f5a623" : i < currentSlip ? "#2ecc71" : "#333" }} />
+              ))}
+            </div>
+          </div>
+          {slips[currentSlip].error ? (
+            <div style={{ padding: 20, textAlign: "center" }}>
+              <div style={{ color: "#e74c3c", fontSize: 14, marginBottom: 16 }}>{slips[currentSlip].error}</div>
+              <button onClick={skipSlip} style={S.snap.editBtn}>Skip</button>
+            </div>
+          ) : (
+            <>
+              <div style={{ color: "#888", fontSize: 12, marginBottom: 8 }}>Review the details — tap Skip to move on or Log It to save.</div>
+              {slips[currentSlip].preview && <img src={slips[currentSlip].preview} alt="slip" style={{ width: "100%", maxHeight: 140, objectFit: "contain", marginBottom: 12 }} />}
+              <div style={{ background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 14, padding: 16, marginBottom: 14 }}>
+                {[["Sport", slips[currentSlip].parsed.sport], ["Game", slips[currentSlip].parsed.game], ["Pick", slips[currentSlip].parsed.pick], ["Odds", slips[currentSlip].parsed.odds], ["Wager", `$${slips[currentSlip].parsed.amount}`], ["To Win", `$${slips[currentSlip].parsed.toWin}`], ["Date", slips[currentSlip].parsed.gameDate || ""], ["Time", slips[currentSlip].parsed.gameTime || ""]].map(([l, v]) => (
+                  <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #1a1a24" }}>
+                    <span style={{ color: "#666", fontSize: 13 }}>{l}</span>
+                    <span style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={skipSlip} style={S.snap.editBtn}>Skip</button>
+                <button onClick={confirmSlip} style={S.snap.confirmBtn}>
+                  {currentSlip < slips.length - 1 ? `Log It (${slips.length - currentSlip - 1} more)` : "Log It"}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
       {stage === "error" && (
