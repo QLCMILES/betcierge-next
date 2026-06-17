@@ -671,7 +671,31 @@ function determineResult(bet, game) {
   const pick = bet.pick.toLowerCase();
   const betType = bet.bet_type?.toLowerCase().replace(/[^a-z]/g, '');
 
-  const isMoneyline = betType === 'moneyline' || (betType === 'straight' && (pick.includes('ml') || !pick.match(/[+-]?\d+\.?\d+/)));
+  const isOverUnder = pick.includes('over') || pick.includes('under');
+  const isMoneyline = !isOverUnder && (betType === 'moneyline' || (betType === 'straight' && (pick.includes('ml') || !pick.match(/[+-]?\d+\.?\d+/))));
+  if (isMoneyline) {
+    const homeWon = homeScore > awayScore;
+    const pickedHome = pick.includes(game.home_team.toLowerCase().split(' ').pop());
+    return (homeWon === pickedHome) ? 'Win' : 'Loss';
+  }
+  if (['spread', 'straight', 'runline'].includes(betType) && !isOverUnder) {
+    const spreadMatch = pick.match(/([+-]?\d+\.?\d*)/);
+    if (!spreadMatch) return null;
+    const spread = parseFloat(spreadMatch[1]);
+    const pickedHome = pick.includes(game.home_team.toLowerCase().split(' ').pop());
+    const diff = pickedHome ? homeScore - awayScore : awayScore - homeScore;
+    return (diff + spread > 0) ? 'Win' : (diff + spread === 0) ? 'Pending' : 'Loss';
+  }
+  if (isOverUnder || ['totalou', 'total', 'over', 'under', 'totalrunsoverunder', 'overunder', 'totalpointsoverunder', 'totalgoalsoverunder'].includes(betType)) {
+    const totalMatch = pick.match(/(\d+\.?\d*)/);
+    if (!totalMatch) return null;
+    const total = parseFloat(totalMatch[1]);
+    const actual = homeScore + awayScore;
+    const isOver = pick.includes('over') || betType === 'over';
+    return isOver ? (actual > total ? 'Win' : actual === total ? 'Pending' : 'Loss')
+                  : (actual < total ? 'Win' : actual === total ? 'Pending' : 'Loss');
+  }
+  return null;
   if (isMoneyline) {
     const homeWon = homeScore > awayScore;
     const pickedHome = pick.includes(game.home_team.toLowerCase().split(' ').pop());
