@@ -224,9 +224,9 @@ if (!parsed.gameDate || !parsed.gameTime) {
       const gameDate = g.commence_time
         ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
         : null;
-      const teamMatch = home.split(' ').some(w => w.length > 3 && game.includes(w)) ||
-        away.split(' ').some(w => w.length > 3 && game.includes(w));
-      return teamMatch;
+      const homeMatch = home.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
+      const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
+      return homeMatch || awayMatch;
     });
     if (match) {
       parsed.gameId = match.id;
@@ -299,8 +299,9 @@ if (!parsed.gameDate || !parsed.gameTime) {
             const match = oddsData.games.find(g => {
               const home = g.home_team.toLowerCase();
               const away = g.away_team.toLowerCase();
-              return home.split(' ').some(w => w.length > 3 && game.includes(w)) ||
-                away.split(' ').some(w => w.length > 3 && game.includes(w));
+              const homeMatch = home.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
+              const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
+              return homeMatch || awayMatch;
             });
             if (match) {
               parsed.gameId = match.id;
