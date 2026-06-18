@@ -1629,9 +1629,9 @@ function History({ bets, onUpdate, onNav }) {
             <span style={{ color: "#555", fontSize: 12, marginLeft: 8 }}>{dayBets.length} bet{dayBets.length !== 1 ? "s" : ""}</span>
           </div>
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <span style={{ fontSize: 12, color: "#2ecc71" }}>{dayWins}W</span>
-            <span style={{ fontSize: 12, color: "#e74c3c" }}>{dayLosses}L</span>
-            <span style={{ fontSize: 12, color: dayPL >= 0 ? "#2ecc71" : "#e74c3c" }}>{dayPL >= 0 ? "+" : ""}{fmt(dayPL)}</span>
+            <span style={{ fontSize: 12, color: "#2ecc71", minWidth: 28, textAlign: "right" }}>{dayWins}W</span>
+            <span style={{ fontSize: 12, color: "#e74c3c", minWidth: 28, textAlign: "right" }}>{dayLosses}L</span>
+            <span style={{ fontSize: 12, color: dayPL >= 0 ? "#2ecc71" : "#e74c3c", minWidth: 60, textAlign: "right" }}>{dayPL >= 0 ? "+" : ""}{fmt(dayPL)}</span>
             <span style={{ color: "#555", fontSize: 12 }}>{isExpanded ? "▲" : "▼"}</span>
           </div>
         </div>
