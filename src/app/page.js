@@ -387,7 +387,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={() => onCancel(extractedBet)} style={S.snap.editBtn}>Edit Manually</button>
-            <button onClick={() => { if (!logging) { setLogging(true); onConfirm(extractedBet); }}} style={S.snap.confirmBtn}>Log This Bet</button>
+            <button onClick={() => { if (!logging) { setLogging(true); onConfirm(extractedBet).then(() => onDone && onDone()); }}} style={S.snap.confirmBtn}>Log This Bet</button>
           </div>
         </div>
       )}
@@ -1254,7 +1254,7 @@ function BetLogger({ onSave, onNav }) {
   if (mode === "snap") return (
     <div style={S.screen}>
       <div style={S.backRow}><button style={S.backBtn} onClick={() => onNav("dashboard")}>← Back</button><div style={S.logo}>BETCIERGE</div></div>
-      <SnapToLog onConfirm={async (bet) => { await onSave(bet); }} onDone={() => { setMode("choose"); onNav("card"); }} onCancel={(prefillData) => { setPrefill(prefillData || {}); setMode("manual"); }} />
+      <SnapToLog onConfirm={async (bet) => { await onSave(bet); }} onDone={() => { setMode("choose"); onNav("gamecast"); }} onCancel={(prefillData) => { setPrefill(prefillData || {}); setMode("manual"); }} />
     </div>
   );
 
