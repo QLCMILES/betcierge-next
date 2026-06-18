@@ -1616,7 +1616,7 @@ function History({ bets, onUpdate, onNav }) {
   );
   const DaySection = ({ dateStr }) => {
     const dayBets = groups[dateStr];
-    const isExpanded = expandedGroups[dateStr] !== false; // default open
+    const isExpanded = expandedGroups[dateStr] === true; // default closed
     const dayWins = dayBets.filter(b => b.result === "Win").length;
     const dayLosses = dayBets.filter(b => b.result === "Loss").length;
     const dayPL = dayBets.filter(b => b.result === "Win").reduce((s, b) => s + (calcProfit(b.amount, b.odds) || 0), 0)
