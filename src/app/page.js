@@ -1119,12 +1119,12 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
           <div style={{ color: "#555", fontSize: 13, marginTop: 2 }}>{todayDisplay()}</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-    <button onClick={() => { setShowNotifs(!showNotifs); if (!showNotifs) markAllRead(); }} style={{ background: "none", border: "none", cursor: "pointer", position: "relative", padding: 0 }}>
-      <span style={{ fontSize: 20 }}>🔔</span>
+  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div style={S.logo}>BETCIERGE</div>
+    <button onClick={() => { setShowNotifs(!showNotifs); if (!showNotifs) markAllRead(); }} style={{ background: "none", border: "none", cursor: "pointer", position: "relative", padding: 0, marginTop: 2 }}>
+      <span style={{ fontSize: 16 }}>🔔</span>
       {unreadCount > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: "#e74c3c", color: "#fff", borderRadius: "50%", fontSize: 9, fontWeight: 700, width: 14, height: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>{unreadCount}</span>}
     </button>
-    <div style={S.logo}>BETCIERGE</div>
   </div>
   <button onClick={() => supabase.auth.signOut()} style={{ background: "none", border: "none", color: "#555", fontSize: 11, cursor: "pointer", padding: 0 }}>Sign out</button>
 </div>
