@@ -1,38 +1,42 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
+const supabaseAnon = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 export async function POST(req) {
   try {
     const { message, target, channel } = await req.json();
 
-    let query = supabase.from('user_profiles').select('*');
+    let query = supabaseAnon.from('user_profiles').select('*');
     if (target === 'team') query = query.in('subscription_tier', ['team', 'edge', 'capital']);
     if (target === 'trial') query = query.not('trial_ends_at', 'is', null);
     if (target === 'free') query = query.eq('subscription_tier', 'lookout');
     
-    const { data: users, error } = await query;
-console.log('Users:', users?.length, 'Error:', error?.message);
-if (!users?.length) return Response.json({ sent: 0, debug: error?.message });
+    const { data: users, error: userError } = await query;
+    console.log('Users:', users?.length, 'Error:', userError?.message);
+    if (!users?.length) return Response.json({ sent: 0, debug: userError?.message });
 
-    const { data: notif } = await supabase.from('notifications').insert({
-      message,
-      target,
-      channel,
-      sent_by: 'qlcmiles@gmail.com'
+    const { data: notif, error: notifError } = await supabaseAdmin.from('notifications').insert({
+      message, target, channel, sent_by: 'qlcmiles@gmail.com'
     }).select().single();
+    
+    console.log('Notif created:', notif?.id, 'Error:', notifError?.message);
 
-    // Create user_notifications for each target user
     if (notif) {
       const userNotifs = users.map(u => ({
         user_id: u.user_id,
         notification_id: notif.id,
         read: false
       }));
-      await supabase.from('user_notifications').insert(userNotifs);
+      const { error: unError } = await supabaseAdmin.from('user_notifications').insert(userNotifs);
+      console.log('User notifs error:', unError?.message);
     }
 
     let smsSent = 0;
@@ -48,12 +52,12 @@ if (!users?.length) return Response.json({ sent: 0, debug: error?.message });
           });
           smsSent++;
         } catch(e) {
-          console.error('SMS error for', user.phone, e.message);
+          console.error('SMS error:', e.message);
         }
       }
     }
 
-    await supabase.from('admin_log').insert({
+    await supabaseAdmin.from('admin_log').insert({
       action: 'send_notification',
       target,
       details: { message, channel, smsSent, totalUsers: users.length },
