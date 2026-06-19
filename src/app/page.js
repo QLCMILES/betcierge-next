@@ -849,7 +849,7 @@ function formatInsight(text) {
   });
 }
 // ── Picks Tab ──────────────────────────────────────────────────────────────
-function PicksTab({ userKey }) {
+function PicksTab({ userKey, user }) {
   const [picks, setPicks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -859,6 +859,11 @@ function PicksTab({ userKey }) {
 
   useEffect(() => { loadPicks(); loadHistory(); }, []);
 
+  const updatePickResult = async (pickId, result) => {
+    await supabase.from('daily_picks').update({ result }).eq('id', pickId);
+    setPicks(prev => prev.map(p => p.id === pickId ? { ...p, result } : p));
+    setHistory(prev => prev.map(p => p.id === pickId ? { ...p, result } : p));
+  };
   const loadPicks = async () => {
     setLoading(true);
     try {
@@ -1009,6 +1014,12 @@ function PicksTab({ userKey }) {
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 10 }}>
                                 {resultBadge(pick.result)}
+{user?.email === 'qlcmiles@gmail.com' && (!pick.result || pick.result === 'Pending' || pick.result === 'Win' || pick.result === 'Loss') && (
+  <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+    <button onClick={() => updatePickResult(pick.id, 'Push')} style={{ background: '#0a1a2e', color: '#3498db', border: '1px solid #3498db', borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer', fontWeight: 700 }}>PUSH</button>
+    <button onClick={() => updatePickResult(pick.id, 'Void')} style={{ background: '#1a1a1a', color: '#888', border: '1px solid #444', borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer', fontWeight: 700 }}>VOID</button>
+  </div>
+)}
                                 <span style={{ fontSize: 11, color: '#f5a623' }}>{String(pick.odds).startsWith('+') ? pick.odds : pick.odds > 0 ? `+${pick.odds}` : pick.odds}</span>
                               </div>
                             </div>
@@ -1955,7 +1966,7 @@ if (!user?.name) return <Onboarding onComplete={handleComplete} />;
     <div style={{ background: "#0a0a0f", minHeight: "100vh", maxWidth: 430, margin: "0 auto", fontFamily: "'Outfit',sans-serif", paddingBottom: 80 }}>
       <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
       {screen === "dashboard" && <Dashboard user={user} bets={bets} onNav={setScreen} userKey={userKey} />}
-      {screen === "picks" && <PicksTab userKey={userKey} />}
+      {screen === "picks" && <PicksTab userKey={userKey} user={user} />}
       {screen === "card" && <TodayCard bets={bets} onNav={setScreen} />}
 {screen === "gamecast" && <Gamecast bets={bets} onNav={setScreen} />}
       {screen === "logger" && <BetLogger onSave={addBet} onNav={setScreen} />}
