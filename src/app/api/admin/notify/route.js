@@ -18,12 +18,22 @@ export async function POST(req) {
 console.log('Users:', users?.length, 'Error:', error?.message);
 if (!users?.length) return Response.json({ sent: 0, debug: error?.message });
 
-    await supabase.from('notifications').insert({
+    const { data: notif } = await supabase.from('notifications').insert({
       message,
       target,
       channel,
       sent_by: 'qlcmiles@gmail.com'
-    });
+    }).select().single();
+
+    // Create user_notifications for each target user
+    if (notif) {
+      const userNotifs = users.map(u => ({
+        user_id: u.user_id,
+        notification_id: notif.id,
+        read: false
+      }));
+      await supabase.from('user_notifications').insert(userNotifs);
+    }
 
     let smsSent = 0;
     if ((channel === 'sms' || channel === 'both') && process.env.TWILIO_ACCOUNT_SID) {
