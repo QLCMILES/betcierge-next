@@ -930,7 +930,7 @@ function PicksTab({ userKey }) {
 
   const resultBadge = (result) => {
     if (!result || result === 'Pending') return <span style={{ background: '#1a1a1a', color: '#555', padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>PENDING</span>;
-    const c = { Win: { bg: '#0a2e0a', color: '#2ecc71' }, Loss: { bg: '#2e0a0a', color: '#e74c3c' } }[result] || { bg: '#1a1a1a', color: '#888' };
+    const c = { Win: { bg: '#0a2e0a', color: '#2ecc71' }, Loss: { bg: '#2e0a0a', color: '#e74c3c' }, Push: { bg: '#0a1a2e', color: '#3498db' }, Void: { bg: '#1a1a1a', color: '#888' } }[result] || { bg: '#1a1a1a', color: '#888' };
     return <span style={{ background: c.bg, color: c.color, padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>{result.toUpperCase()}</span>;
   };
 
@@ -1178,7 +1178,7 @@ function TodayCard({ bets, onNav }) {
             <div style={{ color: "#ccc", fontSize: 13 }}>${bet.amount} → <span style={{ color: "#f5a623" }}>{fmt(calcProfit(bet.amount, bet.odds))}</span></div>
           </div>
           <div style={{ marginTop: 8, display: "inline-block", background: bet.result === "Win" ? "#1a2e1a" : bet.result === "Loss" ? "#2a0f0f" : "#1a1500", color: bet.result === "Win" ? "#2ecc71" : bet.result === "Loss" ? "#e74c3c" : "#f5a623", fontSize: 11, fontWeight: 700, padding: "4px 12px", borderRadius: 20 }}>
-            {bet.result === "Win" ? "✅ WIN" : bet.result === "Loss" ? "❌ LOSS" : "⏳ PENDING"}
+            {bet.result === "Win" ? "✅ WIN" : bet.result === "Loss" ? "❌ LOSS" : bet.result === "Push" ? "🔵 PUSH" : bet.result === "Void" ? "⚪ VOID" : "⏳ PENDING"}
           </div>
         </div>
       ))}
@@ -1552,7 +1552,7 @@ function History({ bets, onUpdate, onNav }) {
               - losses.reduce((s, b) => s + b.amount, 0);
   const winRate = settled.length > 0 ? ((wins.length / settled.length) * 100).toFixed(0) : 0;
 
-  const BetCard = ({ bet }) => (
+  const BetCard = ({ bet, onUpdate }) => (
     <div key={bet.id} style={S.betCard}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1608,9 +1608,15 @@ function History({ bets, onUpdate, onNav }) {
         </>
       )}
 
-      <div style={{ marginTop: 8, display: "inline-block", background: bet.result === "Win" ? "#1a2e1a" : bet.result === "Loss" ? "#2a0f0f" : "#1a1500", color: bet.result === "Win" ? "#2ecc71" : bet.result === "Loss" ? "#e74c3c" : "#f5a623", borderRadius: 4, padding: "2px 10px", fontSize: 12 }}>
-        {bet.result === "Win" ? "✅ WIN" : bet.result === "Loss" ? "❌ LOSS" : "⏳ PENDING"}
+      <div style={{ marginTop: 8, display: "inline-block", background: bet.result === "Win" ? "#1a2e1a" : bet.result === "Loss" ? "#2a0f0f" : bet.result === "Push" ? "#0a1a2e" : bet.result === "Void" ? "#1a1a1a" : "#1a1500", color: bet.result === "Win" ? "#2ecc71" : bet.result === "Loss" ? "#e74c3c" : bet.result === "Push" ? "#3498db" : bet.result === "Void" ? "#888" : "#f5a623", borderRadius: 4, padding: "2px 10px", fontSize: 12 }}>
+        {bet.result === "Win" ? "✅ WIN" : bet.result === "Loss" ? "❌ LOSS" : bet.result === "Push" ? "🔵 PUSH" : bet.result === "Void" ? "⚪ VOID" : "⏳ PENDING"}
       </div>
+      {(!bet.result || bet.result === "Pending" || bet.result === "Win" || bet.result === "Loss") && (
+          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+            <button onClick={() => onUpdate(bet.id, "Push")} style={{ background: "#0a1a2e", color: "#3498db", border: "1px solid #3498db", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>PUSH</button>
+            <button onClick={() => onUpdate(bet.id, "Void")} style={{ background: "#1a1a1a", color: "#888", border: "1px solid #444", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>VOID</button>
+          </div>
+        )}
     </div>
 
   );
@@ -1635,7 +1641,7 @@ function History({ bets, onUpdate, onNav }) {
             <span style={{ color: "#555", fontSize: 12 }}>{isExpanded ? "▲" : "▼"}</span>
           </div>
         </div>
-        {isExpanded && dayBets.map(bet => <BetCard key={bet.id} bet={bet} />)}
+        {isExpanded && dayBets.map(bet => <BetCard key={bet.id} bet={bet} onUpdate={onUpdate} />)}
       </div>
     );
   };
