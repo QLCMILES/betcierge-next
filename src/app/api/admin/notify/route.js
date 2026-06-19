@@ -11,8 +11,6 @@ const supabaseAdmin = createClient(
 );
 
 export async function POST(req) {
-  console.log('Service key prefix:', process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 30));
-    console.log('URL:', process.env.NEXT_PUBLIC_SUPABASE_URL?.slice(0, 30));
   try {
     const { message, target, channel } = await req.json();
 
@@ -22,14 +20,12 @@ export async function POST(req) {
     if (target === 'free') query = query.eq('subscription_tier', 'lookout');
     
     const { data: users, error: userError } = await query;
-    console.log('Users:', users?.length, 'Error:', userError?.message);
     if (!users?.length) return Response.json({ sent: 0, debug: userError?.message });
 
     const { data: notif, error: notifError } = await supabaseAdmin.from('notifications').insert({
       message, target, channel, sent_by: 'qlcmiles@gmail.com'
     }).select().single();
     
-    console.log('Notif created:', notif?.id, 'Error:', notifError?.message);
 
     if (notif) {
       const userNotifs = users.map(u => ({
