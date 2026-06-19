@@ -1078,7 +1078,7 @@ function PicksTab({ userKey, user, session }) {
   );
 }
 // ── Dashboard ──────────────────────────────────────────────────────────────
-function Dashboard({ user, bets, onNav, userKey }) {
+function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setShowNotifs, markAllRead }) {
   const hour = new Date().getHours();
 
   // Weekly window: Monday through Sunday
@@ -2005,7 +2005,7 @@ if (!user?.name) return <Onboarding onComplete={handleComplete} />;
         </div>
       )}
       <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      {screen === "dashboard" && <Dashboard user={user} bets={bets} onNav={setScreen} userKey={userKey} />}
+      {screen === "dashboard" && <Dashboard user={user} bets={bets} onNav={setScreen} userKey={userKey} unreadCount={unreadCount} showNotifs={showNotifs} setShowNotifs={setShowNotifs} markAllRead={markAllRead} />}
       {screen === "picks" && <PicksTab userKey={userKey} user={user} session={session} />}
       {screen === "card" && <TodayCard bets={bets} onNav={setScreen} />}
 {screen === "gamecast" && <Gamecast bets={bets} onNav={setScreen} />}
