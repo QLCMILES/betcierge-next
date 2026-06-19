@@ -1472,7 +1472,7 @@ function Gamecast({ bets, onNav }) {
                         {bet.result === 'Win' ? '✓ WIN' : bet.result === 'Loss' ? '✗ LOSS' : isWinning ? '↑ WINNING' : 'PENDING'}
                       </div>
                     </div>
-                    <div style={{ color: '#555', fontSize: 11, marginTop: 4 }}>{bet.betType} · {bet.odds > 0 ? '+' : ''}{bet.odds} · ${bet.amount} to win ${bet.toWin || (bet.odds > 0 ? (bet.amount * bet.odds / 100).toFixed(2) : (bet.amount * 100 / Math.abs(bet.odds)).toFixed(2))}</div>
+                    <div style={{ color: '#555', fontSize: 11, marginTop: 4 }}>{bet.betType} · {String(bet.odds).startsWith('+') ? '' : bet.odds > 0 ? '+' : ''}{bet.odds} · ${bet.amount} to win ${bet.toWin || (bet.odds > 0 ? (bet.amount * bet.odds / 100).toFixed(2) : (bet.amount * 100 / Math.abs(bet.odds)).toFixed(2))}</div>
                   </div>
                 );
               })}
