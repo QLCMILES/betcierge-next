@@ -692,7 +692,7 @@ function determineResult(bet, game) {
     const spread = parseFloat(spreadMatch[1]);
     const pickedHome = pick.includes(game.home_team.toLowerCase().split(' ').pop());
     const diff = pickedHome ? homeScore - awayScore : awayScore - homeScore;
-    return (diff + spread > 0) ? 'Win' : (diff + spread === 0) ? 'Pending' : 'Loss';
+    return (diff + spread > 0) ? 'Win' : (diff + spread === 0) ? 'Push' : 'Loss';
   }
   if (isOverUnder || ['totalou', 'total', 'over', 'under', 'totalrunsoverunder', 'overunder', 'totalpointsoverunder', 'totalgoalsoverunder'].includes(betType)) {
     const totalMatch = pick.match(/(\d+\.?\d*)/);
@@ -700,8 +700,8 @@ function determineResult(bet, game) {
     const total = parseFloat(totalMatch[1]);
     const actual = homeScore + awayScore;
     const isOver = pick.includes('over') || betType === 'over';
-    return isOver ? (actual > total ? 'Win' : actual === total ? 'Pending' : 'Loss')
-                  : (actual < total ? 'Win' : actual === total ? 'Pending' : 'Loss');
+    return isOver ? (actual > total ? 'Win' : actual === total ? 'Push' : 'Loss')
+                  : (actual < total ? 'Win' : actual === total ? 'Push' : 'Loss');
   }
   return null;
   if (isMoneyline) {
@@ -716,7 +716,7 @@ function determineResult(bet, game) {
     const spread = parseFloat(spreadMatch[1]);
     const pickedHome = pick.includes(game.home_team.toLowerCase().split(' ').pop());
     const diff = pickedHome ? homeScore - awayScore : awayScore - homeScore;
-    return (diff + spread > 0) ? 'Win' : (diff + spread === 0) ? 'Pending' : 'Loss';
+    return (diff + spread > 0) ? 'Win' : (diff + spread === 0) ? 'Push' : 'Loss';
   }
 
   if (['totalou', 'total', 'over', 'under', 'totalrunsoverunder', 'overunder', 'totalpointsoverunder', 'totalgoalsoverunder'].includes(betType)) {
@@ -725,8 +725,8 @@ function determineResult(bet, game) {
     const total = parseFloat(totalMatch[1]);
     const actual = homeScore + awayScore;
     const isOver = pick.includes('over') || betType === 'over';
-    return isOver ? (actual > total ? 'Win' : actual === total ? 'Pending' : 'Loss')
-                  : (actual < total ? 'Win' : actual === total ? 'Pending' : 'Loss');
+    return isOver ? (actual > total ? 'Win' : actual === total ? 'Push' : 'Loss')
+                  : (actual < total ? 'Win' : actual === total ? 'Push' : 'Loss');
   }
 
   return null;
