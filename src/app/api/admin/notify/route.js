@@ -14,8 +14,9 @@ export async function POST(req) {
     if (target === 'trial') query = query.not('trial_ends_at', 'is', null);
     if (target === 'free') query = query.eq('subscription_tier', 'lookout');
     
-    const { data: users } = await query;
-    if (!users?.length) return Response.json({ sent: 0 });
+    const { data: users, error } = await query;
+console.log('Users:', users?.length, 'Error:', error?.message);
+if (!users?.length) return Response.json({ sent: 0, debug: error?.message });
 
     await supabase.from('notifications').insert({
       message,
