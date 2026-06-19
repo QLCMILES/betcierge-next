@@ -1118,7 +1118,16 @@ function Dashboard({ user, bets, onNav, userKey }) {
           <div style={S.greeting}>{hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"}, {user.name.split(" ")[0]} 👋</div>
           <div style={{ color: "#555", fontSize: 13, marginTop: 2 }}>{todayDisplay()}</div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}><div style={S.logo}>BETCIERGE</div><button onClick={() => supabase.auth.signOut()} style={{ background: "none", border: "none", color: "#555", fontSize: 11, cursor: "pointer", padding: 0 }}>Sign out</button></div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+    <button onClick={() => { setShowNotifs(!showNotifs); if (!showNotifs) markAllRead(); }} style={{ background: "none", border: "none", cursor: "pointer", position: "relative", padding: 0 }}>
+      <span style={{ fontSize: 20 }}>🔔</span>
+      {unreadCount > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: "#e74c3c", color: "#fff", borderRadius: "50%", fontSize: 9, fontWeight: 700, width: 14, height: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>{unreadCount}</span>}
+    </button>
+    <div style={S.logo}>BETCIERGE</div>
+  </div>
+  <button onClick={() => supabase.auth.signOut()} style={{ background: "none", border: "none", color: "#555", fontSize: 11, cursor: "pointer", padding: 0 }}>Sign out</button>
+</div>
       </div>
 
       {alerts.map((a, i) => <Alert key={i} {...a} />)}
@@ -1974,16 +1983,7 @@ if (!user?.name) return <Onboarding onComplete={handleComplete} />;
 
   return (
     <div style={{ background: "#0a0a0f", minHeight: "100vh", maxWidth: 430, margin: "0 auto", fontFamily: "'Outfit',sans-serif", paddingBottom: 80 }}>
-      {/* Notification Bell */}
-      <div style={{ position: "fixed", top: 12, right: 12, zIndex: 999 }}>
-        <button onClick={() => { setShowNotifs(!showNotifs); if (!showNotifs) markAllRead(); }} style={{ background: "none", border: "none", cursor: "pointer", position: "relative" }}>
-          <span style={{ fontSize: 22 }}>🔔</span>
-          {unreadCount > 0 && (
-            <span style={{ position: "absolute", top: -4, right: -4, background: "#e74c3c", color: "#fff", borderRadius: "50%", fontSize: 10, fontWeight: 700, width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>{unreadCount}</span>
-          )}
-        </button>
-      </div>
-
+      
       {/* Notification Drawer */}
       {showNotifs && (
         <div style={{ position: "fixed", top: 0, right: 0, width: "100%", maxWidth: 430, height: "100vh", background: "#0d0d14", zIndex: 998, borderLeft: "1px solid #1e1e2e", overflowY: "auto", padding: 20, boxSizing: "border-box" }}>
