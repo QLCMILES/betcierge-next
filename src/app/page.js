@@ -1718,6 +1718,9 @@ function History({ bets, onUpdate, onNav }) {
 export default function Betcierge() {
   const [user, setUser] = useState(null);
 const [screen, setScreen] = useState("dashboard");
+const [notifications, setNotifications] = useState([]);
+const [showNotifs, setShowNotifs] = useState(false);
+const unreadCount = notifications.filter(n => !n.read).length;
 const [bets, setBets] = useState([]);
 const [session, setSession] = useState(null);
 const [authLoading, setAuthLoading] = useState(true);
@@ -1836,6 +1839,7 @@ useEffect(() => {
     setBets(allBets);
   };
   loadBets();
+  loadNotifications();
 }, [userKey]);
 
   const addParlay = async (bet) => {
@@ -1878,7 +1882,25 @@ useEffect(() => {
       console.error('addParlay error:', e);
     }
   };
+const loadNotifications = async () => {
+  if (!session?.user?.id) return;
+  const { data } = await supabase
+    .from('user_notifications')
+    .select('*, notifications(*)')
+    .eq('user_id', session.user.id)
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (data) setNotifications(data);
+};
 
+const markAllRead = async () => {
+  if (!session?.user?.id) return;
+  await supabase
+    .from('user_notifications')
+    .update({ read: true })
+    .eq('user_id', session.user.id);
+  setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+};
   const addBet = async (bet) => {
     if (bet.legs && bet.legs.length > 0) { await addParlay(bet); return; }
     if (userKey) {
@@ -1952,6 +1974,36 @@ if (!user?.name) return <Onboarding onComplete={handleComplete} />;
 
   return (
     <div style={{ background: "#0a0a0f", minHeight: "100vh", maxWidth: 430, margin: "0 auto", fontFamily: "'Outfit',sans-serif", paddingBottom: 80 }}>
+      {/* Notification Bell */}
+      <div style={{ position: "fixed", top: 12, right: 12, zIndex: 999 }}>
+        <button onClick={() => { setShowNotifs(!showNotifs); if (!showNotifs) markAllRead(); }} style={{ background: "none", border: "none", cursor: "pointer", position: "relative" }}>
+          <span style={{ fontSize: 22 }}>🔔</span>
+          {unreadCount > 0 && (
+            <span style={{ position: "absolute", top: -4, right: -4, background: "#e74c3c", color: "#fff", borderRadius: "50%", fontSize: 10, fontWeight: 700, width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>{unreadCount}</span>
+          )}
+        </button>
+      </div>
+
+      {/* Notification Drawer */}
+      {showNotifs && (
+        <div style={{ position: "fixed", top: 0, right: 0, width: "100%", maxWidth: 430, height: "100vh", background: "#0d0d14", zIndex: 998, borderLeft: "1px solid #1e1e2e", overflowY: "auto", padding: 20, boxSizing: "border-box" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>Notifications</div>
+            <button onClick={() => setShowNotifs(false)} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer" }}>✕</button>
+          </div>
+          {notifications.length === 0 ? (
+            <div style={{ color: "#555", fontSize: 13, textAlign: "center", marginTop: 40 }}>No notifications yet</div>
+          ) : (
+            notifications.map(n => (
+              <div key={n.id} style={{ background: n.read ? "#0f0f18" : "#111128", border: `1px solid ${n.read ? "#1e1e2e" : "#3a3a5e"}`, borderRadius: 10, padding: 14, marginBottom: 10 }}>
+                <div style={{ fontSize: 13, color: "#fff", lineHeight: 1.5 }}>{n.notifications?.message}</div>
+                <div style={{ fontSize: 11, color: "#555", marginTop: 6 }}>{new Date(n.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                {!n.read && <div style={{ width: 6, height: 6, background: "#f5a623", borderRadius: "50%", marginTop: 6 }} />}
+              </div>
+            ))
+          )}
+        </div>
+      )}
       <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
       {screen === "dashboard" && <Dashboard user={user} bets={bets} onNav={setScreen} userKey={userKey} />}
       {screen === "picks" && <PicksTab userKey={userKey} user={user} session={session} />}
