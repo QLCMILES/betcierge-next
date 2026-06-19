@@ -1014,12 +1014,7 @@ function PicksTab({ userKey, user, session }) {
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 10 }}>
                                 {resultBadge(pick.result)}
-{session?.user?.email === 'qlcmiles@gmail.com' && (!pick.result || pick.result === 'Pending' || pick.result === 'Win' || pick.result === 'Loss') && (
-  <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-    <button onClick={() => updatePickResult(pick.id, 'Push')} style={{ background: '#0a1a2e', color: '#3498db', border: '1px solid #3498db', borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer', fontWeight: 700 }}>PUSH</button>
-    <button onClick={() => updatePickResult(pick.id, 'Void')} style={{ background: '#1a1a1a', color: '#888', border: '1px solid #444', borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer', fontWeight: 700 }}>VOID</button>
-  </div>
-)}
+
                                 <span style={{ fontSize: 11, color: '#f5a623' }}>{String(pick.odds).startsWith('+') ? pick.odds : pick.odds > 0 ? `+${pick.odds}` : pick.odds}</span>
                               </div>
                             </div>
@@ -1622,12 +1617,6 @@ function History({ bets, onUpdate, onNav }) {
       <div style={{ marginTop: 8, display: "inline-block", background: bet.result === "Win" ? "#1a2e1a" : bet.result === "Loss" ? "#2a0f0f" : bet.result === "Push" ? "#0a1a2e" : bet.result === "Void" ? "#1a1a1a" : "#1a1500", color: bet.result === "Win" ? "#2ecc71" : bet.result === "Loss" ? "#e74c3c" : bet.result === "Push" ? "#3498db" : bet.result === "Void" ? "#888" : "#f5a623", borderRadius: 4, padding: "2px 10px", fontSize: 12 }}>
         {bet.result === "Win" ? "✅ WIN" : bet.result === "Loss" ? "❌ LOSS" : bet.result === "Push" ? "🔵 PUSH" : bet.result === "Void" ? "⚪ VOID" : "⏳ PENDING"}
       </div>
-      {(!bet.result || bet.result === "Pending" || bet.result === "Win" || bet.result === "Loss") && (
-          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-            <button onClick={() => onUpdate(bet.id, "Push")} style={{ background: "#0a1a2e", color: "#3498db", border: "1px solid #3498db", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>PUSH</button>
-            <button onClick={() => onUpdate(bet.id, "Void")} style={{ background: "#1a1a1a", color: "#888", border: "1px solid #444", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>VOID</button>
-          </div>
-        )}
     </div>
 
   );
