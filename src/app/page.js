@@ -1413,7 +1413,8 @@ function Gamecast({ bets, parlays = [], onNav }) {
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
   const activeBets = bets.filter(b => !b.isParlay && b.gameDate === today && b.gameId);
-  const gameIds = [...new Set(activeBets.map(b => b.gameId))];
+  const parlayGameIds = bets.filter(b => b.isParlay && b.gameDate === today).flatMap(p => (p.legs || []).map(l => l.gameId).filter(Boolean));
+  const gameIds = [...new Set([...activeBets.map(b => b.gameId), ...parlayGameIds])];
 
   const fetchScores = async () => {
     if (!gameIds.length) { setLoading(false); return; }
