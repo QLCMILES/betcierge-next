@@ -1479,7 +1479,7 @@ function Gamecast({ bets, parlays = [], onNav }) {
         <>
         {/* Parlay Cards — full parlay as one card */}
         {bets.filter(b => b.isParlay && b.gameDate === today).map(parlay => {
-          const oddsDisplay = parlay.odds > 0 ? `+${parlay.odds}` : `${parlay.odds}`;
+          const oddsDisplay = String(parlay.odds).startsWith('+') ? String(parlay.odds) : Number(parlay.odds) > 0 ? `+${parlay.odds}` : `${parlay.odds}`;
           const resultColor = parlay.result === 'Win' ? '#2ecc71' : parlay.result === 'Loss' ? '#e74c3c' : '#f5a623';
           return (
             <div key={parlay.id} style={{ ...S.card, marginBottom: 16, border: '1px solid #2a1f4e' }}>
@@ -1491,7 +1491,7 @@ function Gamecast({ bets, parlays = [], onNav }) {
               {/* All Legs */}
               {(parlay.legs || []).map((leg, i) => {
                 const legScore = scores.find(s => s.game_id === leg.gameId);
-                const legOdds = leg.odds > 0 ? `+${leg.odds}` : `${leg.odds}`;
+                const legOdds = String(leg.odds).startsWith('+') ? String(leg.odds) : Number(leg.odds) > 0 ? `+${leg.odds}` : `${leg.odds}`;
                 const isWinning = legScore && (
                   (leg.pick?.toLowerCase().includes(legScore.home_team?.toLowerCase()) && legScore.home_score > legScore.away_score) ||
                   (leg.pick?.toLowerCase().includes(legScore.away_team?.toLowerCase()) && legScore.away_score > legScore.home_score)
