@@ -1360,13 +1360,14 @@ function BetLogger({ onSave, onNav }) {
 }
 
 // — History ————————————————————————————————————————
-function Gamecast({ bets, onNav }) {
+function Gamecast({ bets, parlays = [], onNav }) {
   const [scores, setScores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-  const activeBets = bets.filter(b => b.gameDate === today && b.gameId);
+  const parlayLegs = parlays.flatMap(p => (p.legs || []).filter(l => l.gameDate === today && l.gameId).map(l => ({ ...l, parlayId: p.id, isParlayLeg: true })));
+  const activeBets = [...bets.filter(b => b.gameDate === today && b.gameId), ...parlayLegs];
   const gameIds = [...new Set(activeBets.map(b => b.gameId))];
 
   const fetchScores = async () => {
@@ -2008,7 +2009,7 @@ if (!user?.name) return <Onboarding onComplete={handleComplete} />;
       {screen === "dashboard" && <Dashboard user={user} bets={bets} onNav={setScreen} userKey={userKey} unreadCount={unreadCount} showNotifs={showNotifs} setShowNotifs={setShowNotifs} markAllRead={markAllRead} />}
       {screen === "picks" && <PicksTab userKey={userKey} user={user} session={session} />}
       {screen === "card" && <TodayCard bets={bets} onNav={setScreen} />}
-{screen === "gamecast" && <Gamecast bets={bets} onNav={setScreen} />}
+{screen === "gamecast" && <Gamecast bets={bets} parlays={parlays} onNav={setScreen} />}
       {screen === "logger" && <BetLogger onSave={addBet} onNav={setScreen} />}
       {screen === "history" && <History bets={bets} onUpdate={updateBet} onNav={setScreen} />}
 
