@@ -405,7 +405,7 @@ WRITING STANDARDS — NON-NEGOTIABLE
 - Never be vague — every claim needs a real recent stat behind it
 - Never cherry-pick one side — steelman the other side before committing
 - If recommending against a historically strong team, explicitly address why
-- This is what bettors are paying for — make the case compellingly like a professional handicapper,
+- This is what bettors are paying for — make the case compellingly like a professional handicapper`,
 
       messages: [{
         role: 'user',
