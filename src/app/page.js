@@ -413,7 +413,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={() => onCancel(extractedBet)} style={S.snap.editBtn}>Edit Manually</button>
-            <button onClick={() => onConfirm(extractedBet)} style={S.snap.confirmBtn}>Log This Bet</button>
+            <button onClick={() => { if (!logging) { setLogging(true); onConfirm(extractedBet).then(() => onDone && onDone()); }}} style={S.snap.confirmBtn}>Log This Bet</button>
           </div>
         </div>
       )}
