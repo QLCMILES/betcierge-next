@@ -1864,7 +1864,7 @@ useEffect(() => {
         odds: bet.odds,
         num_legs: bet.legs?.length || 0,
         result: 'Pending',
-        game_date: bet.gameDate ?? null,
+        game_date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
         teaser_points: bet.teaserPoints ?? null,
       }).select().single();
       if (parlayError) throw parlayError;
