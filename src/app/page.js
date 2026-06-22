@@ -1570,7 +1570,7 @@ function Gamecast({ bets, parlays = [], onNav }) {
                   (bet.pick?.includes(score.home_team) && score.home_score > score.away_score) ||
                   (bet.pick?.includes(score.away_team) && score.away_score > score.home_score)
                 );
-                const oddsDisplay = bet.odds > 0 ? `+${bet.odds}` : `${bet.odds}`;
+                const oddsDisplay = String(bet.odds).startsWith('+') ? String(bet.odds) : Number(bet.odds) > 0 ? `+${bet.odds}` : `${bet.odds}`;
                 const toWin = bet.toWin || (bet.odds > 0 ? (bet.amount * bet.odds / 100).toFixed(2) : (bet.amount * 100 / Math.abs(bet.odds)).toFixed(2));
                 return (
                   <div key={bet.id} style={{ background: '#0a0a0f', borderRadius: 10, padding: '10px 12px', marginBottom: 8, border: `1px solid ${bet.result === 'Win' ? '#2ecc7130' : bet.result === 'Loss' ? '#e74c3c30' : '#1e1e2e'}` }}>
