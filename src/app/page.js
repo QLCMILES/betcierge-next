@@ -1502,12 +1502,6 @@ function Gamecast({ bets, parlays = [], onNav }) {
                     <div style={{ flex: 1 }}>
                       <div style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>{leg.pick}</div>
                       <div style={{ color: '#555', fontSize: 11, marginTop: 2 }}>{leg.game} · {leg.sport}</div>
-                      {legScore && (
-                        <div style={{ color: '#f5a623', fontSize: 11, marginTop: 2 }}>
-                          {legScore.away_team} {legScore.away_score} @ {legScore.home_team} {legScore.home_score}
-                          {legScore.status === 'live' ? ' 🔴' : legScore.status === 'final' ? ' · Final' : ''}
-                        </div>
-                      )}
                       {legScore && (legScore.status === 'live' || legScore.status === 'final') ? (
                         <div style={{ color: '#f5a623', fontSize: 11, marginTop: 2 }}>
                           {legScore.away_team} {legScore.away_score} @ {legScore.home_team} {legScore.home_score}{legScore.status === 'live' ? ' 🔴' : ' · Final'}
