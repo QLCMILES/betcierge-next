@@ -2055,7 +2055,7 @@ if (!user?.name) return <Onboarding onComplete={handleComplete} />;
       {screen === "dashboard" && <Dashboard user={user} bets={bets} onNav={setScreen} userKey={userKey} unreadCount={unreadCount} showNotifs={showNotifs} setShowNotifs={setShowNotifs} markAllRead={markAllRead} />}
       {screen === "picks" && <PicksTab userKey={userKey} user={user} session={session} />}
       {screen === "card" && <TodayCard bets={bets} onNav={setScreen} />}
-{screen === "gamecast" && <Gamecast bets={bets} parlays={parlays} onNav={setScreen} />}
+{screen === "gamecast" && <Gamecast bets={bets} onNav={setScreen} />}
       {screen === "logger" && <BetLogger onSave={addBet} onNav={setScreen} />}
       {screen === "history" && <History bets={bets} onUpdate={updateBet} onNav={setScreen} />}
 
