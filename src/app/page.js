@@ -1508,7 +1508,13 @@ function Gamecast({ bets, parlays = [], onNav }) {
                           {legScore.status === 'live' ? ' 🔴' : legScore.status === 'final' ? ' · Final' : ''}
                         </div>
                       )}
-                      {!legScore && <div style={{ color: '#444', fontSize: 11, marginTop: 2 }}>{leg.gameDate} · {leg.gameTime || 'Time TBD'}</div>}
+                      {legScore && (legScore.status === 'live' || legScore.status === 'final') ? (
+                        <div style={{ color: '#f5a623', fontSize: 11, marginTop: 2 }}>
+                          {legScore.away_team} {legScore.away_score} @ {legScore.home_team} {legScore.home_score}{legScore.status === 'live' ? ' 🔴' : ' · Final'}
+                        </div>
+                      ) : (
+                        <div style={{ color: '#444', fontSize: 11, marginTop: 2 }}>{leg.gameDate} · {leg.gameTime || 'Time TBD'}</div>
+                      )}
                     </div>
                     <div style={{ textAlign: 'right', marginLeft: 8 }}>
                       <div style={{ color: '#888', fontSize: 11 }}>{legOdds}</div>
