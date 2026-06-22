@@ -240,6 +240,29 @@ if (!parsed.gameDate || !parsed.gameTime) {
       // Stop at any word that looks like a pitcher name (single capital letter first name or "vs")
       parsed.game = parsed.game.replace(/\s+vs\.?\s+.*/i, '').trim();
     }
+    // Match gameId for each parlay leg
+    if (parsed.legs && parsed.legs.length > 0) {
+      parsed.legs = parsed.legs.map(leg => {
+        const legGame = leg.game?.toLowerCase() || "";
+        const legMatch = oddsData.games.find(g => {
+          const home = g.home_team.toLowerCase();
+          const away = g.away_team.toLowerCase();
+          const homeMatch = home.split(' ').filter(w => w.length > 3).every(w => legGame.includes(w));
+          const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => legGame.includes(w));
+          return homeMatch || awayMatch;
+        });
+        if (legMatch) {
+          return {
+            ...leg,
+            gameId: legMatch.id,
+            game: `${legMatch.away_team} @ ${legMatch.home_team}`,
+            gameDate: new Date(legMatch.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+            gameTime: new Date(legMatch.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false })
+          };
+        }
+        return leg;
+      });
+    }
   }
 } catch(e) {}
 
@@ -311,6 +334,29 @@ if (!parsed.gameDate || !parsed.gameTime) {
               parsed.gameTime = new Date(match.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
             } else if (parsed.game) {
               parsed.game = parsed.game.replace(/\s+vs\.?\s+.*/i, '').trim();
+            }
+            // Match gameId for each parlay leg
+            if (parsed.legs && parsed.legs.length > 0) {
+              parsed.legs = parsed.legs.map(leg => {
+                const legGame = leg.game?.toLowerCase() || "";
+                const legMatch = oddsData.games.find(g => {
+                  const home = g.home_team.toLowerCase();
+                  const away = g.away_team.toLowerCase();
+                  const homeMatch = home.split(' ').filter(w => w.length > 3).every(w => legGame.includes(w));
+                  const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => legGame.includes(w));
+                  return homeMatch || awayMatch;
+                });
+                if (legMatch) {
+                  return {
+                    ...leg,
+                    gameId: legMatch.id,
+                    game: `${legMatch.away_team} @ ${legMatch.home_team}`,
+                    gameDate: new Date(legMatch.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+                    gameTime: new Date(legMatch.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false })
+                  };
+                }
+                return leg;
+              });
             }
           }
         } catch(e) {}
