@@ -1514,23 +1514,68 @@ function Gamecast({ bets, parlays = [], onNav }) {
 
               {/* Your Bets on this game */}
               <div style={{ color: '#666', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Your Bets</div>
-              {gameBets.map(bet => {
-                const isWinning = score && (
-                  (bet.pick?.includes(score.home_team) && score.home_score > score.away_score) ||
-                  (bet.pick?.includes(score.away_team) && score.away_score > score.home_score)
-                );
-                return (
-                  <div key={bet.id} style={{ background: '#0a0a0f', borderRadius: 10, padding: '10px 12px', marginBottom: 8, border: `1px solid ${bet.result === 'Win' ? '#2ecc7130' : bet.result === 'Loss' ? '#e74c3c30' : '#1e1e2e'}` }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>{bet.pick}</div>
-                      <div style={{ color: bet.result === 'Win' ? '#2ecc71' : bet.result === 'Loss' ? '#e74c3c' : isWinning ? '#2ecc71' : '#f5a623', fontSize: 11, fontWeight: 700 }}>
-                        {bet.result === 'Win' ? '✓ WIN' : bet.result === 'Loss' ? '✗ LOSS' : isWinning ? '↑ WINNING' : 'PENDING'}
+              {(() => {
+                // Separate straight bets and parlay legs
+                const straightBets = gameBets.filter(b => !b.isParlayLeg);
+                const parlayLegs = gameBets.filter(b => b.isParlayLeg);
+                // Group parlay legs by parlayId
+                const parlayGroups = {};
+                parlayLegs.forEach(leg => {
+                  if (!parlayGroups[leg.parlayId]) parlayGroups[leg.parlayId] = [];
+                  parlayGroups[leg.parlayId].push(leg);
+                });
+                // Find parent parlay data from bets
+                const parlayCards = Object.entries(parlayGroups).map(([parlayId, legs]) => {
+                  const parentParlay = bets.find(b => b.id === parlayId);
+                  return { parlayId, legs, parentParlay };
+                });
+                return <>
+                  {/* Straight bets */}
+                  {straightBets.map(bet => {
+                    const isWinning = score && (
+                      (bet.pick?.includes(score.home_team) && score.home_score > score.away_score) ||
+                      (bet.pick?.includes(score.away_team) && score.away_score > score.home_score)
+                    );
+                    const oddsDisplay = bet.odds > 0 ? `+${bet.odds}` : `${bet.odds}`;
+                    const toWin = bet.toWin || (bet.odds > 0 ? (bet.amount * bet.odds / 100).toFixed(2) : (bet.amount * 100 / Math.abs(bet.odds)).toFixed(2));
+                    return (
+                      <div key={bet.id} style={{ background: '#0a0a0f', borderRadius: 10, padding: '10px 12px', marginBottom: 8, border: `1px solid ${bet.result === 'Win' ? '#2ecc7130' : bet.result === 'Loss' ? '#e74c3c30' : '#1e1e2e'}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>{bet.pick}</div>
+                          <div style={{ color: bet.result === 'Win' ? '#2ecc71' : bet.result === 'Loss' ? '#e74c3c' : isWinning ? '#2ecc71' : '#f5a623', fontSize: 11, fontWeight: 700 }}>
+                            {bet.result === 'Win' ? '✓ WIN' : bet.result === 'Loss' ? '✗ LOSS' : isWinning ? '↑ WINNING' : 'PENDING'}
+                          </div>
+                        </div>
+                        <div style={{ color: '#555', fontSize: 11, marginTop: 4 }}>{bet.betType} · {oddsDisplay} · ${bet.amount} to win ${toWin}</div>
                       </div>
-                    </div>
-                    <div style={{ color: '#555', fontSize: 11, marginTop: 4 }}>{bet.betType} · {String(bet.odds).startsWith('+') ? '' : bet.odds > 0 ? '+' : ''}{bet.odds} · ${bet.amount} to win ${bet.toWin || (bet.odds > 0 ? (bet.amount * bet.odds / 100).toFixed(2) : (bet.amount * 100 / Math.abs(bet.odds)).toFixed(2))}</div>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                  {/* Parlay cards */}
+                  {parlayCards.map(({ parlayId, legs, parentParlay }) => {
+                    const oddsDisplay = parentParlay?.odds > 0 ? `+${parentParlay.odds}` : `${parentParlay?.odds}`;
+                    return (
+                      <div key={parlayId} style={{ background: '#0a0a0f', borderRadius: 10, padding: '10px 12px', marginBottom: 8, border: '1px solid #2a1f4e' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <div style={{ color: '#a78bfa', fontSize: 11, fontWeight: 700, letterSpacing: 0.5 }}>PARLAY · {parentParlay?.numLegs || legs.length} LEGS</div>
+                          <div style={{ color: '#f5a623', fontSize: 11, fontWeight: 700 }}>
+                            {parentParlay?.result === 'Win' ? '✓ WIN' : parentParlay?.result === 'Loss' ? '✗ LOSS' : 'PENDING'}
+                          </div>
+                        </div>
+                        {legs.map(leg => (
+                          <div key={leg.id} style={{ borderTop: '1px solid #1e1e2e', paddingTop: 6, marginTop: 6 }}>
+                            <div style={{ color: '#fff', fontSize: 12, fontWeight: 600 }}>{leg.pick}</div>
+                            <div style={{ color: '#555', fontSize: 11 }}>{leg.game} · {leg.odds > 0 ? `+${leg.odds}` : leg.odds}</div>
+                          </div>
+                        ))}
+                        <div style={{ borderTop: '1px solid #1e1e2e', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between' }}>
+                          <div style={{ color: '#555', fontSize: 11 }}>{oddsDisplay} · ${parentParlay?.amount} to win</div>
+                          <div style={{ color: '#f5a623', fontSize: 13, fontWeight: 700 }}>${parentParlay?.toWin}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>;
+              })()}
             </div>
           );
         })
