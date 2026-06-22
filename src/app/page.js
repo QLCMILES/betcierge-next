@@ -1475,9 +1475,59 @@ function Gamecast({ bets, parlays = [], onNav }) {
       {loading ? (
         <div style={{ color: '#555', textAlign: 'center', padding: 40 }}>Loading scores...</div>
       ) : activeBets.length === 0 ? (
-        <div style={{ color: '#555', textAlign: 'center', padding: 40, fontSize: 14 }}>No active bets today with game IDs tracked.</div>
+        <div style={{ color: '#555', textAlign: 'center', padding: 40, fontSize: 14 }}>No active bets today.</div>
       ) : (
-        gameIds.map(gameId => {
+        <>
+        {/* Parlay Cards — full parlay as one card */}
+        {bets.filter(b => b.isParlay && b.gameDate === today).map(parlay => {
+          const oddsDisplay = parlay.odds > 0 ? `+${parlay.odds}` : `${parlay.odds}`;
+          const resultColor = parlay.result === 'Win' ? '#2ecc71' : parlay.result === 'Loss' ? '#e74c3c' : '#f5a623';
+          return (
+            <div key={parlay.id} style={{ ...S.card, marginBottom: 16, border: '1px solid #2a1f4e' }}>
+              {/* Parlay Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ color: '#a78bfa', fontSize: 12, fontWeight: 700, letterSpacing: 0.5 }}>🎯 PARLAY · {parlay.numLegs || (parlay.legs || []).length} LEGS</div>
+                <div style={{ color: resultColor, fontSize: 11, fontWeight: 700 }}>{parlay.result || 'PENDING'}</div>
+              </div>
+              {/* All Legs */}
+              {(parlay.legs || []).map((leg, i) => {
+                const legScore = scores.find(s => s.game_id === leg.gameId);
+                const legOdds = leg.odds > 0 ? `+${leg.odds}` : `${leg.odds}`;
+                const isWinning = legScore && (
+                  (leg.pick?.toLowerCase().includes(legScore.home_team?.toLowerCase()) && legScore.home_score > legScore.away_score) ||
+                  (leg.pick?.toLowerCase().includes(legScore.away_team?.toLowerCase()) && legScore.away_score > legScore.home_score)
+                );
+                const legResultColor = leg.result === 'Win' ? '#2ecc71' : leg.result === 'Loss' ? '#e74c3c' : isWinning ? '#2ecc71' : '#888';
+                return (
+                  <div key={leg.id} style={{ borderTop: i === 0 ? '1px solid #1e1e2e' : '1px solid #1a1a2e', padding: '10px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>{leg.pick}</div>
+                      <div style={{ color: '#555', fontSize: 11, marginTop: 2 }}>{leg.game} · {leg.sport}</div>
+                      {legScore && (
+                        <div style={{ color: '#f5a623', fontSize: 11, marginTop: 2 }}>
+                          {legScore.away_team} {legScore.away_score} @ {legScore.home_team} {legScore.home_score}
+                          {legScore.status === 'live' ? ' 🔴' : legScore.status === 'final' ? ' · Final' : ''}
+                        </div>
+                      )}
+                      {!legScore && <div style={{ color: '#444', fontSize: 11, marginTop: 2 }}>{leg.gameDate} · {leg.gameTime || 'Time TBD'}</div>}
+                    </div>
+                    <div style={{ textAlign: 'right', marginLeft: 8 }}>
+                      <div style={{ color: '#888', fontSize: 11 }}>{legOdds}</div>
+                      <div style={{ color: legResultColor, fontSize: 11, fontWeight: 700, marginTop: 2 }}>{leg.result || (isWinning ? '↑ WIN' : '—')}</div>
+                    </div>
+                  </div>
+                );
+              })}
+              {/* Parlay Footer */}
+              <div style={{ borderTop: '1px solid #1e1e2e', marginTop: 8, paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ color: '#555', fontSize: 12 }}>{oddsDisplay} · <span style={{ color: '#fff' }}>${parlay.amount}</span> to win</div>
+                <div style={{ color: '#f5a623', fontSize: 16, fontWeight: 700, fontFamily: "'Cormorant Garamond',serif" }}>${parlay.toWin}</div>
+              </div>
+            </div>
+          );
+        })}
+        {/* Straight Bet Game Cards */}
+        {gameIds.map(gameId => {
           const score = scores.find(s => s.game_id === gameId);
           const gameBets = activeBets.filter(b => b.gameId === gameId);
           const firstBet = gameBets[0];
@@ -1579,6 +1629,8 @@ function Gamecast({ bets, parlays = [], onNav }) {
             </div>
           );
         })
+      )}
+        </>
       )}
     </div>
   );
