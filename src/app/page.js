@@ -1412,8 +1412,8 @@ function Gamecast({ bets, parlays = [], onNav }) {
   const [lastUpdated, setLastUpdated] = useState(null);
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-  const parlayLegs = parlays.flatMap(p => (p.legs || []).filter(l => l.gameDate === today && l.gameId).map(l => ({ ...l, parlayId: p.id, isParlayLeg: true })));
-  const activeBets = [...bets.filter(b => b.gameDate === today && b.gameId), ...parlayLegs];
+  const parlayLegs = bets.filter(b => b.isParlay).flatMap(p => (p.legs || []).filter(l => l.gameDate === today && l.gameId).map(l => ({ ...l, parlayId: p.id, isParlayLeg: true })));
+  const activeBets = [...bets.filter(b => !b.isParlay && b.gameDate === today && b.gameId), ...parlayLegs];
   const gameIds = [...new Set(activeBets.map(b => b.gameId))];
 
   const fetchScores = async () => {
