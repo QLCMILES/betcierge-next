@@ -411,10 +411,23 @@ WRITING STANDARDS — NON-NEGOTIABLE
         role: 'user',
         content: `Today is ${today_display}. Available games with current lines: ${gamesContext}
 
-Search the web for today's matchup data, then select the 3 best pre-game plays. Return ONLY raw JSON, no markdown:
-{"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"DETAILED multi-paragraph breakdown with bold headers, specific stats, pitcher names, line movement, and sharp money context. Minimum 150 words."}]}
+EXECUTE THE MANDATORY 5-STEP PROCESS NOW. DO NOT SKIP ANY STEP.
 
-UNIT SIZING RULES: Set units based on your conviction level. High confidence = 2 units. Medium confidence = 1 unit. Low confidence = 0.5 units. Never recommend more than 2 units on any single play.`
+STEP 1 — BUILD CANDIDATE POOL: Search every game in the feed above. Use web search to identify 6-8 candidates across ALL bet types (ML, spread, F5, totals, first half). Search "[team1] vs [team2] today ${today_display}" for each game.
+
+STEP 2 — DEEP RESEARCH: For every candidate, run ALL mandatory sport-specific searches from your instructions. For MLB: search both starting pitchers last 3 starts, opposing offense recent form, bullpen usage, weather, umpire. For Soccer: search both teams xG last 5, form, injuries, lineup. MINIMUM 3 web searches per candidate.
+
+STEP 3 — SCORE CANDIDATES 1-10: Based on research edge, line value, sharp money, injury risk.
+
+STEP 4 — SELECT TOP 3: Highest scored candidates only. Include at least one non-MLB pick if soccer or World Cup games are available today.
+
+STEP 5 — SELF-VALIDATE: Did you research BOTH sides? Did you check opposing offense? Did you verify line movement?
+
+After completing all 5 steps, return ONLY this raw JSON with no markdown, no citations, no cite tags:
+{"picks":[{"sport":"...","game":"EXACT game name from the feed above","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"DETAILED multi-paragraph breakdown with bold section headers, specific recent stats with actual numbers, pitcher names, line movement direction, sharp money signals, opposing offense analysis, and why you rejected other plays. MINIMUM 200 words. NO citation tags."}]}
+
+UNIT SIZING: High confidence = 2 units. Medium = 1 unit. Low = 0.5 units. Never exceed 2 units.
+CRITICAL: Every game name must EXACTLY match a game from the feed. Never invent games. Never use memory for stats — web search only.`
       }],
     }),
   });
