@@ -217,7 +217,11 @@ if (!parsed.gameDate || !parsed.gameTime) {
   const oddsRes = await fetch("/api/odds", { method: "POST" });
   const oddsData = await oddsRes.json();
   if (oddsData.games) {
-    const game = parsed.game?.toLowerCase() || "";
+    const FIFA_CODES = {"AFG":"Afghanistan","ALB":"Albania","ALG":"Algeria","AND":"Andorra","ANG":"Angola","ARG":"Argentina","ARM":"Armenia","AUS":"Australia","AUT":"Austria","AZE":"Azerbaijan","BHR":"Bahrain","BAN":"Bangladesh","BLR":"Belarus","BEL":"Belgium","BLZ":"Belize","BEN":"Benin","BOL":"Bolivia","BIH":"Bosnia and Herzegovina","BOT":"Botswana","BRA":"Brazil","BUL":"Bulgaria","BFA":"Burkina Faso","BDI":"Burundi","CMR":"Cameroon","CAN":"Canada","CPV":"Cape Verde","CAF":"Central African Republic","CHI":"Chile","CHN":"China","COL":"Colombia","CRC":"Costa Rica","CRO":"Croatia","CUB":"Cuba","CZE":"Czech Republic","DEN":"Denmark","ECU":"Ecuador","EGY":"Egypt","SLV":"El Salvador","ENG":"England","EST":"Estonia","ETH":"Ethiopia","FIJ":"Fiji","FIN":"Finland","FRA":"France","GAB":"Gabon","GEO":"Georgia","GER":"Germany","GHA":"Ghana","GRE":"Greece","GTM":"Guatemala","GUI":"Guinea","HON":"Honduras","HKG":"Hong Kong","HUN":"Hungary","IND":"India","IDN":"Indonesia","IRN":"Iran","IRQ":"Iraq","IRL":"Ireland","ISR":"Israel","ITA":"Italy","CIV":"Ivory Coast","JAM":"Jamaica","JPN":"Japan","JOR":"Jordan","KAZ":"Kazakhstan","KEN":"Kenya","PRK":"North Korea","KOR":"South Korea","KWT":"Kuwait","LBN":"Lebanon","LBA":"Libya","LIE":"Liechtenstein","LTU":"Lithuania","LUX":"Luxembourg","MKD":"North Macedonia","MLI":"Mali","MLT":"Malta","MTN":"Mauritania","MEX":"Mexico","MDA":"Moldova","MNG":"Mongolia","MAR":"Morocco","MOZ":"Mozambique","NAM":"Namibia","NED":"Netherlands","NZL":"New Zealand","NGA":"Nigeria","NOR":"Norway","OMA":"Oman","PAK":"Pakistan","PAN":"Panama","PRY":"Paraguay","PER":"Peru","PHI":"Philippines","POL":"Poland","PRT":"Portugal","QAT":"Qatar","ROU":"Romania","RUS":"Russia","RWA":"Rwanda","KSA":"Saudi Arabia","SCO":"Scotland","SEN":"Senegal","SRB":"Serbia","SLE":"Sierra Leone","SVK":"Slovakia","SVN":"Slovenia","SOM":"Somalia","RSA":"South Africa","ESP":"Spain","SRI":"Sri Lanka","SDN":"Sudan","SWE":"Sweden","SUI":"Switzerland","SYR":"Syria","TPE":"Chinese Taipei","TJK":"Tajikistan","TAN":"Tanzania","THA":"Thailand","TOG":"Togo","TTO":"Trinidad and Tobago","TUN":"Tunisia","TUR":"Turkey","TKM":"Turkmenistan","UGA":"Uganda","UKR":"Ukraine","UAE":"United Arab Emirates","USA":"United States","URU":"Uruguay","UZB":"Uzbekistan","VEN":"Venezuela","VIE":"Vietnam","WAL":"Wales","ZAM":"Zambia","ZIM":"Zimbabwe","DZA":"Algeria","CHL":"Chile","COG":"Congo"};
+    const expandTeamAbbr = (str) => {
+      return str.replace(/\b([A-Z]{3})\b/g, (match, code) => FIFA_CODES[code] || match);
+    };
+    const game = expandTeamAbbr(parsed.game || "").toLowerCase();
     const parsedDate = parsed.gameDate || "";
     const match = oddsData.games.find(g => {
       const home = g.home_team.toLowerCase();
@@ -243,7 +247,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
     // Match gameId for each parlay leg
     if (parsed.legs && parsed.legs.length > 0) {
       parsed.legs = parsed.legs.map(leg => {
-        const legGame = leg.game?.toLowerCase() || "";
+        const legGame = expandTeamAbbr(leg.game || "").toLowerCase();
         const legMatch = oddsData.games.find(g => {
           const home = g.home_team.toLowerCase();
           const away = g.away_team.toLowerCase();
