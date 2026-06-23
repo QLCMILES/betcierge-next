@@ -41,7 +41,7 @@ async function generatePicks() {
 
   const slimGames = (oddsData.games || [])
     .filter(g => new Date(g.commence_time) > cutoff && new Date(g.commence_time) < upperBound)
-    .slice(0, 12)
+    .slice(0, 20)
     .map(g => {
       const bm = g.bookmakers?.[0];
       const h2h = bm?.markets?.find(m => m.key === 'h2h');
@@ -425,7 +425,7 @@ UNIT SIZING RULES: Set units based on your conviction level. High confidence = 2
     .map(c => c.text)
     .join('');
 
-  const clean = text.replace(/```json|```/g, '').trim();
+  const clean = text.replace(/```json|```/g, '').replace(/<cite[^>]*>|<\/cite>/g, '').trim();
   const jsonMatch = clean.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON in response');
 
