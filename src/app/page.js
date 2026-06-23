@@ -1189,6 +1189,17 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
 
       {alerts.map((a, i) => <Alert key={i} {...a} />)}
 
+      {/* Upgrade Banner — show for free users */}
+      {(!user.subscription_tier || user.subscription_tier === 'free') && (
+        <div onClick={() => onNav('upgrade')} style={{ background: 'linear-gradient(135deg, #1a1020, #0f0f18)', border: '1px solid #f5a623', borderRadius: 14, padding: '14px 16px', marginBottom: 16, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ color: '#f5a623', fontSize: 13, fontWeight: 700, marginBottom: 3 }}>🎯 Start Your Free Trial</div>
+            <div style={{ color: '#888', fontSize: 12 }}>3 days free · Full access · Cancel anytime</div>
+          </div>
+          <div style={{ color: '#f5a623', fontSize: 20 }}>→</div>
+        </div>
+      )}
+
       {/* Compact Weekly Card */}
       <div style={{ background: "#0f0f18", border: "1px solid #1e1e2e", borderRadius: 14, padding: "14px 16px", marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
@@ -1221,6 +1232,105 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
       <div style={{ marginBottom: 8 }}>
         <div style={S.secTitle}>Talk to Hunter 🤖</div>
         <HunterChat user={user} bets={bets} userKey={userKey} />
+      </div>
+    </div>
+  );
+}
+
+// ── Upgrade Screen ────────────────────────────────────────────────────────
+function UpgradeScreen({ user, userKey, onNav }) {
+  const [loading, setLoading] = useState(null);
+
+  const checkout = async (priceKey) => {
+    setLoading(priceKey);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/stripe/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          priceId: priceKey,
+          userId: userKey,
+          email: session?.user?.email,
+        }),
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else alert('Something went wrong. Please try again.');
+    } catch (e) {
+      alert('Something went wrong. Please try again.');
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const PRICES = {
+    TEAM_MONTHLY: process.env.NEXT_PUBLIC_STRIPE_PRICE_TEAM_MONTHLY,
+    TEAM_ANNUAL: process.env.NEXT_PUBLIC_STRIPE_PRICE_TEAM_ANNUAL,
+    EDGE_MONTHLY: process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_MONTHLY,
+    EDGE_ANNUAL: process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_ANNUAL,
+  };
+
+  return (
+    <div style={S.screen}>
+      <div style={S.backRow}>
+        <button style={S.backBtn} onClick={() => onNav('dashboard')}>← Back</button>
+        <div style={S.logo}>BETCIERGE</div>
+      </div>
+
+      {/* Header */}
+      <div style={{ textAlign: 'center', marginBottom: 28 }}>
+        <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 30, fontWeight: 700, color: '#fff', marginBottom: 8 }}>
+          Upgrade Your Edge
+        </div>
+        <div style={{ color: '#f5a623', fontSize: 14, marginBottom: 4 }}>3-day free trial on all plans</div>
+        <div style={{ color: '#555', fontSize: 13 }}>Cancel anytime. No commitment.</div>
+      </div>
+
+      {/* Team Plan */}
+      <div style={{ background: '#0f0f18', border: '1px solid #f5a623', borderRadius: 16, padding: 20, marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div>
+            <div style={{ color: '#f5a623', fontSize: 12, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>THE TEAM</div>
+            <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$29.99<span style={{ fontSize: 13, color: '#555', fontWeight: 400 }}>/mo</span></div>
+            <div style={{ color: '#555', fontSize: 12, marginTop: 2 }}>or $197/yr — save 45%</div>
+          </div>
+          <div style={{ fontSize: 32 }}>🎯</div>
+        </div>
+        {['Daily picks from Hunter', 'Full Hunter AI chat', 'Snap to Log', 'Live Gamecast', 'Bet history & analytics'].map((f, i) => (
+          <div key={i} style={{ color: '#aaa', fontSize: 13, marginBottom: 6 }}>✓ {f}</div>
+        ))}
+        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <button onClick={() => checkout(PRICES.TEAM_MONTHLY)} disabled={!!loading} style={{ flex: 1, background: '#f5a623', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
+            {loading === PRICES.TEAM_MONTHLY ? 'Loading...' : 'Monthly'}
+          </button>
+          <button onClick={() => checkout(PRICES.TEAM_ANNUAL)} disabled={!!loading} style={{ flex: 1, background: '#f5a623', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
+            {loading === PRICES.TEAM_ANNUAL ? 'Loading...' : 'Annual — Best Value'}
+          </button>
+        </div>
+      </div>
+
+      {/* Edge Plan */}
+      <div style={{ background: '#0f0f18', border: '1px solid #2a1f4e', borderRadius: 16, padding: 20, marginBottom: 32 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div>
+            <div style={{ color: '#a78bfa', fontSize: 12, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>THE EDGE</div>
+            <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$79.99<span style={{ fontSize: 13, color: '#555', fontWeight: 400 }}>/mo</span></div>
+            <div style={{ color: '#555', fontSize: 12, marginTop: 2 }}>or $499/yr — save 48%</div>
+          </div>
+          <div style={{ fontSize: 32 }}>⚡</div>
+        </div>
+        {['Everything in The Team', 'Exclusive edge plays', 'Deeper analytics', 'Priority access to premium picks', 'Early access to new features'].map((f, i) => (
+          <div key={i} style={{ color: '#aaa', fontSize: 13, marginBottom: 6 }}>✓ {f}</div>
+        ))}
+        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <button onClick={() => checkout(PRICES.EDGE_MONTHLY)} disabled={!!loading} style={{ flex: 1, background: '#a78bfa', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
+            {loading === PRICES.EDGE_MONTHLY ? 'Loading...' : 'Monthly'}
+          </button>
+          <button onClick={() => checkout(PRICES.EDGE_ANNUAL)} disabled={!!loading} style={{ flex: 1, background: '#a78bfa', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
+            {loading === PRICES.EDGE_ANNUAL ? 'Loading...' : 'Annual — Best Value'}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -2124,6 +2234,7 @@ if (!user?.name) return <Onboarding onComplete={handleComplete} />;
 {screen === "gamecast" && <Gamecast bets={bets} onNav={setScreen} />}
       {screen === "logger" && <BetLogger onSave={addBet} onNav={setScreen} />}
       {screen === "history" && <History bets={bets} onUpdate={updateBet} onNav={setScreen} />}
+      {screen === "upgrade" && <UpgradeScreen user={user} userKey={userKey} onNav={setScreen} />}
 
       {/* Nav Bar */}
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "#0d0d14", borderTop: "1px solid #1e1e2e", display: "flex", padding: "8px 0 12px" }}>
