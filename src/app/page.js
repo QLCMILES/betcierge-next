@@ -1134,6 +1134,34 @@ function PicksTab({ userKey, user, session }) {
     </div>
   );
 }
+// ── Access Control ────────────────────────────────────────────────────────
+function getAccessLevel(user) {
+  if (!user) return 'free';
+  const tier = user.subscription_tier?.toLowerCase();
+  const status = user.subscription_status?.toLowerCase();
+  
+  // Check active trial
+  if (user.trial_ends_at) {
+    const trialEnd = new Date(user.trial_ends_at);
+    if (trialEnd > new Date()) return 'team'; // Trial = full team access
+  }
+  
+  // Check active paid subscription
+  if ((tier === 'team' || tier === 'edge') && 
+      (status === 'active' || status === 'trialing')) return tier;
+  
+  // Everyone else is free
+  return 'free';
+}
+
+function isPaid(user) {
+  return getAccessLevel(user) !== 'free';
+}
+
+function isOnTrial(user) {
+  if (!user?.trial_ends_at) return false;
+  return new Date(user.trial_ends_at) > new Date();
+}
 // ── Dashboard ──────────────────────────────────────────────────────────────
 function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setShowNotifs, markAllRead }) {
   const hour = new Date().getHours();
