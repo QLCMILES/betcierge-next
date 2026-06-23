@@ -15,7 +15,6 @@ const GREEN = "#2ecc71";
 const GRAY = "#6b7280";
 const LIGHT = "#d1d5db";
 
-const FOUNDING_END = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
 
 function useCountdown(target) {
   const [time, setTime] = useState("");
@@ -48,7 +47,7 @@ const features = [
 ];
 
 const faqs = [
-  { q: "Can I cancel anytime?", a: "Yes. Cancel from your account settings — no calls, no hoops. If you're on a founding rate, we'll remind you before anything changes." },
+  { q: "Can I cancel anytime?", a: "Yes. Cancel from your account settings — no calls, no hoops. No fees, no questions asked." },
   { q: "Is this betting advice?", a: "Betcierge is an information and discipline tool. We help you research, size bets, and track your record. We do not take bets. Always bet responsibly." },
   { q: "Will it really stop me overspending?", a: "Hunter monitors your weekly P&L and flags when you're approaching your limits. It won't stop you — but it will make sure you see what you're doing before you do it." },
   { q: "What if I'm brand new to this?", a: "Perfect. Hunter explains everything in plain English. No jargon, no assumptions. Just honest, clear analysis built for real bettors at every level." },
@@ -56,7 +55,6 @@ const faqs = [
 ];
 
 export default function Landing({ onGetStarted }) {
-  const countdown = useCountdown(FOUNDING_END);
   const [openFaq, setOpenFaq] = useState(null);
   const [picks, setPicks] = useState([]);  // ← add this on line 61
   const go = () => { if (onGetStarted) onGetStarted(); };
@@ -80,8 +78,8 @@ export default function Landing({ onGetStarted }) {
       <div style={{ background: "#1a1200", borderBottom: "1px solid #f5a62333", padding: "10px 20px", textAlign: "center", fontSize: 13 }}>
         <span style={{ color: GOLD }}>●</span>
         <span style={{ color: LIGHT, marginLeft: 8 }}>
-          Founding rate ends in <strong style={{ color: GOLD }}>{countdown}</strong> ·{" "}
-          <span style={{ color: GOLD, cursor: "pointer", textDecoration: "underline" }} onClick={go}>lock it for life</span>
+          3 days free on all plans ·{" "}
+          <span style={{ color: GOLD, cursor: "pointer", textDecoration: "underline" }} onClick={go}>start your trial today</span>
         </span>
       </div>
 
@@ -106,10 +104,10 @@ export default function Landing({ onGetStarted }) {
           Built from the brain of a sports bettor, powered by AI. The research depth, line movement analysis, and situational awareness Hunter brings to every game is unlike anything else on the market.
         </p>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-          <button onClick={go} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Join The Team — $29.99/mo</button>
+          <button onClick={go} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Start Free Trial — $29.99/mo</button>
           <button onClick={go} style={{ background: "none", border: "1px solid #1e1e2e", color: LIGHT, borderRadius: 10, padding: "14px 24px", fontSize: 15, fontWeight: 500, cursor: "pointer" }}>Start free →</button>
         </div>
-        <p style={{ fontSize: 12, color: GRAY, marginTop: 12 }}>No card needed for free tier · Cancel anytime</p>
+        <p style={{ fontSize: 12, color: GRAY, marginTop: 12 }}>3-day free trial · No commitment · Cancel anytime</p>
       </section>
 
       {/* Slate Preview */}
@@ -151,7 +149,7 @@ export default function Landing({ onGetStarted }) {
           </div>
           <div style={{ color: GRAY, fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>A record that hides losses is a lie. Ours does not. Built by bettors, tracked in public.</div>
           <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
-            {[["15W-3L", "Since Jun 11"], ["83%", "Win Rate"], ["+16.3u", "Units"], ["+56%", "ROI"]].map(([val, lbl]) => (
+            {[["25W-10L", "Since Jun 11"], ["71%", "Win Rate"], ["+15.6u", "Units"], ["+28.9%", "ROI"]].map(([val, lbl]) => (
               <div key={lbl} style={{ textAlign: "center" }}>
                 <div style={{ fontSize: 22, fontWeight: 800, color: GREEN }}>{val}</div>
                 <div style={{ fontSize: 11, color: GRAY }}>{lbl}</div>
@@ -205,11 +203,11 @@ export default function Landing({ onGetStarted }) {
           <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>THE TEAM</div>
           <div style={{ fontSize: 13, color: GRAY, marginBottom: 12 }}>Your whole crew, in your corner.</div>
           <div style={{ fontSize: 36, fontWeight: 800, color: "#fff", marginBottom: 4 }}>$29.99<span style={{ fontSize: 14, color: GRAY, fontWeight: 400 }}> / month</span></div>
-          <div style={{ fontSize: 12, color: GRAY, marginBottom: 16 }}>Billed monthly · cancel anytime · <span style={{ color: GREEN }}>or $197/yr and save 45%</span></div>
+          <div style={{ fontSize: 12, color: GRAY, marginBottom: 16 }}>3-day free trial · then $29.99/mo · <span style={{ color: GREEN }}>or $197/yr and save 45%</span></div>
           {["All 3 plays early at 11 AM sharp", "Unlimited Hunter — ask anything, anytime", "Full guardrails: bet sizing, limits, loss stops", "Tilt protection on losing streaks", "Your full record and closing-line proof", "Live game tracking", "Snap and log bet slips automatically", "Auto-settlement for all sports"].map((f, i) => (
             <div key={i} style={{ color: LIGHT, fontSize: 13, marginBottom: 8, display: "flex", gap: 8 }}><span style={{ color: GREEN }}>✓</span>{f}</div>
           ))}
-          <button onClick={go} style={{ width: "100%", marginTop: 16, padding: "14px", borderRadius: 10, border: "none", background: GOLD, color: "#000", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Join The Team — $29.99/mo</button>
+          <button onClick={go} style={{ width: "100%", marginTop: 16, padding: "14px", borderRadius: 10, border: "none", background: GOLD, color: "#000", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Start Free Trial — $29.99/mo</button>
         </div>
 
         <div style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 16, padding: "24px", marginBottom: 12 }}>
@@ -255,11 +253,11 @@ export default function Landing({ onGetStarted }) {
       {/* CTA */}
       <section style={{ maxWidth: 600, margin: "0 auto 80px", padding: "0 24px" }}>
         <div style={{ background: "#0d0a00", border: "1px solid #f5a62344", borderRadius: 16, padding: "32px 28px", textAlign: "center" }}>
-          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 28, fontWeight: 700, color: "#fff", marginBottom: 12 }}>Lock your founding rate</h2>
-          <p style={{ color: GRAY, fontSize: 14, marginBottom: 8 }}>First 500 members keep this price for life. <strong style={{ color: GOLD }}>213 spots left.</strong></p>
-          <p style={{ color: GRAY, fontSize: 13, marginBottom: 24 }}>Offer ends in <strong style={{ color: GOLD }}>{countdown}</strong>.</p>
+          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 28, fontWeight: 700, color: "#fff", marginBottom: 12 }}>Start your free trial today</h2>
+          <p style={{ color: GRAY, fontSize: 14, marginBottom: 8 }}>3 days free. Full access. No commitment.</p>
+          <p style={{ color: GRAY, fontSize: 13, marginBottom: 24 }}>Cancel anytime from your account settings — <strong style={{ color: GOLD }}>no hoops, no calls.</strong></p>
           <button onClick={go} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 40px", fontSize: 15, fontWeight: 700, cursor: "pointer", width: "100%" }}>
-            Join The Team — $29.99/mo
+            Join The Team — Start Free Trial
           </button>
         </div>
       </section>
