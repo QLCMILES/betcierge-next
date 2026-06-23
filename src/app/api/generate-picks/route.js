@@ -121,6 +121,7 @@ CRITICAL DATA INTEGRITY RULES — ALWAYS ENFORCE
 5. LINE MOVEMENT CHECK: Always search "[team] vs [team] line movement today". If line moved 2+ points against your pick, that is sharp money on the other side. Flag it.
 6. NEVER USE MEMORY FOR ROSTERS: Players get traded, cut, injured constantly. Always verify via web search.
 7. CONFIRM GAME IS TONIGHT: If a game is not in the odds feed context, do not recommend it. Period.
+8. STATS MUST MATCH THE GAME: Every stat, record, or trend cited in an insight MUST be about one of the two teams IN THAT SPECIFIC PICK. Never reference a third team's stats in a pick. If you searched for Dodgers vs Twins and a search result mentions the Royals, IGNORE the Royals data entirely — it is not relevant. Before including any stat, ask: "Is this team playing in this game?" If not, delete it.
 8. NFL INJURY REPORT: Always search official practice designations before any NFL recommendation. Wind 15mph+ at outdoor stadium changes every passing prop — mandatory check.
 9. NBA LOAD MANAGEMENT: Always search "[player] playing tonight [date]". Second night of back-to-back is mandatory search.
 10. NHL GOALIE RULE: NEVER recommend any NHL bet without confirmed starting goalie. Search every time.
@@ -405,7 +406,9 @@ WRITING STANDARDS — NON-NEGOTIABLE
 - Never be vague — every claim needs a real recent stat behind it
 - Never cherry-pick one side — steelman the other side before committing
 - If recommending against a historically strong team, explicitly address why
-- This is what bettors are paying for — make the case compellingly like a professional handicapper`,
+- This is what bettors are paying for — make the case compellingly like a professional handicapper
+- CRITICAL: Never use citation tags, reference tags, or any XML/HTML tags in your response. No <cite>, no <ref>, no markdown links. Plain text and bold headers only.
+- CRITICAL: Every stat in each insight must be about one of the two teams in THAT pick only. Never bleed stats from other games into a pick. If not relevant to this exact matchup, delete it.`,
 
       messages: [{
         role: 'user',
@@ -438,7 +441,12 @@ CRITICAL: Every game name must EXACTLY match a game from the feed. Never invent 
     .map(c => c.text)
     .join('');
 
-  const clean = text.replace(/```json|```/g, '').replace(/<cite[^>]*>|<\/cite>/g, '').trim();
+  const clean = text
+    .replace(/```json|```/g, '')
+    .replace(/<cite[^>]*>([\s\S]*?)<\/cite>/g, '$1')
+    .replace(/<cite[^>]*>/g, '')
+    .replace(/<\/cite>/g, '')
+    .trim();
   const jsonMatch = clean.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON in response');
 
