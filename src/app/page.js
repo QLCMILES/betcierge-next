@@ -905,7 +905,7 @@ function formatInsight(text) {
   });
 }
 // ── Picks Tab ──────────────────────────────────────────────────────────────
-function PicksTab({ userKey, user, session }) {
+function PicksTab({ userKey, user, session, onNav }) {
   const [picks, setPicks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -1112,8 +1112,20 @@ function PicksTab({ userKey, user, session }) {
         </div>
       )}
 
-      {!loading && picks.map((pick, i) => (
-        <div key={i} style={{ background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 14, padding: 16, marginBottom: 12 }}>
+      {!loading && picks.map((pick, i) => {
+        const locked = i > 0 && !isPaid(user);
+        return (
+        <div key={i} style={{ background: "#0f0f18", border: `1px solid ${locked ? '#1e1e2e' : '#2a2a38'}`, borderRadius: 14, padding: 16, marginBottom: 12, position: 'relative', opacity: locked ? 0.7 : 1 }}>
+          {locked && (
+            <div style={{ position: 'absolute', inset: 0, borderRadius: 14, background: 'rgba(10,10,15,0.85)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 2, gap: 8 }}>
+              <div style={{ fontSize: 28 }}>🔒</div>
+              <div style={{ color: '#fff', fontSize: 14, fontWeight: 700, fontFamily: "'Cormorant Garamond',serif" }}>Team Members Only</div>
+              <div style={{ color: '#888', fontSize: 12, marginBottom: 8 }}>Start your 3-day free trial</div>
+              <button onClick={() => onNav('upgrade')} style={{ background: '#f5a623', color: '#000', fontWeight: 700, fontSize: 13, padding: '8px 20px', borderRadius: 8, border: 'none', cursor: 'pointer' }}>
+                Upgrade →
+              </button>
+            </div>
+          )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <span style={{ background: "#1a1a00", color: "#f5a623", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6 }}>{pick.sport}</span>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -1130,7 +1142,8 @@ function PicksTab({ userKey, user, session }) {
             {formatInsight(pick.insight)}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -2257,7 +2270,7 @@ if (!user?.name) return <Onboarding onComplete={handleComplete} />;
       )}
       <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
       {screen === "dashboard" && <Dashboard user={user} bets={bets} onNav={setScreen} userKey={userKey} unreadCount={unreadCount} showNotifs={showNotifs} setShowNotifs={setShowNotifs} markAllRead={markAllRead} />}
-      {screen === "picks" && <PicksTab userKey={userKey} user={user} session={session} />}
+      {screen === "picks" && <PicksTab userKey={userKey} user={user} session={session} onNav={setScreen} />}
       {screen === "card" && <TodayCard bets={bets} onNav={setScreen} />}
 {screen === "gamecast" && <Gamecast bets={bets} onNav={setScreen} />}
       {screen === "logger" && <BetLogger onSave={addBet} onNav={setScreen} />}
