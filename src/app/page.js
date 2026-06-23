@@ -1190,7 +1190,7 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
       {alerts.map((a, i) => <Alert key={i} {...a} />)}
 
       {/* Upgrade Banner — show for free users */}
-      {(!user.subscription_tier || user.subscription_tier === 'free') && (
+      {(!user.subscription_tier || user.subscription_tier === 'free' || user.subscription_tier === 'lookout') && (
         <div onClick={() => onNav('upgrade')} style={{ background: 'linear-gradient(135deg, #1a1020, #0f0f18)', border: '1px solid #f5a623', borderRadius: 14, padding: '14px 16px', marginBottom: 16, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ color: '#f5a623', fontSize: 13, fontWeight: 700, marginBottom: 3 }}>🎯 Start Your Free Trial</div>
