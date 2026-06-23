@@ -581,6 +581,11 @@ export async function GET(request) {
         sportsNeeded.add('soccer_uefa_champs_league');
         sportsNeeded.add('soccer_uefa_europa_league');
         sportsNeeded.add('soccer_conmebol_copa_libertadores');
+        sportsNeeded.add('soccer_epl');
+        sportsNeeded.add('soccer_spain_la_liga');
+        sportsNeeded.add('soccer_germany_bundesliga');
+        sportsNeeded.add('soccer_italy_serie_a');
+        sportsNeeded.add('soccer_france_ligue_one');
       }
     }
 
@@ -591,6 +596,30 @@ export async function GET(request) {
         .catch(() => [])
     );
     const scoresResults = await Promise.all(scoresPromises);
+    // Also add sports from pending parlay legs
+    const { data: pendingParlays } = await supabase
+      .from('parlays')
+      .select('*, parlay_legs(*)')
+      .eq('result', 'Pending');
+    for (const parlay of pendingParlays || []) {
+      for (const leg of parlay.parlay_legs || []) {
+        const legSport = leg.sport?.toLowerCase();
+        const legKey = SPORT_MAP[legSport];
+        if (legKey) sportsNeeded.add(legKey);
+        if (legSport === 'soccer') {
+          sportsNeeded.add('soccer_usa_mls');
+          sportsNeeded.add('soccer_fifa_world_cup');
+          sportsNeeded.add('soccer_uefa_champs_league');
+          sportsNeeded.add('soccer_epl');
+          sportsNeeded.add('soccer_spain_la_liga');
+          sportsNeeded.add('soccer_germany_bundesliga');
+          sportsNeeded.add('soccer_italy_serie_a');
+          sportsNeeded.add('soccer_france_ligue_one');
+          sportsNeeded.add('soccer_uefa_europa_league');
+          sportsNeeded.add('soccer_conmebol_copa_libertadores');
+        }
+      }
+    }
     const allScores = scoresResults.flat().filter(g => g.completed === true);
 
     let settled = 0;
@@ -679,6 +708,8 @@ function determineResult(bet, game) {
   const pick = bet.pick.toLowerCase();
   const betType = bet.bet_type?.toLowerCase().replace(/[^a-z]/g, '');
 
+  const isFirstHalf = betType === '1h' || betType === 'firsthalf' || pick.match(/\s1h$/i);
+  if (isFirstHalf) return null;
   const isOverUnder = pick.includes('over') || pick.includes('under');
   const isMoneyline = !isOverUnder && (betType === 'moneyline' || (betType === 'straight' && (pick.includes('ml') || !pick.match(/[+-]?\d+\.?\d+/))));
   if (isMoneyline) {
