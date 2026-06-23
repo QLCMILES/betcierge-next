@@ -1115,7 +1115,8 @@ function PicksTab({ userKey, user, session, onNav }) {
       {!loading && picks.map((pick, i) => {
         const locked = i > 0 && !isPaid(user);
         return (
-        <div key={i} style={{ background: "#0f0f18", border: `1px solid ${locked ? '#1e1e2e' : '#2a2a38'}`, borderRadius: 14, padding: 16, marginBottom: 12, position: 'relative', opacity: locked ? 0.7 : 1 }}>
+        <div key={i} style={{ background: "#0f0f18", border: `1px solid ${locked ? '#1e1e2e' : '#2a2a38'}`, borderRadius: 14, padding: 16, marginBottom: 12, position: 'relative', opacity: 1 }}>
+          {locked && <div style={{ position: 'absolute', inset: 0, borderRadius: 14, backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', zIndex: 1 }} />}
           {locked && (
             <div style={{ position: 'absolute', inset: 0, borderRadius: 14, background: 'rgba(10,10,15,0.85)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 2, gap: 8 }}>
               <div style={{ fontSize: 28 }}>🔒</div>
