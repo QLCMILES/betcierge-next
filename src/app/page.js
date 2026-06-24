@@ -243,8 +243,8 @@ if (!parsed.gameDate || !parsed.gameTime) {
     if (match) {
       parsed.gameId = match.id;
       parsed.game = `${match.away_team} @ ${match.home_team}`;
-      parsed.gameDate = new Date(match.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
       if (!parsed.isLive) {
+        parsed.gameDate = new Date(match.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
         parsed.gameTime = new Date(match.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
       }
     } else if (parsed.isLive) {
