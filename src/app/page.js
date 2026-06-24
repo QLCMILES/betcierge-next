@@ -230,29 +230,14 @@ if (!parsed.gameDate || !parsed.gameTime) {
     };
     const game = expandTeamAbbr(parsed.game || "").toLowerCase();
     const parsedDate = parsed.gameDate || "";
-    const match = oddsData.games.find(g => {
-      const home = g.home_team.toLowerCase();
-      const away = g.away_team.toLowerCase();
-      const gameDate = g.commence_time
-        ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-        : null;
-      const homeMatch = home.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
-      const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
-      return homeMatch || awayMatch;
-    });
-    if (match) {
-      parsed.gameId = match.id;
-      parsed.game = `${match.away_team} @ ${match.home_team}`;
-      if (!parsed.isLive) {
-        parsed.gameDate = new Date(match.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-        parsed.gameTime = new Date(match.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
-      }
-    } else if (parsed.isLive) {
-      // Live bet — game may be completed, search scores endpoint
+
+    if (parsed.isLive) {
+      // Live bet — skip upcoming odds entirely, use scores lookup with ticket timestamp
       try {
         const sportsToCheck = ['baseball_mlb', 'soccer_fifa_world_cup', 'soccer_usa_mls', 'basketball_nba', 'icehockey_nhl', 'americanfootball_nfl'];
+        const ticketTime = parsed.ticketTime || new Date().toISOString();
         for (const sport of sportsToCheck) {
-          const scoresRes = await fetch(`/api/live-scores-lookup?sport=${sport}&game=${encodeURIComponent(game)}`);
+          const scoresRes = await fetch(`/api/live-scores-lookup?sport=${sport}&game=${encodeURIComponent(game)}&ticket_time=${encodeURIComponent(ticketTime)}`);
           if (scoresRes.ok) {
             const scoresData = await scoresRes.json();
             if (scoresData.game_id) {
@@ -264,8 +249,22 @@ if (!parsed.gameDate || !parsed.gameTime) {
           }
         }
       } catch(e) {}
-    } else if (parsed.game) {
-      parsed.game = parsed.game.replace(/\s+vs\.?\s+.*/i, '').trim();
+    } else {
+      const match = oddsData.games.find(g => {
+        const home = g.home_team.toLowerCase();
+        const away = g.away_team.toLowerCase();
+        const homeMatch = home.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
+        const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
+        return homeMatch || awayMatch;
+      });
+      if (match) {
+        parsed.gameId = match.id;
+        parsed.game = `${match.away_team} @ ${match.home_team}`;
+        parsed.gameDate = new Date(match.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+        parsed.gameTime = new Date(match.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
+      } else if (parsed.game) {
+        parsed.game = parsed.game.replace(/\s+vs\.?\s+.*/i, '').trim();
+      }
     }
     // Match gameId for each parlay leg
     if (parsed.legs && parsed.legs.length > 0) {
