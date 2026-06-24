@@ -2102,6 +2102,12 @@ useEffect(() => {
         .eq('user_id', session.user.id)
         .single();
       if (data) setUser(data);
+      // Keep email in sync
+      if (session.user.email) {
+        await supabase.from('user_profiles')
+          .update({ email: session.user.email })
+          .eq('user_id', session.user.id);
+      }
     }
     setAuthLoading(false);
   });
@@ -2110,11 +2116,13 @@ useEffect(() => {
   const handleComplete = async (userData) => {
   setUser(userData);
   if (userKey) {
+    const { data: { user: authUser } } = await supabase.auth.getUser();
     const { error } = await supabase.from('user_profiles').upsert({
       user_id: userKey,
       name: userData.name,
       bankroll: userData.bankroll,
       goal: userData.goal,
+      email: authUser?.email ?? null,
     }, { onConflict: 'user_id' });
     if (error) console.error('Profile save error:', error);
   }
