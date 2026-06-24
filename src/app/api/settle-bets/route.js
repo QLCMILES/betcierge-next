@@ -873,6 +873,19 @@ async function settleDailyPicks(allScores) {
 
     const pickLower = pick.pick?.toLowerCase() || '';
     const sport = pick.sport?.toLowerCase() || '';
+    // Ensure soccer World Cup games are in allScores
+    if (sport.includes('soccer') || sport.includes('world cup') || sport.includes('fifa')) {
+      const extraSports = ['soccer_fifa_world_cup', 'soccer_usa_mls', 'soccer_epl', 'soccer_spain_la_liga', 'soccer_germany_bundesliga', 'soccer_italy_serie_a', 'soccer_france_ligue_one'];
+      for (const s of extraSports) {
+        if (!allScores.find(g => g.sport_key === s)) {
+          try {
+            const r = await fetch(`https://api.the-odds-api.com/v4/sports/${s}/scores/?apiKey=${process.env.ODDS_API_KEY}&daysFrom=3&dateFormat=iso`);
+            const games = await r.json();
+            if (Array.isArray(games)) allScores.push(...games.filter(g => g.completed));
+          } catch(e) {}
+        }
+      }
+    }
     const isProp = (pickLower.includes('over ') || pickLower.includes('under ')) && (pickLower.includes('strikeout') || pickLower.includes('point') || pickLower.includes('rebound') || pickLower.includes('assist') || pickLower.includes('hit') || pickLower.includes('goal') || pickLower.includes('save') || pickLower.includes('shot'));
     let result = null;
     if (isProp) {
