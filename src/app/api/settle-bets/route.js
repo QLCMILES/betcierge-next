@@ -251,6 +251,84 @@ async function fetchMLBGamePks(date) {
       .map(g => ({ gamePk: g.gamePk, awayTeam: g.teams?.away?.team?.name, homeTeam: g.teams?.home?.team?.name }));
   } catch { return []; }
 }
+async function fetchESPNGameId(date, game) {
+  try {
+    const dateFormatted = date.replace(/-/g, '');
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${dateFormatted}`
+    );
+    const data = await res.json();
+    const betGame = game.toLowerCase();
+    const event = (data.events || []).find(e => {
+      const name = e.name.toLowerCase();
+      return name.split(' ').filter(w => w.length > 3).some(w => betGame.includes(w));
+    });
+    return event?.id || null;
+  } catch(e) {
+    return null;
+  }
+}
+
+async function fetchF5Score(espnGameId) {
+  try {
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${espnGameId}`
+    );
+    const data = await res.json();
+    const plays = data.plays || [];
+    const inning5plays = plays.filter(p => p.period?.number === 5);
+    if (!inning5plays.length) return null;
+    const last = inning5plays[inning5plays.length - 1];
+    // Only settle if bottom of 5th is complete
+    if (last.period?.type !== 'End') return null;
+    return {
+      awayScore: last.awayScore,
+      homeScore: last.homeScore,
+      away_team: data.header?.competitions?.[0]?.competitors?.find(c => c.homeAway === 'away')?.team?.displayName,
+      home_team: data.header?.competitions?.[0]?.competitors?.find(c => c.homeAway === 'home')?.team?.displayName,
+    };
+  } catch(e) {
+    return null;
+  }
+}
+
+async function settleMLBF5(bet) {
+  if (!bet.game_date || !bet.game) return null;
+  const espnId = await fetchESPNGameId(bet.game_date, bet.game);
+  if (!espnId) return null;
+  const f5 = await fetchF5Score(espnId);
+  if (!f5) return null;
+
+  const pick = bet.pick.toLowerCase();
+  const awayScore = f5.awayScore;
+  const homeScore = f5.homeScore;
+
+  // Total bet (Over/Under)
+  if (pick.includes('over') || pick.includes('under')) {
+    const lineMatch = pick.match(/(\d+\.?\d*)/);
+    if (!lineMatch) return null;
+    const line = parseFloat(lineMatch[1]);
+    const total = awayScore + homeScore;
+    const isOver = pick.includes('over');
+    return isOver
+      ? (total > line ? 'Win' : total === line ? 'Push' : 'Loss')
+      : (total < line ? 'Win' : total === line ? 'Push' : 'Loss');
+  }
+
+  // Moneyline bet
+  const homeName = f5.home_team?.toLowerCase() || '';
+  const awayName = f5.away_team?.toLowerCase() || '';
+  const pickedHome = homeName.split(' ').filter(w => w.length > 3).some(w => pick.includes(w));
+  const pickedAway = awayName.split(' ').filter(w => w.length > 3).some(w => pick.includes(w));
+  
+  if (!pickedHome && !pickedAway) return null;
+  
+  const homeWon = homeScore > awayScore;
+  const tied = homeScore === awayScore;
+  
+  if (tied) return 'Push';
+  return (pickedHome && homeWon) || (pickedAway && !homeWon) ? 'Win' : 'Loss';
+}
 
 async function fetchBoxScorePlayers(gamePk) {
   try {
@@ -445,7 +523,12 @@ async function settleLeg(leg, allScores) {
   const betType = leg.bet_type?.toLowerCase().replace(/[^a-z]/g, '') || '';
   const sport = leg.sport?.toLowerCase() || '';
   
-  if (betType?.includes('prop') || betType?.includes('player')) {
+  if (betType === '1h' || betType === 'firsthalf' || pick.match(/\s1h\s/i) || pick.includes('1h ml') || pick.includes('first 5') || pick.includes('f5')) {
+        if (sport === 'mlb' || sport === 'baseball') {
+          result = await settleMLBF5(bet);
+          settlementLog.push({ id: bet.id, pick: bet.pick, method: 'espn_f5', result });
+        }
+      } else if (betType?.includes('prop') || betType?.includes('player')) {
     if (sport === 'mlb' || sport === 'baseball') return await settleMLBProp(leg);
     if (sport === 'nba' || sport === 'basketball') return await settleNBAProp(leg);
     if (sport === 'nhl' || sport === 'hockey') return await settleNHLProp(leg);
@@ -630,7 +713,12 @@ export async function GET(request) {
       const sport = bet.sport?.toLowerCase();
       let result = null;
 
-      if (betType?.includes('prop') || betType?.includes('player')) {
+      if (betType === '1h' || betType === 'firsthalf' || pick.match(/\s1h\s/i) || pick.includes('1h ml') || pick.includes('first 5') || pick.includes('f5')) {
+        if (sport === 'mlb' || sport === 'baseball') {
+          result = await settleMLBF5(bet);
+          settlementLog.push({ id: bet.id, pick: bet.pick, method: 'espn_f5', result });
+        }
+      } else if (betType?.includes('prop') || betType?.includes('player')) {
         if (sport === 'mlb' || sport === 'baseball') {
           result = await settleMLBProp(bet);
           settlementLog.push({ id: bet.id, pick: bet.pick, method: 'mlb_stats', result });
@@ -708,8 +796,7 @@ function determineResult(bet, game) {
   const pick = bet.pick.toLowerCase();
   const betType = bet.bet_type?.toLowerCase().replace(/[^a-z]/g, '');
 
-  const isFirstHalf = betType === '1h' || betType === 'firsthalf' || pick.match(/\s1h$/i);
-  if (isFirstHalf) return null;
+  // 1H bets are handled separately via settleMLBF5 before reaching here
   const isOverUnder = pick.includes('over') || pick.includes('under');
   const isMoneyline = !isOverUnder && (betType === 'moneyline' || (betType === 'straight' && (pick.includes('ml') || !pick.match(/[+-]?\d+\.?\d+/))));
   if (isMoneyline) {
