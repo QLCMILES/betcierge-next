@@ -708,6 +708,7 @@ export async function GET(request) {
     for (const bet of pendingBets) {
       const betType = bet.bet_type?.toLowerCase().replace(/[^a-z]/g, '');
       const sport = bet.sport?.toLowerCase();
+      const pick = bet.pick?.toLowerCase() || '';
       let result = null;
 
       if (betType === '1h' || betType === 'firsthalf' || pick.includes('1h ml') || pick.includes('first 5') || pick.includes('f5')) {
