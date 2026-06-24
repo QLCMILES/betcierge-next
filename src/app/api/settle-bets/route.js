@@ -753,7 +753,7 @@ export async function GET(request) {
     settled += parlaySettled;
 
     // Settle daily picks
-    const { settled: picksSettled, log: picksLog } = await settleDailyPicks(allScores);
+    const { settled: picksSettled, log: picksLog } = await settleDailyPicks();
 
     return Response.json({
       success: true,
@@ -848,7 +848,7 @@ function determineResult(bet, game) {
   return null;
 }
 
-async function settleDailyPicks(allScores) {
+async function settleDailyPicks() {
   const { data: pendingPicks, error } = await supabase
     .from('daily_picks')
     .select('*')
@@ -856,6 +856,42 @@ async function settleDailyPicks(allScores) {
     .eq('status', 'active');
 
   if (error || !pendingPicks?.length) return { settled: 0, log: [] };
+
+  // Build sportsNeeded from actual pick sports — fully independent from user bet settlement
+  const picksNeeded = new Set();
+  for (const pick of pendingPicks) {
+    const sport = pick.sport?.toLowerCase() || '';
+    const mapped = SPORT_MAP[sport];
+    if (mapped) picksNeeded.add(mapped);
+    if (sport.includes('soccer') || sport.includes('world cup') || sport.includes('fifa') || sport.includes('mls') || sport.includes('epl') || sport.includes('bundesliga') || sport.includes('serie') || sport.includes('ligue') || sport.includes('la liga') || sport.includes('champions') || sport.includes('europa') || sport.includes('libertadores')) {
+      picksNeeded.add('soccer_fifa_world_cup');
+      picksNeeded.add('soccer_usa_mls');
+      picksNeeded.add('soccer_epl');
+      picksNeeded.add('soccer_spain_la_liga');
+      picksNeeded.add('soccer_germany_bundesliga');
+      picksNeeded.add('soccer_italy_serie_a');
+      picksNeeded.add('soccer_france_ligue_one');
+      picksNeeded.add('soccer_uefa_champs_league');
+      picksNeeded.add('soccer_uefa_europa_league');
+      picksNeeded.add('soccer_conmebol_copa_libertadores');
+    }
+    if (sport.includes('mlb') || sport.includes('baseball')) picksNeeded.add('baseball_mlb');
+    if (sport.includes('nba') || sport.includes('basketball')) picksNeeded.add('basketball_nba');
+    if (sport.includes('nhl') || sport.includes('hockey')) picksNeeded.add('icehockey_nhl');
+    if (sport.includes('nfl') || sport.includes('football')) picksNeeded.add('americanfootball_nfl');
+    if (sport.includes('mma') || sport.includes('ufc')) picksNeeded.add('mma_mixed_martial_arts');
+  }
+
+  // Fetch scores independently for daily picks
+  const apiKey = process.env.ODDS_API_KEY;
+  const picksScoresResults = await Promise.all(
+    [...picksNeeded].map(s =>
+      fetch(`https://api.the-odds-api.com/v4/sports/${s}/scores/?apiKey=${apiKey}&daysFrom=3&dateFormat=iso`)
+        .then(r => r.json())
+        .catch(() => [])
+    )
+  );
+  const allScores = picksScoresResults.flat().filter(g => g.completed === true);
 
   let settled = 0;
   const log = [];
