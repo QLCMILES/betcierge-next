@@ -941,7 +941,8 @@ async function settleDailyPicks() {
 
     const pickLower = pick.pick?.toLowerCase() || '';
     const sport = pick.sport?.toLowerCase() || '';
-    const isProp = (pickLower.includes('over ') || pickLower.includes('under ')) && (pickLower.includes('strikeout') || pickLower.includes('point') || pickLower.includes('rebound') || pickLower.includes('assist') || pickLower.includes('hit') || pickLower.includes('goal') || pickLower.includes('save') || pickLower.includes('shot'));
+    const isGameTotal = pickLower.match(/^(over|under)\s+\d+\.?\d*\s*(goals?|runs?|points?)?$/);
+    const isProp = !isGameTotal && (pickLower.includes('over ') || pickLower.includes('under ')) && (pickLower.includes('strikeout') || pickLower.includes('point') || pickLower.includes('rebound') || pickLower.includes('assist') || pickLower.includes('hit') || pickLower.includes('goal') || pickLower.includes('save') || pickLower.includes('shot'));
     let result = null;
     if (isProp) {
       const betLike2 = { pick: pick.pick, game: pick.game, game_date: pick.date, sport: pick.sport };
