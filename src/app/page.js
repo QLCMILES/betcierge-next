@@ -278,8 +278,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
         parsed.gameDate = new Date(match.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
         parsed.gameTime = new Date(match.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
       }
-    }
-        } else if (parsed.isLive) {
+    } else if (parsed.isLive) {
       // Live bet — game may be completed, search scores endpoint
       try {
         const sportsToCheck = ['baseball_mlb', 'soccer_fifa_world_cup', 'soccer_usa_mls', 'basketball_nba', 'icehockey_nhl', 'americanfootball_nfl'];
@@ -423,7 +422,6 @@ if (!parsed.gameDate || !parsed.gameTime) {
               parsed.game = `${match.away_team} @ ${match.home_team}`;
               parsed.gameDate = new Date(match.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
               parsed.gameTime = new Date(match.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
-            }
             } else if (parsed.game) {
               parsed.game = parsed.game.replace(/\s+vs\.?\s+.*/i, '').trim();
             }
