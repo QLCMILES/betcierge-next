@@ -180,7 +180,7 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
         body: JSON.stringify({
           model: "claude-sonnet-4-5",
           max_tokens: 1000,
-            system: "You are Hunter. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). For STRAIGHT BETS return ONLY raw JSON: {\"sport\":\"...\",\"game\":\"...\",\"betType\":\"...\",\"odds\":\"...\",\"pick\":\"...\",\"amount\":0,\"toWin\":0,\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\",\"confidence\":95}. For PARLAYS, TEASERS, and SGPs return ONLY raw JSON: {\"betType\":\"parlay\",\"ticketNumber\":\"...\",\"amount\":0,\"toWin\":0,\"odds\":\"...\",\"teaserPoints\":null,\"gameDate\":\"YYYY-MM-DD\",\"legs\":[{\"sport\":\"...\",\"game\":\"...\",\"pick\":\"...\",\"odds\":\"...\",\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\"}],\"confidence\":95}. For TEASERS set betType to \"teaser\" and teaserPoints to the point value. For SGPs set betType to \"sgp\". TRYINK FORMAT: Bets show as [#]. [Team] [Pitcher1] - R / [Pitcher2] - L LP [spread] [odds]. The format is ALWAYS: bet number, then team name, then two pitcher names separated by /, then spread (if any), then odds. Extract ONLY the team name — stop at the first all-caps surname after the team name. SPREAD DETECTION: In TryInk format, \"- R\" and \"- L\" after pitcher names indicate pitcher handedness (Right/Left) — NOT a spread. A RUN LINE bet requires an explicit number like -1.5 or +1.5 on the line AFTER the pitcher names. Preserve the sign exactly — if you see -1½ set pick to \"[Team] -1.5\", if you see +1½ set pick to \"[Team] +1.5\". The odds are the LAST number on the line. FIRST HALF DETECTION: If the bet line starts with \"1H\" (e.g. \"1975. 1H Los Angeles Dodgers...\"), this is a FIRST HALF bet. Set betType to \"1H\" and set pick to \"[Team] 1H ML\" (or \"[Team] 1H -1.5\" if there is a spread). TEAM TOTAL DETECTION: If you see \"Team Total\" or \"Team total points\" in the bet description, this is a TEAM TOTAL bet — only one team's score counts. Set betType to \"teamtotal\" and set pick to \"[Team Name] Over X.X\" or \"[Team Name] Under X.X\" — always include the team name. Example: \"Milwaukee Brewers Over 4.5\". TOTAL DETECTION: If you see \"U\" or \"O\" followed by a number (e.g. \"U 7½\", \"O 8.5\") and it is NOT a team total, this is a GAME TOTAL bet. Set pick to \"Under X.X\" or \"Over X.X\" and betType to \"total\". Do NOT include team name in the pick. If NO spread and NO total, set pick to \"[Team] ML\". Set game to just \"[Team]\" with no opponent. Never include pitcher names in game or pick fields. The gameDate on TryInk slips is shown in the ticket timestamp at the top (e.g. \"2026/06/15\") — use that date, NOT any date embedded in the bet line. ODDS: If odds show as \"Pk\" or \"PK\" that means pick'em = +100. TRYINK SOCCER PARLAY FORMAT: Soccer parlays on tryInk show as \"Props: [number]\" with multiple bet details listed. Each line with a team name or player name is a separate leg. A bet showing \"[Player] 1+ Score or Assist, to win: [Team] (Game)\" contains TWO legs: (1) [Team] ML and (2) [Player] 1+ Score or Assist prop. Parse these as a parlay with both legs. LIVE BET DETECTION: If the slip contains \"Live:\" followed by a number (e.g. \"Live: 302296347\"), this is a LIVE BET placed during an in-progress game. For live bets: (1) set isLive to true in the JSON, (2) use the ticket timestamp date as gameDate — NOT today's date. The ticket timestamp format is \"YYYY/MM/DD HH:MM:SS AM/PM\" — extract YYYY-MM-DD from it. Important: if the ticket time is after midnight ET but the game started the previous calendar day, still use the ticket timestamp date as gameDate. (3) gameTime should be left empty for live bets. GENERAL RULES: Never guess any text you cannot clearly read. Use empty strings for missing fields. gameDate in ET. gameTime in 24hr ET format. If unclear: {\"error\":\"reason\"}.",
+            system: "You are Hunter. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). For STRAIGHT BETS return ONLY raw JSON: {\"sport\":\"...\",\"game\":\"...\",\"betType\":\"...\",\"odds\":\"...\",\"pick\":\"...\",\"amount\":0,\"toWin\":0,\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\",\"pitcher\":\"LAST_NAME_ONLY_or_null\",\"confidence\":95}. For baseball bets, set pitcher to the starting pitcher last name visible on the slip (e.g. \"SPROAT\"). For all other sports set pitcher to null. For PARLAYS, TEASERS, and SGPs return ONLY raw JSON: {\"betType\":\"parlay\",\"ticketNumber\":\"...\",\"amount\":0,\"toWin\":0,\"odds\":\"...\",\"teaserPoints\":null,\"gameDate\":\"YYYY-MM-DD\",\"legs\":[{\"sport\":\"...\",\"game\":\"...\",\"pick\":\"...\",\"odds\":\"...\",\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\"}],\"confidence\":95}. For TEASERS set betType to \"teaser\" and teaserPoints to the point value. For SGPs set betType to \"sgp\". TRYINK FORMAT: Bets show as [#]. [Team] [Pitcher1] - R / [Pitcher2] - L LP [spread] [odds]. The format is ALWAYS: bet number, then team name, then two pitcher names separated by /, then spread (if any), then odds. Extract ONLY the team name — stop at the first all-caps surname after the team name. SPREAD DETECTION: In TryInk format, \"- R\" and \"- L\" after pitcher names indicate pitcher handedness (Right/Left) — NOT a spread. A RUN LINE bet requires an explicit number like -1.5 or +1.5 on the line AFTER the pitcher names. Preserve the sign exactly — if you see -1½ set pick to \"[Team] -1.5\", if you see +1½ set pick to \"[Team] +1.5\". The odds are the LAST number on the line. FIRST HALF DETECTION: If the bet line starts with \"1H\" (e.g. \"1975. 1H Los Angeles Dodgers...\"), this is a FIRST HALF bet. Set betType to \"1H\" and set pick to \"[Team] 1H ML\" (or \"[Team] 1H -1.5\" if there is a spread). TEAM TOTAL DETECTION: If you see \"Team Total\" or \"Team total points\" in the bet description, this is a TEAM TOTAL bet — only one team's score counts. Set betType to \"teamtotal\" and set pick to \"[Team Name] Over X.X\" or \"[Team Name] Under X.X\" — always include the team name. Example: \"Milwaukee Brewers Over 4.5\". TOTAL DETECTION: If you see \"U\" or \"O\" followed by a number (e.g. \"U 7½\", \"O 8.5\") and it is NOT a team total, this is a GAME TOTAL bet. Set pick to \"Under X.X\" or \"Over X.X\" and betType to \"total\". Do NOT include team name in the pick. If NO spread and NO total, set pick to \"[Team] ML\". Set game to just \"[Team]\" with no opponent. Never include pitcher names in game or pick fields. The gameDate on TryInk slips is shown in the ticket timestamp at the top (e.g. \"2026/06/15\") — use that date, NOT any date embedded in the bet line. ODDS: If odds show as \"Pk\" or \"PK\" that means pick'em = +100. TRYINK SOCCER PARLAY FORMAT: Soccer parlays on tryInk show as \"Props: [number]\" with multiple bet details listed. Each line with a team name or player name is a separate leg. A bet showing \"[Player] 1+ Score or Assist, to win: [Team] (Game)\" contains TWO legs: (1) [Team] ML and (2) [Player] 1+ Score or Assist prop. Parse these as a parlay with both legs. LIVE BET DETECTION: If the slip contains \"Live:\" followed by a number (e.g. \"Live: 302296347\"), this is a LIVE BET placed during an in-progress game. For live bets: (1) set isLive to true in the JSON, (2) use the ticket timestamp date as gameDate — NOT today's date. The ticket timestamp format is \"YYYY/MM/DD HH:MM:SS AM/PM\" — extract YYYY-MM-DD from it. Important: if the ticket time is after midnight ET but the game started the previous calendar day, still use the ticket timestamp date as gameDate. (3) gameTime should be left empty for live bets. GENERAL RULES: Never guess any text you cannot clearly read. Use empty strings for missing fields. gameDate in ET. gameTime in 24hr ET format. If unclear: {\"error\":\"reason\"}.",
           messages: [{ role: "user", content: [
             { type: "image", source: { type: "base64", media_type: file.type || "image/jpeg", data: base64 } },
             { type: "text", text: "Extract the bet details from this slip." }
@@ -240,14 +240,46 @@ if (!parsed.gameDate || !parsed.gameTime) {
       const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
       return homeMatch || awayMatch;
     });
-    if (match) {
+    // For baseball with pitcher name — use MLB Stats API to find exact game
+    if (parsed.pitcher && (parsed.sport?.toLowerCase().includes('baseball') || parsed.sport?.toLowerCase().includes('mlb'))) {
+      try {
+        const pitcherName = parsed.pitcher.toLowerCase();
+        const searchDate = parsed.gameDate || new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+        const mlbRes = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${searchDate}&gameType=R&hydrate=probablePitcher`);
+        const mlbData = await mlbRes.json();
+        const games = mlbData.dates?.[0]?.games || [];
+        const pitcherGame = games.find(g => {
+          const awayPitcher = g.teams?.away?.probablePitcher?.lastName?.toLowerCase() || '';
+          const homePitcher = g.teams?.home?.probablePitcher?.lastName?.toLowerCase() || '';
+          return awayPitcher.includes(pitcherName) || homePitcher.includes(pitcherName) ||
+                 pitcherName.includes(awayPitcher) || pitcherName.includes(homePitcher);
+        });
+        if (pitcherGame) {
+          const away = pitcherGame.teams?.away?.team?.name;
+          const home = pitcherGame.teams?.home?.team?.name;
+          parsed.game = `${away} @ ${home}`;
+          parsed.gameDate = new Date(pitcherGame.gameDate).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+          parsed.gameTime = new Date(pitcherGame.gameDate).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
+          const oddsMatch = oddsData.games.find(g => {
+            const h = g.home_team.toLowerCase();
+            const a = g.away_team.toLowerCase();
+            return home.toLowerCase().split(' ').filter(w => w.length > 3).some(w => h.includes(w)) ||
+                   away.toLowerCase().split(' ').filter(w => w.length > 3).some(w => a.includes(w));
+          });
+          if (oddsMatch) parsed.gameId = oddsMatch.id;
+        }
+      } catch(e) {}
+    }
+
+    if (match && !parsed.pitcher) {
       parsed.gameId = match.id;
       parsed.game = `${match.away_team} @ ${match.home_team}`;
       if (!parsed.isLive) {
         parsed.gameDate = new Date(match.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
         parsed.gameTime = new Date(match.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
       }
-    } else if (parsed.isLive) {
+    }
+        } else if (parsed.isLive) {
       // Live bet — game may be completed, search scores endpoint
       try {
         const sportsToCheck = ['baseball_mlb', 'soccer_fifa_world_cup', 'soccer_usa_mls', 'basketball_nba', 'icehockey_nhl', 'americanfootball_nfl'];
@@ -333,7 +365,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
           body: JSON.stringify({
             model: "claude-sonnet-4-5",
             max_tokens: 1000,
-            system: "You are Hunter. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). For STRAIGHT BETS return ONLY raw JSON: {\"sport\":\"...\",\"game\":\"...\",\"betType\":\"...\",\"odds\":\"...\",\"pick\":\"...\",\"amount\":0,\"toWin\":0,\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\",\"confidence\":95}. For PARLAYS, TEASERS, and SGPs return ONLY raw JSON: {\"betType\":\"parlay\",\"ticketNumber\":\"...\",\"amount\":0,\"toWin\":0,\"odds\":\"...\",\"teaserPoints\":null,\"gameDate\":\"YYYY-MM-DD\",\"legs\":[{\"sport\":\"...\",\"game\":\"...\",\"pick\":\"...\",\"odds\":\"...\",\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\"}],\"confidence\":95}. TRYINK FORMAT: Bets show as [#]. [Team] [Pitcher1] - R / [Pitcher2] - L LP [spread] [odds]. Extract ONLY the team name. SPREAD DETECTION: In TryInk format, \"- R\" and \"- L\" after pitcher names indicate pitcher handedness (Right\/Left) — NOT a spread. A RUN LINE bet requires an explicit number like -1.5 or +1.5 on the line AFTER the pitcher names. Preserve the sign exactly — if you see -1½ set pick to \"[Team] -1.5\", if you see +1½ set pick to \"[Team] +1.5\". The odds are the LAST number on the line. FIRST HALF DETECTION: If the bet line starts with \"1H\" (e.g. \"1975. 1H Los Angeles Dodgers...\"), this is a FIRST HALF bet. Set betType to \"1H\" and set pick to \"[Team] 1H ML\" (or \"[Team] 1H -1.5\" if there is a spread). TEAM TOTAL DETECTION: If you see \"Team Total\" or \"Team total points\" in the bet description, this is a TEAM TOTAL bet — only one team's score counts. Set betType to \"teamtotal\" and set pick to \"[Team Name] Over X.X\" or \"[Team Name] Under X.X\" — always include the team name. Example: \"Milwaukee Brewers Over 4.5\". TOTAL DETECTION: If you see \"U\" or \"O\" followed by a number (e.g. \"U 7½\", \"O 8.5\") and it is NOT a team total, this is a GAME TOTAL bet. Set pick to \"Under X.X\" or \"Over X.X\" and betType to \"total\". Do NOT include team name in the pick. If NO spread and NO total, set pick to \"[Team] ML\". LIVE BET DETECTION: If the slip contains \"Live:\" followed by a number (e.g. \"Live: 302296347\"), this is a LIVE BET. For live bets: (1) set isLive to true in the JSON, (2) use the ticket timestamp date as gameDate — NOT today's date. Extract YYYY-MM-DD from the ticket timestamp \"YYYY/MM/DD HH:MM:SS AM/PM\". (3) gameTime should be left empty. GENERAL RULES: Never guess. Use empty strings for missing fields. gameDate in ET. gameTime in 24hr ET format. If unclear: {\"error\":\"reason\"}.",
+            system: "You are Hunter. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). For STRAIGHT BETS return ONLY raw JSON: {\"sport\":\"...\",\"game\":\"...\",\"betType\":\"...\",\"odds\":\"...\",\"pick\":\"...\",\"amount\":0,\"toWin\":0,\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\",\"pitcher\":\"LAST_NAME_ONLY_or_null\",\"confidence\":95}. For baseball bets, set pitcher to the starting pitcher last name visible on the slip (e.g. \"SPROAT\"). For all other sports set pitcher to null. For PARLAYS, TEASERS, and SGPs return ONLY raw JSON: {\"betType\":\"parlay\",\"ticketNumber\":\"...\",\"amount\":0,\"toWin\":0,\"odds\":\"...\",\"teaserPoints\":null,\"gameDate\":\"YYYY-MM-DD\",\"legs\":[{\"sport\":\"...\",\"game\":\"...\",\"pick\":\"...\",\"odds\":\"...\",\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\"}],\"confidence\":95}. TRYINK FORMAT: Bets show as [#]. [Team] [Pitcher1] - R / [Pitcher2] - L LP [spread] [odds]. Extract ONLY the team name. SPREAD DETECTION: In TryInk format, \"- R\" and \"- L\" after pitcher names indicate pitcher handedness (Right\/Left) — NOT a spread. A RUN LINE bet requires an explicit number like -1.5 or +1.5 on the line AFTER the pitcher names. Preserve the sign exactly — if you see -1½ set pick to \"[Team] -1.5\", if you see +1½ set pick to \"[Team] +1.5\". The odds are the LAST number on the line. FIRST HALF DETECTION: If the bet line starts with \"1H\" (e.g. \"1975. 1H Los Angeles Dodgers...\"), this is a FIRST HALF bet. Set betType to \"1H\" and set pick to \"[Team] 1H ML\" (or \"[Team] 1H -1.5\" if there is a spread). TEAM TOTAL DETECTION: If you see \"Team Total\" or \"Team total points\" in the bet description, this is a TEAM TOTAL bet — only one team's score counts. Set betType to \"teamtotal\" and set pick to \"[Team Name] Over X.X\" or \"[Team Name] Under X.X\" — always include the team name. Example: \"Milwaukee Brewers Over 4.5\". TOTAL DETECTION: If you see \"U\" or \"O\" followed by a number (e.g. \"U 7½\", \"O 8.5\") and it is NOT a team total, this is a GAME TOTAL bet. Set pick to \"Under X.X\" or \"Over X.X\" and betType to \"total\". Do NOT include team name in the pick. If NO spread and NO total, set pick to \"[Team] ML\". LIVE BET DETECTION: If the slip contains \"Live:\" followed by a number (e.g. \"Live: 302296347\"), this is a LIVE BET. For live bets: (1) set isLive to true in the JSON, (2) use the ticket timestamp date as gameDate — NOT today's date. Extract YYYY-MM-DD from the ticket timestamp \"YYYY/MM/DD HH:MM:SS AM/PM\". (3) gameTime should be left empty. GENERAL RULES: Never guess. Use empty strings for missing fields. gameDate in ET. gameTime in 24hr ET format. If unclear: {\"error\":\"reason\"}.",
             messages: [{ role: "user", content: [
               { type: "image", source: { type: "base64", media_type: file.type || "image/jpeg", data: base64 } },
               { type: "text", text: "Extract the bet details from this slip." }
@@ -355,11 +387,43 @@ if (!parsed.gameDate || !parsed.gameTime) {
               const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
               return homeMatch || awayMatch;
             });
-            if (match) {
+            // For baseball with pitcher name — use MLB Stats API to find exact game
+            if (parsed.pitcher && (parsed.sport?.toLowerCase().includes('baseball') || parsed.sport?.toLowerCase().includes('mlb'))) {
+              try {
+                const pitcherName = parsed.pitcher.toLowerCase();
+                const searchDate = parsed.gameDate || new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+                const mlbRes = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${searchDate}&gameType=R&hydrate=probablePitcher`);
+                const mlbData = await mlbRes.json();
+                const games = mlbData.dates?.[0]?.games || [];
+                const pitcherGame = games.find(g => {
+                  const awayPitcher = g.teams?.away?.probablePitcher?.lastName?.toLowerCase() || '';
+                  const homePitcher = g.teams?.home?.probablePitcher?.lastName?.toLowerCase() || '';
+                  return awayPitcher.includes(pitcherName) || homePitcher.includes(pitcherName) ||
+                         pitcherName.includes(awayPitcher) || pitcherName.includes(homePitcher);
+                });
+                if (pitcherGame) {
+                  const away = pitcherGame.teams?.away?.team?.name;
+                  const home = pitcherGame.teams?.home?.team?.name;
+                  parsed.game = `${away} @ ${home}`;
+                  parsed.gameDate = new Date(pitcherGame.gameDate).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+                  parsed.gameTime = new Date(pitcherGame.gameDate).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
+                  const oddsMatch = oddsData.games.find(g => {
+                    const h = g.home_team.toLowerCase();
+                    const a = g.away_team.toLowerCase();
+                    return home.toLowerCase().split(' ').filter(w => w.length > 3).some(w => h.includes(w)) ||
+                           away.toLowerCase().split(' ').filter(w => w.length > 3).some(w => a.includes(w));
+                  });
+                  if (oddsMatch) parsed.gameId = oddsMatch.id;
+                }
+              } catch(e) {}
+            }
+
+            if (match && !parsed.pitcher) {
               parsed.gameId = match.id;
               parsed.game = `${match.away_team} @ ${match.home_team}`;
               parsed.gameDate = new Date(match.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
               parsed.gameTime = new Date(match.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
+            }
             } else if (parsed.game) {
               parsed.game = parsed.game.replace(/\s+vs\.?\s+.*/i, '').trim();
             }
