@@ -2150,6 +2150,7 @@ useEffect(() => {
       gameDate: b.game_date,
       gameTime: b.game_time,
       gameId: b.game_id,
+      toWin: b.to_win,
       isParlay: false,
     }));
 
@@ -2280,7 +2281,7 @@ const markAllRead = async () => {
         id: b.id, sport: b.sport, game: b.game, betType: b.bet_type, pick: b.pick,
         odds: b.odds, amount: b.amount, type: b.type, result: b.result,
         isToday: b.is_today, gameDate: b.game_date, gameTime: b.game_time,
-        gameId: b.game_id, isParlay: false, createdAt: b.created_at,
+        gameId: b.game_id, toWin: b.to_win, isParlay: false, createdAt: b.created_at,
       }));
       const mappedParlays = (parlaysData || []).map(p => ({
         id: p.id, isParlay: true, betType: p.bet_type, odds: p.odds,
