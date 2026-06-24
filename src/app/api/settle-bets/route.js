@@ -40,6 +40,47 @@ const SPORT_MAP = {
   'mma': 'mma_mixed_martial_arts',
 };
 
+function normalizeSport(sport) {
+  if (!sport) return null;
+  const s = sport.toLowerCase().trim();
+  if (s.includes('world cup') || s.includes('fifa')) return 'soccer_fifa_world_cup';
+  if (s.includes('champions league') || s.includes('uefa champ')) return 'soccer_uefa_champs_league';
+  if (s.includes('europa league') || s.includes('uefa europa')) return 'soccer_uefa_europa_league';
+  if (s.includes('libertadores') || s.includes('copa lib')) return 'soccer_conmebol_copa_libertadores';
+  if (s.includes('premier league') || s.includes('epl') || s === 'english premier league') return 'soccer_epl';
+  if (s.includes('la liga') || s.includes('spain')) return 'soccer_spain_la_liga';
+  if (s.includes('bundesliga') || s.includes('germany')) return 'soccer_germany_bundesliga';
+  if (s.includes('serie a') || s.includes('italy')) return 'soccer_italy_serie_a';
+  if (s.includes('ligue') || s.includes('france')) return 'soccer_france_ligue_one';
+  if (s.includes('mls') || s.includes('major league soccer')) return 'soccer_usa_mls';
+  if (s.includes('soccer') || s.includes('football') && s.includes('assoc')) return 'soccer_usa_mls';
+  if (s.includes('mlb') || s.includes('baseball')) return 'baseball_mlb';
+  if (s.includes('nba') || s.includes('basketball')) return 'basketball_nba';
+  if (s.includes('nhl') || s.includes('hockey')) return 'icehockey_nhl';
+  if (s.includes('nfl') || (s.includes('football') && !s.includes('soccer') && !s.includes('assoc'))) return 'americanfootball_nfl';
+  if (s.includes('ncaab') || s.includes('college basketball')) return 'basketball_ncaab';
+  if (s.includes('ncaaf') || s.includes('college football')) return 'americanfootball_ncaaf';
+  if (s.includes('mma') || s.includes('ufc') || s.includes('mixed martial')) return 'mma_mixed_martial_arts';
+  if (s.includes('golf') || s.includes('pga')) return 'golf_pga_tour';
+  if (s.includes('tennis') || s.includes('atp') || s.includes('wta')) return 'tennis_atp';
+  return SPORT_MAP[s] || null;
+}
+
+function getAllSoccerLeagues() {
+  return [
+    'soccer_fifa_world_cup',
+    'soccer_usa_mls',
+    'soccer_epl',
+    'soccer_spain_la_liga',
+    'soccer_germany_bundesliga',
+    'soccer_italy_serie_a',
+    'soccer_france_ligue_one',
+    'soccer_uefa_champs_league',
+    'soccer_uefa_europa_league',
+    'soccer_conmebol_copa_libertadores',
+  ];
+}
+
 const PROP_STAT_MAP = {
   'strikeout': { type: 'pitching', field: 'strikeOuts' },
   'strikeouts': { type: 'pitching', field: 'strikeOuts' },
@@ -655,17 +696,8 @@ export async function GET(request) {
       const sport = bet.sport?.toLowerCase();
       const key = SPORT_MAP[sport];
       if (key) sportsNeeded.add(key);
-      if (sport === 'soccer') {
-        sportsNeeded.add('soccer_usa_mls');
-        sportsNeeded.add('soccer_fifa_world_cup');
-        sportsNeeded.add('soccer_uefa_champs_league');
-        sportsNeeded.add('soccer_uefa_europa_league');
-        sportsNeeded.add('soccer_conmebol_copa_libertadores');
-        sportsNeeded.add('soccer_epl');
-        sportsNeeded.add('soccer_spain_la_liga');
-        sportsNeeded.add('soccer_germany_bundesliga');
-        sportsNeeded.add('soccer_italy_serie_a');
-        sportsNeeded.add('soccer_france_ligue_one');
+      if (normalizeSport(sport)?.includes('soccer') || sport.includes('soccer') || sport.includes('fifa') || sport.includes('world cup')) {
+        getAllSoccerLeagues().forEach(l => sportsNeeded.add(l));
       }
     }
 
