@@ -578,6 +578,50 @@ async function settleLeg(leg, allScores) {
   return determineResult(leg, match);
 }
 
+// Settle team total bets (one team's score only)
+async function settleTeamTotal(bet) {
+  if (!bet.game_date || !bet.game) return null;
+  const pick = bet.pick?.toLowerCase() || '';
+  
+  // Extract direction and line
+  const overUnder = pick.includes('over') ? 'over' : pick.includes('under') ? 'under' : null;
+  if (!overUnder) return null;
+  const lineMatch = pick.match(/(\d+\.?\d*)/);
+  if (!lineMatch) return null;
+  const line = parseFloat(lineMatch[1]);
+
+  // Get scores from MLB API
+  const sport = bet.sport?.toLowerCase() || '';
+  if (sport.includes('mlb') || sport.includes('baseball')) {
+    const games = await fetchMLBGamePks(bet.game_date);
+    if (!games.length) return null;
+    const betGame = bet.game.toLowerCase();
+    const matchingGame = games.find(g => {
+      const away = g.awayTeam?.toLowerCase() || '';
+      const home = g.homeTeam?.toLowerCase() || '';
+      return away.split(' ').some(w => w.length > 3 && betGame.includes(w)) ||
+             home.split(' ').some(w => w.length > 3 && betGame.includes(w));
+    });
+    if (!matchingGame) return null;
+    const boxscore = await fetch(`https://statsapi.mlb.com/api/v1/game/${matchingGame.gamePk}/linescore`);
+    const data = await boxscore.json();
+    // Determine which team was picked
+    const awayName = matchingGame.awayTeam?.toLowerCase() || '';
+    const homeName = matchingGame.homeTeam?.toLowerCase() || '';
+    const pickedHome = homeName.split(' ').some(w => w.length > 3 && pick.includes(w));
+    const pickedAway = awayName.split(' ').some(w => w.length > 3 && pick.includes(w));
+    if (!pickedHome && !pickedAway) return null;
+    const teamRuns = pickedHome ? data.teams?.home?.runs : data.teams?.away?.runs;
+    if (teamRuns === undefined || teamRuns === null) return null;
+    const actual = parseInt(teamRuns);
+    if (isNaN(actual)) return null;
+    return overUnder === 'over'
+      ? (actual > line ? 'Win' : actual === line ? 'Push' : 'Loss')
+      : (actual < line ? 'Win' : actual === line ? 'Push' : 'Loss');
+  }
+  return null;
+}
+
 // Settle all pending parlays
 async function settleParlays(allScores) {
   const { data: pendingParlays, error } = await supabase
@@ -743,7 +787,10 @@ export async function GET(request) {
       const pick = bet.pick?.toLowerCase() || '';
       let result = null;
 
-      if (betType === '1h' || betType === 'firsthalf' || pick.includes('1h ml') || pick.includes('first 5') || pick.includes('f5')) {
+      if (betType === 'teamtotal' || pick.includes('team total')) {
+        result = await settleTeamTotal(bet);
+        settlementLog.push({ id: bet.id, pick: bet.pick, method: 'team_total', result });
+      } else if (betType === '1h' || betType === 'firsthalf' || pick.includes('1h ml') || pick.includes('first 5') || pick.includes('f5')) {
         if (sport === 'mlb' || sport === 'baseball') {
           result = await settleMLBF5(bet);
           settlementLog.push({ id: bet.id, pick: bet.pick, method: 'espn_f5', result });
