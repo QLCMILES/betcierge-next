@@ -2271,6 +2271,7 @@ const markAllRead = async () => {
         game_date: bet.gameDate ?? null,
         game_time: bet.gameTime ?? null,
         game_id: bet.gameId ?? null,
+        to_win: bet.toWin ?? null,
       });
       // Reload bets from Supabase to ensure consistent state
       const { data: straightBets } = await supabase.from('user_bets').select('*').eq('user_id', userKey).order('created_at', { ascending: false });
