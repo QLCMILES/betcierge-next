@@ -523,12 +523,9 @@ async function settleLeg(leg, allScores) {
   const betType = leg.bet_type?.toLowerCase().replace(/[^a-z]/g, '') || '';
   const sport = leg.sport?.toLowerCase() || '';
   
-  if (betType === '1h' || betType === 'firsthalf' || pick.match(/\s1h\s/i) || pick.includes('1h ml') || pick.includes('first 5') || pick.includes('f5')) {
-        if (sport === 'mlb' || sport === 'baseball') {
-          result = await settleMLBF5(bet);
-          settlementLog.push({ id: bet.id, pick: bet.pick, method: 'espn_f5', result });
-        }
-      } else if (betType?.includes('prop') || betType?.includes('player')) {
+  if (betType === '1h' || betType === 'firsthalf' || (leg.pick?.toLowerCase() || '').includes('1h ml') || (leg.pick?.toLowerCase() || '').includes('first 5') || (leg.pick?.toLowerCase() || '').includes('f5')) {
+    if (sport === 'mlb' || sport === 'baseball') return await settleMLBF5(leg);
+  } else if (betType?.includes('prop') || betType?.includes('player')) {
     if (sport === 'mlb' || sport === 'baseball') return await settleMLBProp(leg);
     if (sport === 'nba' || sport === 'basketball') return await settleNBAProp(leg);
     if (sport === 'nhl' || sport === 'hockey') return await settleNHLProp(leg);
@@ -713,7 +710,7 @@ export async function GET(request) {
       const sport = bet.sport?.toLowerCase();
       let result = null;
 
-      if (betType === '1h' || betType === 'firsthalf' || pick.match(/\s1h\s/i) || pick.includes('1h ml') || pick.includes('first 5') || pick.includes('f5')) {
+      if (betType === '1h' || betType === 'firsthalf' || pick.includes('1h ml') || pick.includes('first 5') || pick.includes('f5')) {
         if (sport === 'mlb' || sport === 'baseball') {
           result = await settleMLBF5(bet);
           settlementLog.push({ id: bet.id, pick: bet.pick, method: 'espn_f5', result });
