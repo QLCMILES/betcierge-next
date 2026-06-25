@@ -277,8 +277,8 @@ if (!parsed.gameDate || !parsed.gameTime) {
         const mlbData = await mlbRes.json();
         const games = mlbData.dates?.[0]?.games || [];
         const pitcherGame = games.find(g => {
-          const awayPitcher = g.teams?.away?.probablePitcher?.lastName?.toLowerCase() || '';
-          const homePitcher = g.teams?.home?.probablePitcher?.lastName?.toLowerCase() || '';
+          const awayPitcher = (g.teams?.away?.probablePitcher?.fullName?.split(' ').pop() || '').toLowerCase();
+          const homePitcher = (g.teams?.home?.probablePitcher?.fullName?.split(' ').pop() || '').toLowerCase();
           return awayPitcher.includes(pitcherName) || homePitcher.includes(pitcherName) ||
                  pitcherName.includes(awayPitcher) || pitcherName.includes(homePitcher);
         });
@@ -444,8 +444,8 @@ if (!parsed.gameDate || !parsed.gameTime) {
                 const mlbData = await mlbRes.json();
                 const games = mlbData.dates?.[0]?.games || [];
                 const pitcherGame = games.find(g => {
-                  const awayPitcher = g.teams?.away?.probablePitcher?.lastName?.toLowerCase() || '';
-                  const homePitcher = g.teams?.home?.probablePitcher?.lastName?.toLowerCase() || '';
+                  const awayPitcher = (g.teams?.away?.probablePitcher?.fullName?.split(' ').pop() || '').toLowerCase();
+                  const homePitcher = (g.teams?.home?.probablePitcher?.fullName?.split(' ').pop() || '').toLowerCase();
                   return awayPitcher.includes(pitcherName) || homePitcher.includes(pitcherName) ||
                          pitcherName.includes(awayPitcher) || pitcherName.includes(homePitcher);
                 });
