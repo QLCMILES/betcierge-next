@@ -1130,8 +1130,8 @@ function PicksTab({ userKey, user, session, onNav }) {
     const w = dayPicks.filter(p => p.result === 'Win').length;
     const l = dayPicks.filter(p => p.result === 'Loss').length;
     if (!w && !l) return '#555';
-    if (!l) return '#2ecc71';
-    if (!w) return '#e74c3c';
+    if (w > l) return '#2ecc71';
+    if (l > w) return '#e74c3c';
     return '#f5a623';
   };
 
