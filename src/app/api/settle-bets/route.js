@@ -965,7 +965,7 @@ async function settleDailyPicks() {
   const apiKey = process.env.ODDS_API_KEY;
   const picksScoresResults = await Promise.all(
     [...picksNeeded].map(s =>
-      fetch(`https://api.the-odds-api.com/v4/sports/${s}/scores/?apiKey=${apiKey}&daysFrom=3&dateFormat=iso`)
+      fetch(`https://api.the-odds-api.com/v4/sports/${s}/scores/?apiKey=${apiKey}&daysFrom=1&dateFormat=iso`)
         .then(r => r.json())
         .catch(() => [])
     )
