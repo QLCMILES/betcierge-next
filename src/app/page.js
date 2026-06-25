@@ -253,6 +253,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
     const game = expandTeamAbbr(parsed.game || "").toLowerCase();
     const parsedDate = parsed.gameDate || "";
     const parsedSport = normalizeSport(parsed.sport || "");
+    console.log('DEBUG snap:', { game: parsed.game, sport: parsed.sport, parsedSport, parsedDate, pitcher: parsed.pitcher });
     const match = oddsData.games.find(g => {
       const home = g.home_team.toLowerCase();
       const away = g.away_team.toLowerCase();
