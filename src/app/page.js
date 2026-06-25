@@ -1131,7 +1131,7 @@ function PicksTab({ userKey, user, session, onNav }) {
     const l = dayPicks.filter(p => p.result === 'Loss').length;
     if (!w && !l) return '#555';
     if (w > l) return '#2ecc71';
-    if (l > w) return '#e74c3c';
+    if (l > w) return '#f5a623';
     return '#f5a623';
   };
 
