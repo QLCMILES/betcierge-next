@@ -298,6 +298,7 @@ if (!parsed.gameDate || !parsed.gameTime) {
         } else {
           // Pitcher lookup failed — fall back to strict team name + sport + date matching
           const teamName = (parsed.game || '').toLowerCase();
+          console.log('DEBUG fallback:', { teamName, parsedSport, parsedDate, totalGames: oddsData.games.length });
           const oddsMatch = oddsData.games.find(g => {
             const h = g.home_team.toLowerCase();
             const a = g.away_team.toLowerCase();
