@@ -294,6 +294,26 @@ if (!parsed.gameDate || !parsed.gameTime) {
                    away.toLowerCase().split(' ').filter(w => w.length > 3).some(w => a.includes(w));
           });
           if (oddsMatch) parsed.gameId = oddsMatch.id;
+        } else {
+          // Pitcher lookup failed — fall back to strict team name + sport + date matching
+          const teamName = (parsed.game || '').toLowerCase();
+          const oddsMatch = oddsData.games.find(g => {
+            const h = g.home_team.toLowerCase();
+            const a = g.away_team.toLowerCase();
+            if (parsedSport && g.sport_key && g.sport_key !== parsedSport) return false;
+            if (parsedDate && g.commence_time) {
+              const gDate = new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+              if (gDate !== parsedDate) return false;
+            }
+            return h.split(' ').filter(w => w.length > 3).some(w => teamName.includes(w)) ||
+                   a.split(' ').filter(w => w.length > 3).some(w => teamName.includes(w));
+          });
+          if (oddsMatch) {
+            parsed.gameId = oddsMatch.id;
+            parsed.game = `${oddsMatch.away_team} @ ${oddsMatch.home_team}`;
+            parsed.gameDate = new Date(oddsMatch.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+            parsed.gameTime = new Date(oddsMatch.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
+          }
         }
       } catch(e) {}
     }
@@ -440,6 +460,26 @@ if (!parsed.gameDate || !parsed.gameTime) {
                            away.toLowerCase().split(' ').filter(w => w.length > 3).some(w => a.includes(w));
                   });
                   if (oddsMatch) parsed.gameId = oddsMatch.id;
+                } else {
+                  // Pitcher lookup failed — fall back to team name matching with strict filter
+                  const teamName = (parsed.game || '').toLowerCase();
+                  const oddsMatch = oddsData.games.find(g => {
+                    const h = g.home_team.toLowerCase();
+                    const a = g.away_team.toLowerCase();
+                    if (parsedSport && g.sport_key && g.sport_key !== parsedSport) return false;
+                    if (parsedDate && g.commence_time) {
+                      const gDate = new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+                      if (gDate !== parsedDate) return false;
+                    }
+                    return h.split(' ').filter(w => w.length > 3).some(w => teamName.includes(w)) ||
+                           a.split(' ').filter(w => w.length > 3).some(w => teamName.includes(w));
+                  });
+                  if (oddsMatch) {
+                    parsed.gameId = oddsMatch.id;
+                    parsed.game = `${oddsMatch.away_team} @ ${oddsMatch.home_team}`;
+                    parsed.gameDate = new Date(oddsMatch.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+                    parsed.gameTime = new Date(oddsMatch.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
+                  }
                 }
               } catch(e) {}
             }
