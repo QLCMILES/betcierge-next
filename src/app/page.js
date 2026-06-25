@@ -253,7 +253,6 @@ if (!parsed.gameDate || !parsed.gameTime) {
     const game = expandTeamAbbr(parsed.game || "").toLowerCase();
     const parsedDate = parsed.gameDate || "";
     const parsedSport = normalizeSport(parsed.sport || "");
-    console.log('DEBUG snap:', { game: parsed.game, sport: parsed.sport, parsedSport, parsedDate, pitcher: parsed.pitcher });
     const match = oddsData.games.find(g => {
       const home = g.home_team.toLowerCase();
       const away = g.away_team.toLowerCase();
@@ -298,7 +297,6 @@ if (!parsed.gameDate || !parsed.gameTime) {
         } else {
           // Pitcher lookup failed — fall back to strict team name + sport + date matching
           const teamName = (parsed.game || '').toLowerCase();
-          console.log('DEBUG fallback:', { teamName, parsedSport, parsedDate, totalGames: oddsData.games.length });
           const oddsMatch = oddsData.games.find(g => {
             const h = g.home_team.toLowerCase();
             const a = g.away_team.toLowerCase();
