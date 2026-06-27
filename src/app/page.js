@@ -500,7 +500,7 @@ const match = oddsData.games.find(g => {
               if (!parsed.isLive && !parsed.gameTime) {
               parsed.gameTime = new Date(match.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
               }
-          }
+          
             } else if (parsed.game) {
               parsed.game = parsed.game.replace(/\s+vs\.?\s+.*/i, '').trim();
             }
