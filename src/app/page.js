@@ -425,14 +425,21 @@ if (!parsed.gameDate || !parsed.gameTime) {
           const oddsRes = await fetch("/api/odds", { method: "POST" });
           const oddsData = await oddsRes.json();
           if (oddsData.games) {
-            const game = parsed.game?.toLowerCase() || "";
-            const match = oddsData.games.find(g => {
-              const home = g.home_team.toLowerCase();
-              const away = g.away_team.toLowerCase();
-              const homeMatch = home.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
-              const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
-              return homeMatch || awayMatch;
-            });
+            const game = expandTeamAbbr(parsed.game?.toLowerCase() || "");
+const parsedDate = parsed.gameDate || "";
+const parsedSport = normalizeSport(parsed.sport || "");
+const match = oddsData.games.find(g => {
+  const home = g.home_team.toLowerCase();
+  const away = g.away_team.toLowerCase();
+  const gameDate = g.commence_time
+    ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+    : null;
+  if (parsedSport && g.sport_key && g.sport_key !== parsedSport) return false;
+  if (parsedDate && gameDate && gameDate !== parsedDate) return false;
+  const homeMatch = home.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
+  const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
+  return homeMatch || awayMatch;
+});
             // For baseball with pitcher name — use MLB Stats API to find exact game
             if (parsed.pitcher && (parsed.sport?.toLowerCase().includes('baseball') || parsed.sport?.toLowerCase().includes('mlb'))) {
               try {
@@ -487,8 +494,13 @@ if (!parsed.gameDate || !parsed.gameTime) {
             if (match && !parsed.pitcher) {
               parsed.gameId = match.id;
               parsed.game = `${match.away_team} @ ${match.home_team}`;
+              if (!parsed.isLive && !parsed.gameDate) {
               parsed.gameDate = new Date(match.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+              }
+              if (!parsed.isLive && !parsed.gameTime) {
               parsed.gameTime = new Date(match.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
+              }
+          }
             } else if (parsed.game) {
               parsed.game = parsed.game.replace(/\s+vs\.?\s+.*/i, '').trim();
             }
@@ -508,8 +520,8 @@ if (!parsed.gameDate || !parsed.gameTime) {
                     ...leg,
                     gameId: legMatch.id,
                     game: `${legMatch.away_team} @ ${legMatch.home_team}`,
-                    gameDate: new Date(legMatch.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
-                    gameTime: new Date(legMatch.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false })
+                    gameDate: leg.gameDate || new Date(legMatch.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+gameTime: leg.gameTime || new Date(legMatch.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }),
                   };
                 }
                 return leg;
