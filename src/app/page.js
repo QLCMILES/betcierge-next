@@ -1099,8 +1099,8 @@ function PicksTab({ userKey, user, session, onNav }) {
       const { data } = await supabase
         .from('daily_picks')
         .select('*')
-        .gte('date', (() => { const d = new Date(); d.setDate(d.getDate() - 14); return d.toLocaleDateString('en-CA'); })())
-        .lt('date', new Date().toLocaleDateString('en-CA'))
+        .gte('date', '2026-06-11')
+.lte('date', new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }))
         .eq('status', 'active')
         .order('date', { ascending: false })
         .order('id', { ascending: true });
