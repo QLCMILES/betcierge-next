@@ -48,16 +48,45 @@ async function generatePicks() {
       const spread = bm?.markets?.find(m => m.key === 'spreads');
       const total = bm?.markets?.find(m => m.key === 'totals');
       return {
-        sport: g.sport_title,
-        game: `${g.away_team} @ ${g.home_team}`,
-        time: g.commence_time,
-        moneyline: h2h?.outcomes?.map(o => `${o.name}: ${o.price}`).join(', '),
-        spread: spread?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', '),
-        total: total?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', '),
-      };
+  sport: g.sport_title,
+  game: `${g.away_team} @ ${g.home_team}`,
+  time: g.commence_time,
+  moneyline: h2h?.outcomes?.map(o => `${o.name}: ${o.price}`).join(', '),
+  spread: spread?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', '),
+  total: total?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', '),
+  sport_key: g.sport_key,
+};
     });
 
-  const gamesContext = JSON.stringify(slimGames);
+  // Enrich MLB games with confirmed starting pitchers from MLB Stats API
+try {
+  const mlbRes = await fetch(
+    `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${today}&gameType=R&hydrate=probablePitcher`
+  );
+  const mlbData = await mlbRes.json();
+  const mlbSchedule = mlbData.dates?.[0]?.games || [];
+  for (const game of slimGames) {
+    if (game.sport_key !== 'baseball_mlb') continue;
+    const awayTeam = game.game.split(' @ ')[0].toLowerCase();
+    const homeTeam = game.game.split(' @ ')[1].toLowerCase();
+    const match = mlbSchedule.find(s => {
+      const sAway = s.teams?.away?.team?.name?.toLowerCase() || '';
+      const sHome = s.teams?.home?.team?.name?.toLowerCase() || '';
+      return sAway.split(' ').some(w => w.length > 3 && awayTeam.includes(w)) ||
+             sHome.split(' ').some(w => w.length > 3 && homeTeam.includes(w));
+    });
+    if (match) {
+      const awayPitcher = match.teams?.away?.probablePitcher?.fullName;
+      const homePitcher = match.teams?.home?.probablePitcher?.fullName;
+      if (awayPitcher) game.away_starter = `${game.game.split(' @ ')[0]} starter: ${awayPitcher}`;
+      if (homePitcher) game.home_starter = `${game.game.split(' @ ')[1]} starter: ${homePitcher}`;
+    }
+  }
+} catch(e) {
+  console.error('Pitcher enrichment error:', e.message);
+}
+
+const gamesContext = JSON.stringify(slimGames);
   const today_display = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
     timeZone: 'America/New_York'
@@ -114,7 +143,7 @@ If any answer reveals a problem, replace the weakest pick.
 ═══════════════════════════════════════
 CRITICAL DATA INTEGRITY RULES — ALWAYS ENFORCE
 ═══════════════════════════════════════
-1. PITCHER TEAM VERIFICATION: The odds feed context is ground truth for tonight's starters. NEVER contradict it with web search.
+1. PITCHER TEAM VERIFICATION: The games feed includes away_starter and home_starter fields showing EXACTLY which pitcher starts for which team tonight. These are ground truth — NEVER contradict them with web search. The away_starter pitcher pitches for the AWAY team. The home_starter pitcher pitches for the HOME team. This is non-negotiable.
 2. PITCHER REST CHECK: Search "[pitcher] last start date 2026". If they started within 3 days, they cannot start tonight.
 3. GAME DATE CHECK: Every game you recommend must be from TODAY's odds feed. Never recommend a game not in tonight's feed.
 4. INJURY VERIFICATION: Always search "[player] injury status today" before any bet involving a key player. If a star is out, re-evaluate the entire play.
