@@ -1469,7 +1469,14 @@ function UpgradeScreen({ user, userKey, onNav }) {
     TEAM_ANNUAL: process.env.NEXT_PUBLIC_STRIPE_PRICE_TEAM_ANNUAL,
     EDGE_MONTHLY: process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_MONTHLY,
     EDGE_ANNUAL: process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_ANNUAL,
+    FOUNDING_TEAM: process.env.NEXT_PUBLIC_STRIPE_PRICE_FOUNDING_TEAM_MONTHLY,
+    FOUNDING_EDGE: process.env.NEXT_PUBLIC_STRIPE_PRICE_FOUNDING_EDGE_MONTHLY,
   };
+
+  const FOUNDING_SPOTS_TOTAL = 500;
+  const FOUNDING_SPOTS_TAKEN = 6;
+  const FOUNDING_SPOTS_LEFT = FOUNDING_SPOTS_TOTAL - FOUNDING_SPOTS_TAKEN;
+  const foundingActive = FOUNDING_SPOTS_LEFT > 0;
 
   return (
     <div style={S.screen}>
@@ -1481,57 +1488,124 @@ function UpgradeScreen({ user, userKey, onNav }) {
       {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: 28 }}>
         <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 30, fontWeight: 700, color: '#fff', marginBottom: 8 }}>
-          Upgrade Your Edge
+          {foundingActive ? 'Founding Member Pricing' : 'Upgrade Your Edge'}
         </div>
-        <div style={{ color: '#f5a623', fontSize: 14, marginBottom: 4 }}>3-day free trial on all plans</div>
-        <div style={{ color: '#555', fontSize: 13 }}>Cancel anytime. No commitment.</div>
+        {foundingActive ? (
+          <>
+            <div style={{ background: '#f5a62320', border: '1px solid #f5a623', borderRadius: 8, padding: '8px 16px', display: 'inline-block', marginBottom: 8 }}>
+              <span style={{ color: '#f5a623', fontWeight: 700, fontSize: 14 }}>⚡ {FOUNDING_SPOTS_LEFT} of {FOUNDING_SPOTS_TOTAL} founding spots remaining</span>
+            </div>
+            <div style={{ color: '#aaa', fontSize: 13, marginBottom: 4 }}>Lock in this price forever — it never goes up</div>
+            <div style={{ color: '#555', fontSize: 12 }}>3-day free trial · Cancel anytime</div>
+          </>
+        ) : (
+          <>
+            <div style={{ color: '#f5a623', fontSize: 14, marginBottom: 4 }}>3-day free trial on all plans</div>
+            <div style={{ color: '#555', fontSize: 13 }}>Cancel anytime. No commitment.</div>
+          </>
+        )}
       </div>
 
-      {/* Team Plan */}
-      <div style={{ background: '#0f0f18', border: '1px solid #f5a623', borderRadius: 16, padding: 20, marginBottom: 16 }}>
+      {/* Founding Team / Team Plan */}
+      <div style={{ background: '#0f0f18', border: '1px solid #f5a623', borderRadius: 16, padding: 20, marginBottom: 16, position: 'relative' }}>
+        {foundingActive && (
+          <div style={{ position: 'absolute', top: -10, right: 16, background: '#f5a623', color: '#000', fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, letterSpacing: 1 }}>
+            FOUNDING PRICE
+          </div>
+        )}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div>
             <div style={{ color: '#f5a623', fontSize: 12, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>THE TEAM</div>
-            <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$29.99<span style={{ fontSize: 13, color: '#555', fontWeight: 400 }}>/mo</span></div>
-            <div style={{ color: '#555', fontSize: 12, marginTop: 2 }}>or $197/yr — save 45%</div>
+            {foundingActive ? (
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$24.99<span style={{ fontSize: 13, color: '#555', fontWeight: 400 }}>/mo</span></div>
+                <div style={{ color: '#555', fontSize: 13, textDecoration: 'line-through' }}>$29.99</div>
+              </div>
+            ) : (
+              <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$29.99<span style={{ fontSize: 13, color: '#555', fontWeight: 400 }}>/mo</span></div>
+            )}
+            {foundingActive ? (
+              <div style={{ color: '#2ecc71', fontSize: 12, marginTop: 2 }}>🔒 Locked for life</div>
+            ) : (
+              <div style={{ color: '#555', fontSize: 12, marginTop: 2 }}>or $197/yr — save 45%</div>
+            )}
           </div>
           <div style={{ fontSize: 32 }}>🎯</div>
         </div>
         {['Daily picks from Hunter', 'Full Hunter AI chat', 'Snap to Log', 'Live Gamecast', 'Bet history & analytics'].map((f, i) => (
           <div key={i} style={{ color: '#aaa', fontSize: 13, marginBottom: 6 }}>✓ {f}</div>
         ))}
-        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-          <button onClick={() => checkout(PRICES.TEAM_MONTHLY)} disabled={!!loading} style={{ flex: 1, background: '#f5a623', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
-            {loading === PRICES.TEAM_MONTHLY ? 'Loading...' : 'Monthly'}
-          </button>
-          <button onClick={() => checkout(PRICES.TEAM_ANNUAL)} disabled={!!loading} style={{ flex: 1, background: '#f5a623', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
-            {loading === PRICES.TEAM_ANNUAL ? 'Loading...' : 'Annual — Best Value'}
-          </button>
+        <div style={{ marginTop: 16 }}>
+          {foundingActive ? (
+            <button onClick={() => checkout(PRICES.FOUNDING_TEAM)} disabled={!!loading} style={{ width: '100%', background: '#f5a623', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
+              {loading === PRICES.FOUNDING_TEAM ? 'Loading...' : `Claim Founding Price — $24.99/mo`}
+            </button>
+          ) : (
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => checkout(PRICES.TEAM_MONTHLY)} disabled={!!loading} style={{ flex: 1, background: '#f5a623', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
+                {loading === PRICES.TEAM_MONTHLY ? 'Loading...' : 'Monthly'}
+              </button>
+              <button onClick={() => checkout(PRICES.TEAM_ANNUAL)} disabled={!!loading} style={{ flex: 1, background: '#f5a623', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
+                {loading === PRICES.TEAM_ANNUAL ? 'Loading...' : 'Annual — Best Value'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Edge Plan */}
-      <div style={{ background: '#0f0f18', border: '1px solid #2a1f4e', borderRadius: 16, padding: 20, marginBottom: 32 }}>
+      {/* Founding Edge / Edge Plan */}
+      <div style={{ background: '#0f0f18', border: '1px solid #2a1f4e', borderRadius: 16, padding: 20, marginBottom: 32, position: 'relative' }}>
+        {foundingActive && (
+          <div style={{ position: 'absolute', top: -10, right: 16, background: '#a78bfa', color: '#000', fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, letterSpacing: 1 }}>
+            FOUNDING PRICE
+          </div>
+        )}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div>
             <div style={{ color: '#a78bfa', fontSize: 12, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>THE EDGE</div>
-            <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$79.99<span style={{ fontSize: 13, color: '#555', fontWeight: 400 }}>/mo</span></div>
-            <div style={{ color: '#555', fontSize: 12, marginTop: 2 }}>or $499/yr — save 48%</div>
+            {foundingActive ? (
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$59.99<span style={{ fontSize: 13, color: '#555', fontWeight: 400 }}>/mo</span></div>
+                <div style={{ color: '#555', fontSize: 13, textDecoration: 'line-through' }}>$79.99</div>
+              </div>
+            ) : (
+              <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$79.99<span style={{ fontSize: 13, color: '#555', fontWeight: 400 }}>/mo</span></div>
+            )}
+            {foundingActive ? (
+              <div style={{ color: '#2ecc71', fontSize: 12, marginTop: 2 }}>🔒 Locked for life</div>
+            ) : (
+              <div style={{ color: '#555', fontSize: 12, marginTop: 2 }}>or $499/yr — save 48%</div>
+            )}
           </div>
           <div style={{ fontSize: 32 }}>⚡</div>
         </div>
         {['Everything in The Team', 'Exclusive edge plays', 'Deeper analytics', 'Priority access to premium picks', 'Early access to new features'].map((f, i) => (
           <div key={i} style={{ color: '#aaa', fontSize: 13, marginBottom: 6 }}>✓ {f}</div>
         ))}
-        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-          <button onClick={() => checkout(PRICES.EDGE_MONTHLY)} disabled={!!loading} style={{ flex: 1, background: '#a78bfa', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
-            {loading === PRICES.EDGE_MONTHLY ? 'Loading...' : 'Monthly'}
-          </button>
-          <button onClick={() => checkout(PRICES.EDGE_ANNUAL)} disabled={!!loading} style={{ flex: 1, background: '#a78bfa', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
-            {loading === PRICES.EDGE_ANNUAL ? 'Loading...' : 'Annual — Best Value'}
-          </button>
+        <div style={{ marginTop: 16 }}>
+          {foundingActive ? (
+            <button onClick={() => checkout(PRICES.FOUNDING_EDGE)} disabled={!!loading} style={{ width: '100%', background: '#a78bfa', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
+              {loading === PRICES.FOUNDING_EDGE ? 'Loading...' : `Claim Founding Price — $59.99/mo`}
+            </button>
+          ) : (
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => checkout(PRICES.EDGE_MONTHLY)} disabled={!!loading} style={{ flex: 1, background: '#a78bfa', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
+                {loading === PRICES.EDGE_MONTHLY ? 'Loading...' : 'Monthly'}
+              </button>
+              <button onClick={() => checkout(PRICES.EDGE_ANNUAL)} disabled={!!loading} style={{ flex: 1, background: '#a78bfa', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
+                {loading === PRICES.EDGE_ANNUAL ? 'Loading...' : 'Annual — Best Value'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Price comparison note */}
+      {foundingActive && (
+        <div style={{ textAlign: 'center', color: '#555', fontSize: 12, marginBottom: 32 }}>
+          CaptainPicks Discord is $600/mo. Betcierge gives you everything that has plus AI + tracking for {FOUNDING_SPOTS_LEFT} more founding members at $24.99/mo.
+        </div>
+      )}
     </div>
   );
 }
