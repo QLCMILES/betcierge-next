@@ -465,10 +465,42 @@ CRITICAL: Every game name must EXACTLY match a game from the feed. Never invent 
   });
 
   const data = await response.json();
-  const text = (data.content || [])
+
+  console.log('Claude stop_reason:', data.stop_reason, 'content blocks:', (data.content || []).map(c => c.type));
+
+  let text = (data.content || [])
     .filter(c => c.type === 'text')
     .map(c => c.text)
     .join('');
+
+  if (!text.trim() || data.stop_reason === 'tool_use') {
+    console.log('No text or stopped at tool_use, retrying...');
+    const retryResponse = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 4000,
+        system: 'You are Hunter. Return ONLY the raw JSON picks object with no other text. No markdown, no explanation.',
+        messages: [
+          ...(data.content ? [{ role: 'assistant', content: data.content }] : []),
+          { role: 'user', content: 'Now return ONLY the final JSON picks object. Format: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"..."}]}' }
+        ],
+      }),
+    });
+    const retryData = await retryResponse.json();
+    text = (retryData.content || [])
+      .filter(c => c.type === 'text')
+      .map(c => c.text)
+      .join('');
+    console.log('Retry stop_reason:', retryData.stop_reason);
+  }
+
+  if (!text.trim()) throw new Error('No text content returned from Claude after retry');
 
   const clean = text
     .replace(/```json|```/g, '')
@@ -478,7 +510,6 @@ CRITICAL: Every game name must EXACTLY match a game from the feed. Never invent 
     .trim();
   const jsonMatch = clean.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON in response');
-
   const parsed = JSON.parse(jsonMatch[0]);
   if (!parsed.picks) throw new Error('Invalid format');
 
