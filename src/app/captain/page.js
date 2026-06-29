@@ -20,23 +20,23 @@ const FOUNDING_TOTAL = 500;
 const FOUNDING_TAKEN = 6; // update this as spots fill
 
 const features = [
-  { icon: "🎯", name: "Daily picks at 11 AM ET", desc: "Three best plays every morning — same picks from the CaptainPicks Discord, now with full AI-powered analysis behind each one." },
-  { icon: "🤖", name: "Hunter — your betting brain", desc: "Ask about any game, any line, any matchup. Get a clear, honest breakdown in seconds — like texting Miles directly." },
-  { icon: "📸", name: "Snap to Log", desc: "Screenshot your bet slip. We log it automatically. No typing, no spreadsheets." },
-  { icon: "📡", name: "Live Gamecast", desc: "Watch your games and your money move in real time on one screen." },
-  { icon: "📋", name: "Full bet tracking", desc: "Every pick tracked — wins and losses. Your real record, always visible." },
-  { icon: "⚡", name: "Auto-settlement", desc: "Your bets settle automatically after every game. No manual updates." },
-  { icon: "🛡️", name: "Bankroll guardrails", desc: "Set your limits once. Hunter flags you before you go over." },
-  { icon: "🧠", name: "Tilt protection", desc: "Down bad? Hunter slows you down before you do something you'll regret." },
+  { icon: "🎯", name: "The top 3 edges of the day — every morning at 11 AM ET", desc: "Every morning Hunter identifies the three best plays across every sport on the board that day. NFL spreads. NBA totals. MLB run lines. Soccer moneylines. College football. Whatever has the sharpest edge that day — that's what you get. Not limited to one sport. Not forced to fit a format. Just the three best plays, every day, with the full reasoning behind each one." },
+  { icon: "🤖", name: "Professional handicapper depth. In seconds.", desc: "Before Betcierge, getting this level of research meant either doing it yourself for hours or paying a professional handicapper thousands a month. Hunter does it in seconds. Ask about any game, any sport, any line — and get a breakdown that covers line movement, injury reports, matchup history, sharp money signals, recent form, and situational angles. The kind of analysis that used to take a full afternoon to produce." },
+  { icon: "🔍", name: "Any sport. Any question. Any hour.", desc: "Is your NFL team a trap line this week? What's the sharp money doing on tonight's NBA total? Is this soccer team on a bad run at home? Is the MLB bullpen gassed after a 12-inning game two days ago? Is this college basketball spread too big given the travel schedule? Hunter searches for the answer in real time, no matter the sport, no matter the hour. Day or night. Weekday or weekend. Preseason or playoffs." },
+  { icon: "⚡", name: "NFL · College Football · NBA · Soccer · MLB · College Basketball · NHL · UFC · And more", desc: "Hunter doesn't have an off-season. There is always a game. There is always an edge somewhere on the board. And Hunter is always searching for it — across every league, every sport, every day of the year." },
+  { icon: "📸", name: "Snap to Log — any sportsbook", desc: "Screenshot your bet slip from TryInk, FanDuel, DraftKings, BetMGM, Caesars, or any offshore book. Hunter reads it and logs every detail automatically. Game, pick, odds, wager, to win — all captured in seconds. No typing. No manual entry." },
+  { icon: "📡", name: "Live Gamecast", desc: "Watch your games and your money move in real time on one screen. Live scores across every sport, live P&L on your active bets, everything updating as the action happens. Never lose track of where you stand." },
+  { icon: "📋", name: "Your real record — always visible", desc: "Every pick tracked and auto-settled after every game, every sport. Your true win rate, units, and ROI — always current, never massaged. Wins and losses both shown. The receipts are always there." },
+  { icon: "🛡️", name: "Bankroll management that actually works", desc: "Set your weekly bankroll and profit targets once. Hunter tracks your P&L in real time, sizes every bet intelligently, and flags you before you breach your limits. One bad night doesn't become a catastrophe. The guardrail every serious bettor needs but almost nobody has." },
 ];
 
 const faqs = [
-  { q: "Is this the same picks as CaptainPicks Discord?", a: "Yes — same research, same plays. Betcierge adds AI analysis behind every pick, full bet tracking, snap to log, and live gamecast. Think of it as the Discord plus a full betting assistant." },
-  { q: "What does 'founding member' mean?", a: "The first 500 members lock in $24.99/mo forever. When regular pricing launches at $29.99/mo, your price never changes. Ever." },
-  { q: "Can I cancel anytime?", a: "Yes. Cancel from your account settings — no calls, no hoops, no questions asked." },
-  { q: "What's the difference between Team and Edge?", a: "Team gets you the daily picks, full Hunter AI chat, snap to log, and all tracking features. Edge adds exclusive deeper plays, advanced analytics, and priority access to new features as they launch." },
-  { q: "Is there really a 3-day free trial?", a: "Yes. Full access, no charge for 3 days. If it's not for you, cancel before day 3 and you pay nothing." },
-  { q: "Do you show losses?", a: "Every single one. A record that hides losses is a lie. Ours does not." },
+  { q: "How is this different from the CaptainPicks Discord?", a: "The Discord gives you the picks. Betcierge gives you the picks plus the full reasoning behind every one — live pitcher research, line movement analysis, sharp money signals, weather, umpire data. Plus you can ask Hunter about any game at any hour and get a professional-level breakdown in seconds. Plus your entire betting record tracked and settled automatically. It's not a supplement to the Discord. It's what the Discord was always trying to be." },
+  { q: "How does Hunter actually research games?", a: "Hunter uses live web search on every question and every pick. When it analyzes a game it searches current injury reports, both starting pitchers' last 3 starts, line movement from open to now, sharp money signals, weather at the stadium, and umpire tendencies. It's the same research process a professional handicapper runs — done in seconds, every time." },
+  { q: "What does 'founding member' mean?", a: "The first 500 members lock in $24.99/mo forever. When regular pricing launches at $29.99/mo, your price never changes. Ever. You're getting in at the ground floor of something that's going to be a lot more expensive very soon." },
+  { q: "What's the difference between Founding Team and Founding Edge?", a: "Team gets you everything — daily picks with full AI analysis, unlimited Hunter chat, snap to log, live gamecast, and full tracking. Edge adds exclusive deeper plays beyond the daily 3, advanced analytics, and priority access to every new feature as it launches. Both prices are locked for life." },
+  { q: "Can I cancel anytime?", a: "Yes. Cancel from your account settings — no calls, no hoops, no questions asked. The 3-day trial is genuinely free. If it's not for you, cancel before day 3 and you pay nothing." },
+  { q: "Do you show losses?", a: "Every single one. 36W-17L since June 11. The wins and the losses, always visible. A record that hides losses is a lie. Ours does not." },
 ];
 
 export default function CaptainPage({ onGetStarted }) {
@@ -75,13 +75,16 @@ export default function CaptainPage({ onGetStarted }) {
           From the team behind CaptainPicks
         </div>
         <h1 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "clamp(34px, 8vw, 54px)", fontWeight: 700, lineHeight: 1.1, marginBottom: 16, color: "#fff" }}>
-          The Discord. <em style={{ color: GOLD, fontStyle: "italic" }}>Plus AI.</em><br />For $24.99/mo.
+          Your professional handicapper.<br /><em style={{ color: GOLD, fontStyle: "italic" }}>In your pocket. 24/7.</em>
         </h1>
-        <p style={{ fontSize: 17, color: GRAY, lineHeight: 1.7, maxWidth: 520, margin: "0 auto 12px" }}>
-          You've been getting CaptainPicks plays in the Discord. Betcierge is everything that has — same picks, same research — plus an AI betting assistant, full bet tracking, and live gamecast.
+        <p style={{ fontSize: 17, color: LIGHT, lineHeight: 1.7, maxWidth: 540, margin: "0 auto 12px" }}>
+          We took everything we built into CaptainPicks — 6 years of research, systems, and edge — and programmed it into an AI that never sleeps. Hunter researches every game in real time, gives you the picks with full reasoning, manages your bankroll, and answers any question about any line at any hour.
+        </p>
+        <p style={{ fontSize: 15, color: GRAY, lineHeight: 1.7, maxWidth: 520, margin: "0 auto 12px" }}>
+          This isn't the Discord with a chatbot bolted on. This is a completely different level of service — the kind of access that used to cost thousands a month, rebuilt from the ground up for serious bettors.
         </p>
         <p style={{ fontSize: 15, color: LIGHT, lineHeight: 1.7, maxWidth: 520, margin: "0 auto 32px", borderTop: "1px solid #1e1e2e", paddingTop: 16 }}>
-          The Discord is <strong style={{ color: "#fff" }}>$600/mo</strong>. As a founding member, Betcierge is <strong style={{ color: GOLD }}>$24.99/mo — locked for life.</strong>
+          The Discord was <strong style={{ color: "#fff" }}>$600/mo</strong>. Founding members get all of this for <strong style={{ color: GOLD }}>$24.99/mo — locked for life.</strong>
         </p>
 
         {/* Spot Counter */}
@@ -120,7 +123,8 @@ export default function CaptainPage({ onGetStarted }) {
       <section style={{ maxWidth: 700, margin: "0 auto 60px", padding: "0 24px" }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>WHAT'S INSIDE</div>
-          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>Everything the Discord has, and more</h2>
+          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>A different level of service</h2>
+          <p style={{ color: GRAY, fontSize: 14, marginTop: 8, maxWidth: 500, margin: "8px auto 0" }}>Six years of handicapping knowledge, programmed into an AI that works around the clock.</p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {features.map((f, i) => (
@@ -239,10 +243,10 @@ export default function CaptainPage({ onGetStarted }) {
         <div style={{ background: "#0d0a00", border: "1px solid #f5a62344", borderRadius: 16, padding: "32px 28px", textAlign: "center" }}>
           <div style={{ color: GOLD, fontWeight: 700, fontSize: 13, marginBottom: 8 }}>⚡ {spotsLeft} founding spots remaining</div>
           <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 28, fontWeight: 700, color: "#fff", marginBottom: 12 }}>
-            Same picks. Better tools.<br />$24.99/mo — forever.
+            Your professional handicapper.<br />$24.99/mo — forever.
           </h2>
           <p style={{ color: GRAY, fontSize: 14, marginBottom: 8 }}>3 days free. Full access. No commitment.</p>
-          <p style={{ color: GRAY, fontSize: 13, marginBottom: 24 }}>Cancel anytime from your account settings — <strong style={{ color: GOLD }}>no hoops, no calls.</strong></p>
+          <p style={{ color: GRAY, fontSize: 13, marginBottom: 24 }}>The kind of service that used to cost thousands a month. Built for serious bettors. <strong style={{ color: GOLD }}>Founding price locked for life.</strong></p>
           <button onClick={go} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 40px", fontSize: 15, fontWeight: 700, cursor: "pointer", width: "100%", marginBottom: 12 }}>
             Claim Founding Team — $24.99/mo
           </button>
