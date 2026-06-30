@@ -129,6 +129,8 @@ const [hunterOpen, setHunterOpen] = useState(false);
     <p style={{ color: GRAY, fontSize: 14, marginTop: 8 }}>Every pick comes with the full breakdown. Every question gets a professional answer.</p>
   </div>
 
+  <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>🎯 Daily pick · Dropped at 11 AM ET</div>
+
   {/* Pick Card */}
   <div style={{ background: "#0d0a00", border: "1.5px solid #f5a623", borderRadius: 16, padding: "18px 20px", marginBottom: 14, position: "relative" }}>
     <div style={{ position: "absolute", top: 16, right: 16, background: "#0a2010", color: "#2ecc71", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>✓ WIN</div>
@@ -158,6 +160,8 @@ const [hunterOpen, setHunterOpen] = useState(false);
     </button>
   </div>
 
+  <div style={{ fontSize: 11, color: GRAY, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8, marginTop: 20 }}>🤖 Hunter chat · Ask anything, any hour</div>
+  
   {/* Hunter Chat */}
   <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 16, overflow: "hidden" }}>
     <div style={{ padding: "12px 16px", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 10 }}>
