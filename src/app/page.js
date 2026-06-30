@@ -2509,8 +2509,8 @@ const updateBet = async (id, result) => {
 );
 if (showLogin) return <LoginScreen onAuth={(s) => { setSession(s); setShowLogin(false); }} />;
 if (!session) {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('signup') === '1') return <LoginScreen onAuth={(s) => { setSession(s); setShowLogin(false); }} />;
+  const hasFoundingPrice = typeof window !== 'undefined' && localStorage.getItem('founding_price_id');
+  if (showLogin || hasFoundingPrice) return <LoginScreen onAuth={(s) => { setSession(s); setShowLogin(false); }} />;
   return <Landing onGetStarted={() => setShowLogin(true)} />;
 }
 if (!user?.name) return <Onboarding onComplete={handleComplete} />;
