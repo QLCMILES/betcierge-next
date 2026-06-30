@@ -42,6 +42,8 @@ const faqs = [
 export default function CaptainPage({ onGetStarted }) {
   const [openFaq, setOpenFaq] = useState(null);
   const [spotsLeft, setSpotsLeft] = useState(FOUNDING_TOTAL - FOUNDING_TAKEN);
+const [pickOpen, setPickOpen] = useState(false);
+const [hunterOpen, setHunterOpen] = useState(false);
   const go = () => { if (onGetStarted) onGetStarted(); };
 
   // Fetch real user count for spot counter
@@ -118,6 +120,86 @@ export default function CaptainPage({ onGetStarted }) {
           </div>
         </div>
       </section>
+
+      {/* Demo Section */}
+<section style={{ maxWidth: 700, margin: "0 auto 60px", padding: "0 24px" }}>
+  <div style={{ textAlign: "center", marginBottom: 32 }}>
+    <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>SEE IT IN ACTION</div>
+    <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>Real picks. Real research. Real results.</h2>
+    <p style={{ color: GRAY, fontSize: 14, marginTop: 8 }}>Every pick comes with the full breakdown. Every question gets a professional answer.</p>
+  </div>
+
+  {/* Pick Card */}
+  <div style={{ background: "#0d0a00", border: "1.5px solid #f5a623", borderRadius: 16, padding: "18px 20px", marginBottom: 14, position: "relative" }}>
+    <div style={{ position: "absolute", top: 16, right: 16, background: "#0a2010", color: "#2ecc71", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>✓ WIN</div>
+    <div style={{ background: "#1a1200", color: GOLD, fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4, display: "inline-block", marginBottom: 8 }}>MLB</div>
+    <div style={{ fontSize: 12, color: GRAY, marginBottom: 4 }}>Los Angeles Dodgers @ San Diego Padres · 9:40 PM ET</div>
+    <div style={{ fontSize: 20, fontWeight: 700, color: "#fff", marginBottom: 10 }}>San Diego Padres ML</div>
+    <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
+      <span style={{ fontSize: 15, fontWeight: 700, color: GREEN }}>+126</span>
+      <span style={{ background: "#f5a62320", color: GOLD, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>2U</span>
+      <span style={{ fontSize: 12, color: GRAY }}>Medium confidence · Plus money value</span>
+    </div>
+    <div style={{ borderTop: "1px solid #1e1e2e", marginBottom: 12 }} />
+    <div style={{ fontSize: 13, color: "#9ca3af", lineHeight: 1.65 }}>
+      <span style={{ color: GOLD, fontWeight: 600 }}>Walker Buehler's Revenge Game at Petco</span> — Buehler posting a 1.72 ERA with 4 straight 1-run starts in June, facing his former team at home. The Dodgers counter with Roki Sasaki (4.76 ERA, just gave up 7 runs to the White Sox). At +126 on a motivated home team with the better starter — this is the value side.
+      {pickOpen && (
+        <span>
+          <br /><br />Buehler spent almost his entire career in Los Angeles before joining San Diego this year, and he's been excellent in June — posting a 1.72 ERA with 15 strikeouts over his last 3 starts. He's allowed exactly 1 run in 4 straight starts this month, lowering his season ERA to 3.96. His cutter has become his signature pitch, averaging 91 mph (0.9 mph above season average), and he induced 10 whiffs on 46 swings in his last outing against Baltimore. At home at Petco Park, Buehler has a 3.32 ERA compared to 4.78 on the road. The veteran knows how to pitch in this park.
+          <br /><br /><span style={{ color: GOLD, fontWeight: 600 }}>Roki Sasaki's Struggles Continue</span><br />
+          The Dodgers counter with Roki Sasaki, who owns a 4.76 ERA and 1.29 WHIP with a troubling 70:25 K:BB ratio through 68 innings. His last start: 7 runs to the White Sox in just 4.1 innings. The Dodgers are 52-29 but lead the NL West by 9 games — this is a spot where they could look ahead.
+          <br /><br /><span style={{ color: GOLD, fontWeight: 600 }}>Padres Riding Momentum, Home Value</span><br />
+          San Diego just swept the Braves and is 6-4 in their last 10. They took 2 of 3 from the Dodgers earlier this season. With Michael King anchoring the rotation (3.46 ERA, 72 K's) and the lineup healthy, they match up well. <span style={{ color: GOLD, fontWeight: 600 }}>At +126, the Padres moneyline offers excellent value on a motivated home team with the better starter on the night.</span>
+        </span>
+      )}
+    </div>
+    <button onClick={() => setPickOpen(!pickOpen)} style={{ marginTop: 12, background: "none", border: "0.5px solid #f5a62350", color: GOLD, fontSize: 12, fontWeight: 600, padding: "6px 16px", borderRadius: 20, cursor: "pointer" }}>
+      {pickOpen ? "Show less ↑" : "Read full breakdown ↓"}
+    </button>
+  </div>
+
+  {/* Hunter Chat */}
+  <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 16, overflow: "hidden" }}>
+    <div style={{ padding: "12px 16px", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ width: 32, height: 32, background: "#1a1200", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🤖</div>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 500, color: "#fff" }}>Hunter</div>
+        <div style={{ fontSize: 11, color: GREEN }}>● Searching live</div>
+      </div>
+    </div>
+    <div style={{ padding: 16 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <div style={{ background: "#1a1a2e", border: `1px solid ${BORDER}`, borderRadius: "12px 12px 2px 12px", padding: "10px 14px", fontSize: 13, color: "#fff", maxWidth: "82%" }}>
+          What's the best bet in the Japan vs Brazil match today?
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+        <div style={{ width: 26, height: 26, background: "#1a1200", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, marginTop: 2 }}>🤖</div>
+        <div style={{ background: "#0d0a00", border: "0.5px solid #f5a62340", borderRadius: "2px 12px 12px 12px", padding: "12px 14px", fontSize: 13, color: "#d1d5db", lineHeight: 1.65, width: "100%" }}>
+          <div style={{ display: "inline-block", background: "#1a1200", color: "#f5a62370", fontSize: 11, padding: "2px 8px", borderRadius: 4, marginBottom: 10 }}>
+            Searched: line movement · group stage form · injury reports · xG · Brazil knockout history
+          </div>
+          <br />
+          <span style={{ color: GOLD, fontWeight: 600 }}>Sharp money is hammering the over.</span> The total opened at +130 on over 2.5 and has been bet down to +125 — significant movement for a World Cup knockout. When the line moves toward the over despite heavy action on Brazil's moneyline, sharps see goals regardless of who wins.
+          {hunterOpen && (
+            <span>
+              <br /><br />
+              <span style={{ color: GOLD, fontWeight: 600 }}>Both teams scored in every group match.</span> Brazil produced 9 total goals across 3 games. But Japan is NOT Haiti or Scotland — they went unbeaten in Group F, drew the Netherlands 2-2, crushed Tunisia 4-0, drew Sweden 1-1. They scored 7 goals in the group stage and showed genuine attacking intent against elite opposition. Moriyasu's team doesn't park the bus — they exploit space behind aggressive defensive lines, which is exactly what Brazil will provide.
+              <br /><br />
+              <span style={{ color: GOLD, fontWeight: 600 }}>The injury context changes the game script.</span> Japan is missing Kubo, Endo, Mitoma, and Minamino — all key players. That forces them to take more risks and opens up transition moments — exactly where Brazil have been conceding. Three of their 6 goals allowed came on the counter. Brazil hasn't been involved in a quiet knockout game since 2006. Even a 2-1 Brazil win cashes the over.
+            </span>
+          )}
+          <div style={{ marginTop: 10, padding: "8px 12px", background: "#0a2010", border: "0.5px solid #2ecc7140", borderRadius: 8, color: GREEN, fontSize: 12, fontWeight: 600, lineHeight: 1.5 }}>
+            ✓ Over 2.5 Goals at +125. Sharp line movement, both teams' attacking form, and Brazil's knockout history all point the same direction. Prediction: Brazil 3-1 Japan.
+          </div>
+          <button onClick={() => setHunterOpen(!hunterOpen)} style={{ marginTop: 12, background: "none", border: "0.5px solid #f5a62350", color: GOLD, fontSize: 12, fontWeight: 600, padding: "6px 16px", borderRadius: 20, cursor: "pointer" }}>
+            {hunterOpen ? "Show less ↑" : "Read full analysis ↓"}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
       {/* What you get */}
       <section style={{ maxWidth: 700, margin: "0 auto 60px", padding: "0 24px" }}>
