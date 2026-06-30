@@ -47,6 +47,12 @@ const [pickOpen, setPickOpen] = useState(false);
 const [hunterOpen, setHunterOpen] = useState(false);
   const go = () => { if (onGetStarted) onGetStarted(); };
 
+const claimFounding = (priceId, planName) => {
+  localStorage.setItem('founding_price_id', priceId);
+  localStorage.setItem('founding_plan_name', planName);
+  window.location.href = '/';
+};
+
   // Fetch real user count for spot counter
   useEffect(() => {
     setSpotsLeft(FOUNDING_TOTAL - FOUNDING_TAKEN);
@@ -121,7 +127,7 @@ const [hunterOpen, setHunterOpen] = useState(false);
         </div>
 
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-          <button onClick={go} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+          <button onClick={() => claimFounding(process.env.NEXT_PUBLIC_STRIPE_PRICE_FOUNDING_TEAM_MONTHLY, 'Founding Team')} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
             Claim Founding Spot — $24.99/mo
           </button>
         </div>
@@ -299,7 +305,7 @@ const [hunterOpen, setHunterOpen] = useState(false);
               <span style={{ color: GREEN }}>✓</span>{f}
             </div>
           ))}
-          <button onClick={go} style={{ width: "100%", marginTop: 16, padding: "14px", borderRadius: 10, border: "none", background: GOLD, color: "#000", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+          <button onClick={() => claimFounding(process.env.NEXT_PUBLIC_STRIPE_PRICE_FOUNDING_TEAM_MONTHLY, 'Founding Team')} style={{ width: "100%", marginTop: 16, padding: "14px", borderRadius: 10, border: "none", background: GOLD, color: "#000", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
             Claim Founding Team — $24.99/mo
           </button>
         </div>
@@ -327,7 +333,7 @@ const [hunterOpen, setHunterOpen] = useState(false);
               <span style={{ color: PURPLE }}>✓</span>{f}
             </div>
           ))}
-          <button onClick={go} style={{ width: "100%", marginTop: 16, padding: "13px", borderRadius: 10, border: "1px solid #a78bfa", background: "none", color: PURPLE, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+          <button onClick={() => claimFounding(process.env.NEXT_PUBLIC_STRIPE_PRICE_FOUNDING_EDGE_MONTHLY, 'Founding Edge')} style={{ width: "100%", marginTop: 16, padding: "13px", borderRadius: 10, border: "1px solid #a78bfa", background: "none", color: PURPLE, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
             Claim Founding Edge — $59.99/mo
           </button>
         </div>
@@ -363,10 +369,10 @@ const [hunterOpen, setHunterOpen] = useState(false);
           </h2>
           <p style={{ color: GRAY, fontSize: 14, marginBottom: 8 }}>3 days free. Full access. No commitment.</p>
           <p style={{ color: GRAY, fontSize: 13, marginBottom: 24 }}>The kind of service that used to cost thousands a month. Built for serious bettors. <strong style={{ color: GOLD }}>Founding price locked for life.</strong></p>
-          <button onClick={go} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 40px", fontSize: 15, fontWeight: 700, cursor: "pointer", width: "100%", marginBottom: 12 }}>
+          <button onClick={() => claimFounding(process.env.NEXT_PUBLIC_STRIPE_PRICE_FOUNDING_TEAM_MONTHLY, 'Founding Team')} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 40px", fontSize: 15, fontWeight: 700, cursor: "pointer", width: "100%", marginBottom: 12 }}>
             Claim Founding Team — $24.99/mo
           </button>
-          <button onClick={go} style={{ background: "none", border: "1px solid #2a1f4e", color: PURPLE, borderRadius: 10, padding: "12px 40px", fontSize: 14, fontWeight: 600, cursor: "pointer", width: "100%" }}>
+          <button onClick={() => claimFounding(process.env.NEXT_PUBLIC_STRIPE_PRICE_FOUNDING_EDGE_MONTHLY, 'Founding Edge')} style={{ background: "none", border: "1px solid #2a1f4e", color: PURPLE, borderRadius: 10, padding: "12px 40px", fontSize: 14, fontWeight: 600, cursor: "pointer", width: "100%" }}>
             Claim Founding Edge — $59.99/mo
           </button>
         </div>

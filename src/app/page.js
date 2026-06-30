@@ -2278,6 +2278,29 @@ useEffect(() => {
       email: authUser?.email ?? null,
     }, { onConflict: 'user_id' });
     if (error) console.error('Profile save error:', error);
+
+    // Check if user came from /captain with a founding price selected
+    const foundingPriceId = localStorage.getItem('founding_price_id');
+    const foundingPlanName = localStorage.getItem('founding_plan_name');
+    if (foundingPriceId && authUser?.email) {
+      localStorage.removeItem('founding_price_id');
+      localStorage.removeItem('founding_plan_name');
+      try {
+        const res = await fetch('/api/stripe/create-checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            priceId: foundingPriceId,
+            userId: userKey,
+            email: authUser.email,
+          }),
+        });
+        const data = await res.json();
+        if (data.url) window.location.href = data.url;
+      } catch(e) {
+        console.error('Founding checkout error:', e);
+      }
+    }
   }
 };
   useEffect(() => {
