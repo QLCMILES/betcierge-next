@@ -42,15 +42,40 @@ const faqs = [
 export default function CaptainPage({ onGetStarted }) {
   const [openFaq, setOpenFaq] = useState(null);
   const [spotsLeft, setSpotsLeft] = useState(FOUNDING_TOTAL - FOUNDING_TAKEN);
+  const [record, setRecord] = useState({ wins: 0, losses: 0, units: 0, roi: 0, winRate: 0 });
 const [pickOpen, setPickOpen] = useState(false);
 const [hunterOpen, setHunterOpen] = useState(false);
   const go = () => { if (onGetStarted) onGetStarted(); };
 
   // Fetch real user count for spot counter
   useEffect(() => {
-    // In production, replace with a real API call to get user count
-    // For now using hardcoded value
     setSpotsLeft(FOUNDING_TOTAL - FOUNDING_TAKEN);
+    supabase
+      .from('daily_picks')
+      .select('result, units, odds')
+      .eq('status', 'active')
+      .gte('date', '2026-06-11')
+      .in('result', ['Win', 'Loss'])
+      .then(({ data }) => {
+        if (!data) return;
+        const wins = data.filter(p => p.result === 'Win').length;
+        const losses = data.filter(p => p.result === 'Loss').length;
+        const settled = wins + losses;
+        const winRate = settled > 0 ? Math.round((wins / settled) * 100) : 0;
+        const unitsPnl = data.reduce((acc, p) => {
+          const u = p.units || 1;
+          const odds = parseInt(p.odds) || -110;
+          if (p.result === 'Win') {
+            const profit = odds > 0 ? u * (odds / 100) : u * (100 / Math.abs(odds));
+            return acc + profit;
+          }
+          if (p.result === 'Loss') return acc - u;
+          return acc;
+        }, 0);
+        const totalRisked = data.reduce((acc, p) => acc + (p.units || 1), 0);
+        const roi = totalRisked > 0 ? (unitsPnl / totalRisked) * 100 : 0;
+        setRecord({ wins, losses, units: unitsPnl, roi, winRate });
+      });
   }, []);
 
   return (
@@ -108,7 +133,12 @@ const [hunterOpen, setHunterOpen] = useState(false);
         <div style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 14, padding: "24px 28px", textAlign: "center" }}>
           <div style={{ fontSize: 14, color: GRAY, marginBottom: 16 }}>Hunter's record since June 11, 2026</div>
           <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap", marginBottom: 16 }}>
-            {[["36W-17L", "Record"], ["68%", "Win Rate"], ["+19.2u", "Units"], ["+27.8%", "ROI"]].map(([val, lbl]) => (
+            {[
+  [`${record.wins}W-${record.losses}L`, "Record"],
+  [`${record.winRate}%`, "Win Rate"],
+  [`${record.units >= 0 ? '+' : ''}${record.units.toFixed(1)}u`, "Units"],
+  [`${record.roi >= 0 ? '+' : ''}${record.roi.toFixed(1)}%`, "ROI"],
+].map(([val, lbl]) => (
               <div key={lbl} style={{ textAlign: "center", minWidth: 70 }}>
                 <div style={{ fontSize: 22, fontWeight: 800, color: GREEN }}>{val}</div>
                 <div style={{ fontSize: 11, color: GRAY }}>{lbl}</div>
