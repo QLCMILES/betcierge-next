@@ -140,7 +140,7 @@ const [hunterOpen, setHunterOpen] = useState(false);
     <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
       <span style={{ fontSize: 15, fontWeight: 700, color: GREEN }}>+126</span>
       <span style={{ background: "#f5a62320", color: GOLD, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>2U</span>
-      <span style={{ fontSize: 12, color: GRAY }}>Medium confidence · Plus money value</span>
+      <span style={{ fontSize: 12, color: GRAY }}>High confidence · Plus money value</span>
     </div>
     <div style={{ borderTop: "1px solid #1e1e2e", marginBottom: 12 }} />
     <div style={{ fontSize: 13, color: "#9ca3af", lineHeight: 1.65 }}>
