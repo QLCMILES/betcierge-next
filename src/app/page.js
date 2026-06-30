@@ -2255,12 +2255,33 @@ useEffect(() => {
         .eq('user_id', session.user.id)
         .single();
       if (data) setUser(data);
-      // Keep email in sync
-      if (session.user.email) {
-        await supabase.from('user_profiles')
-          .update({ email: session.user.email })
-          .eq('user_id', session.user.id);
-      }
+// Keep email in sync
+if (session.user.email) {
+  await supabase.from('user_profiles')
+    .update({ email: session.user.email })
+    .eq('user_id', session.user.id);
+}
+// Check for founding price — fires after email confirmation redirect
+const foundingPriceId = localStorage.getItem('founding_price_id');
+if (foundingPriceId && session.user.email) {
+  localStorage.removeItem('founding_price_id');
+  localStorage.removeItem('founding_plan_name');
+  try {
+    const res = await fetch('/api/stripe/create-checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        priceId: foundingPriceId,
+        userId: session.user.id,
+        email: session.user.email,
+      }),
+    });
+    const data2 = await res.json();
+    if (data2.url) window.location.href = data2.url;
+  } catch(e) {
+    console.error('Founding checkout error:', e);
+  }
+}
     }
     setAuthLoading(false);
   });
