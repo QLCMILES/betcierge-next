@@ -160,8 +160,8 @@ const [hunterOpen, setHunterOpen] = useState(false);
     </button>
   </div>
 
-  <div style={{ fontSize: 11, color: GRAY, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8, marginTop: 20 }}>🤖 Hunter chat · Ask anything, any hour</div>
-  
+  <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8, marginTop: 20 }}>🤖 Hunter chat · Ask anything, any hour</div>
+
   {/* Hunter Chat */}
   <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 16, overflow: "hidden" }}>
     <div style={{ padding: "12px 16px", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 10 }}>
