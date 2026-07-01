@@ -847,6 +847,64 @@ async function settleParlays(allScores) {
   return { settled, log };
 }
 
+async function settleMLBViaStatsAPI(bet) {
+  if (!bet.game_date) return null;
+  const games = await fetchMLBGamePks(bet.game_date);
+  if (!games.length) return null;
+
+  const betGame = (bet.game || '').toLowerCase();
+  const match = games.find(g => {
+    const away = g.awayTeam?.toLowerCase() || '';
+    const home = g.homeTeam?.toLowerCase() || '';
+    return away.split(' ').some(w => w.length > 3 && betGame.includes(w)) ||
+           home.split(' ').some(w => w.length > 3 && betGame.includes(w));
+  });
+  if (!match) return null;
+
+  try {
+    const res = await fetch(`https://statsapi.mlb.com/api/v1/game/${match.gamePk}/linescore`);
+    const data = await res.json();
+    const homeScore = data.teams?.home?.runs;
+    const awayScore = data.teams?.away?.runs;
+    if (homeScore === undefined || awayScore === undefined) return null;
+
+    const pick = bet.pick.toLowerCase();
+    const betType = inferBetType(bet.pick);
+
+    if (betType === 'total') {
+      const totalMatch = pick.match(/(\d+\.?\d*)/);
+      if (!totalMatch) return null;
+      const total = parseFloat(totalMatch[1]);
+      const actual = homeScore + awayScore;
+      if (actual === total) return 'Push';
+      return pick.includes('over') ? (actual > total ? 'Win' : 'Loss') : (actual < total ? 'Win' : 'Loss');
+    }
+
+    if (betType === 'runline') {
+      const spreadMatch = pick.match(/([+-]?\d+\.?\d*)/);
+      if (!spreadMatch) return null;
+      const spread = parseFloat(spreadMatch[1]);
+      const homeWords = match.homeTeam.toLowerCase().split(' ').filter(w => w.length > 3);
+      const pickedHome = homeWords.some(w => pick.includes(w));
+      const diff = pickedHome ? homeScore - awayScore : awayScore - homeScore;
+      if (diff + spread === 0) return 'Push';
+      return diff + spread > 0 ? 'Win' : 'Loss';
+    }
+
+    const homeWords = match.homeTeam.toLowerCase().split(' ').filter(w => w.length > 3);
+    const awayWords = match.awayTeam.toLowerCase().split(' ').filter(w => w.length > 3);
+    const pickedHome = homeWords.some(w => pick.includes(w));
+    const pickedAway = awayWords.some(w => pick.includes(w));
+    if (!pickedHome && !pickedAway) return null;
+    if (homeScore === awayScore) return 'Push';
+    const homeWon = homeScore > awayScore;
+    return (pickedHome && homeWon) || (pickedAway && !homeWon) ? 'Win' : 'Loss';
+  } catch(e) {
+    console.error('settleMLBViaStatsAPI error:', e.message);
+    return null;
+  }
+}
+
 // ─── DAILY PICKS SETTLEMENT ───────────────────────────────────
 
 async function settleDailyPicks() {
@@ -925,15 +983,19 @@ async function settleDailyPicks() {
       log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'prop', result });
     }
     // ── Standard game bets (moneyline, spread, total) ──
-    else {
-      const match = findMatchingGame(betLike, allScores);
-      if (match) {
-        result = determineResult(betLike, match);
-        log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'odds_api', result });
-      } else {
-        log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'odds_api', result: 'NO_MATCH' });
-      }
-    }
+else {
+  const match = findMatchingGame(betLike, allScores);
+  if (match) {
+    result = determineResult(betLike, match);
+    log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'odds_api', result });
+  } else if (sport.includes('mlb') || sport.includes('baseball')) {
+    // Fallback: use MLB Stats API directly for MLB games not found in Odds API
+    result = await settleMLBViaStatsAPI(betLike);
+    log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'mlb_stats_fallback', result });
+  } else {
+    log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'odds_api', result: 'NO_MATCH' });
+  }
+}
 
     // Only write to DB if we got a real result — never write null
     if (result !== null) {
