@@ -1995,7 +1995,7 @@ function Gamecast({ bets, parlays = [], onNav }) {
     </div>
   );
 }
-function History({ bets, onUpdate, onDelete, onNav }) {
+function History({ bets, onUpdate, onDelete, onEdit, onNav }) {
   const [filterSport, setFilterSport] = useState("All");
   const [filterResult, setFilterResult] = useState("All");
   const [expandedGroups, setExpandedGroups] = useState({});
@@ -2070,7 +2070,10 @@ function History({ bets, onUpdate, onDelete, onNav }) {
               - losses.reduce((s, b) => s + b.amount, 0);
   const winRate = settled.length > 0 ? ((wins.length / settled.length) * 100).toFixed(0) : 0;
 
-  const BetCard = ({ bet, onUpdate, onDelete }) => (
+  const BetCard = ({ bet, onUpdate, onDelete, onEdit }) => {
+  const [editing, setEditing] = React.useState(false);
+  const [editForm, setEditForm] = React.useState({ pick: bet.pick, odds: bet.odds, amount: bet.amount });
+  return (
     <div key={bet.id} style={S.betCard}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -2093,7 +2096,8 @@ function History({ bets, onUpdate, onDelete, onNav }) {
               {r === "Win" ? "W" : r === "Loss" ? "L" : "P"}
             </button>
           ))}
-          <button onClick={() => onDelete(bet.id, bet.isParlay)} style={{ background: "#2a0f0f", color: "#e74c3c", border: "1px solid #e74c3c33", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>🗑️</button>
+          <button onClick={() => setEditing(!editing)} style={{ background: "#1a1a2e", color: "#a78bfa", border: "1px solid #a78bfa33", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>✏️</button>
+<button onClick={() => onDelete(bet.id, bet.isParlay)} style={{ background: "#2a0f0f", color: "#e74c3c", border: "1px solid #e74c3c33", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>🗑️</button>
         </div>
       </div>
 
@@ -2154,7 +2158,7 @@ function History({ bets, onUpdate, onDelete, onNav }) {
             <span style={{ color: "#555", fontSize: 12 }}>{isExpanded ? "▲" : "▼"}</span>
           </div>
         </div>
-        {isExpanded && dayBets.map(bet => <BetCard key={bet.id} bet={bet} onUpdate={onUpdate} onDelete={onDelete} />)}
+        {isExpanded && dayBets.map(bet => <BetCard key={bet.id} bet={bet} onUpdate={onUpdate} onDelete={onDelete} onEdit={onEdit} />)}
       </div>
     );
   };
@@ -2224,8 +2228,37 @@ function History({ bets, onUpdate, onDelete, onNav }) {
           })}
         </div>
       )}
+    {editing && !bet.isParlay && (
+        <div style={{ marginTop: 10, padding: 10, background: "#0f0f18", borderRadius: 8, border: "1px solid #a78bfa33" }}>
+          <div style={{ fontSize: 11, color: "#a78bfa", fontWeight: 700, marginBottom: 8 }}>EDIT BET</div>
+          <div style={{ marginBottom: 6 }}>
+            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Pick</div>
+            <input value={editForm.pick} onChange={e => setEditForm(f => ({ ...f, pick: e.target.value }))}
+              style={{ width: "100%", background: "#1a1a2e", border: "1px solid #333", borderRadius: 6, padding: "6px 8px", color: "#fff", fontSize: 13, boxSizing: "border-box" }} />
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Odds</div>
+              <input value={editForm.odds} onChange={e => setEditForm(f => ({ ...f, odds: e.target.value }))}
+                style={{ width: "100%", background: "#1a1a2e", border: "1px solid #333", borderRadius: 6, padding: "6px 8px", color: "#fff", fontSize: 13, boxSizing: "border-box" }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Amount ($)</div>
+              <input value={editForm.amount} onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))}
+                style={{ width: "100%", background: "#1a1a2e", border: "1px solid #333", borderRadius: 6, padding: "6px 8px", color: "#fff", fontSize: 13, boxSizing: "border-box" }} />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => { onEdit(bet.id, editForm); setEditing(false); }}
+              style={{ flex: 1, background: "#a78bfa", color: "#000", border: "none", borderRadius: 6, padding: "8px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Save</button>
+            <button onClick={() => setEditing(false)}
+              style={{ flex: 1, background: "#1a1a2e", color: "#aaa", border: "1px solid #333", borderRadius: 6, padding: "8px 0", fontSize: 13, cursor: "pointer" }}>Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   );
+};
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────
@@ -2542,6 +2575,17 @@ const deleteBet = async (id, isParlay) => {
   }
 };
 
+const editBet = async (id, updates) => {
+  setBets(p => p.map(b => b.id === id ? { ...b, ...updates } : b));
+  if (userKey) {
+    await supabase.from('user_bets').update({
+      pick: updates.pick,
+      odds: updates.odds,
+      amount: parseFloat(updates.amount),
+    }).eq('id', id);
+  }
+};
+
  if (authLoading) return (
   <div style={{ minHeight: "100vh", background: "#0a0a0a", display: "flex",
     alignItems: "center", justifyContent: "center", color: "#fff",
@@ -2586,7 +2630,7 @@ if (!user?.name) return <Onboarding onComplete={handleComplete} />;
       {screen === "card" && <TodayCard bets={bets} onNav={setScreen} />}
 {screen === "gamecast" && <Gamecast bets={bets} onNav={setScreen} />}
       {screen === "logger" && <BetLogger onSave={addBet} onNav={setScreen} />}
-      {screen === "history" && <History bets={bets} onUpdate={updateBet} onDelete={deleteBet} onNav={setScreen} />}
+      {screen === "history" && <History bets={bets} onUpdate={updateBet} onDelete={deleteBet} onEdit={editBet} onNav={setScreen} />}
       {screen === "upgrade" && <UpgradeScreen user={user} userKey={userKey} onNav={setScreen} />}
 
       {/* Nav Bar */}
