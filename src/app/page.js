@@ -42,7 +42,6 @@ const callClaude = async (messages, system, useSearch = false, imageBase64 = nul
     max_tokens: maxTokens,
     system,
     messages,
-    stream: true,
   };
   if (useSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
   const response = await fetch("/api/claude", {
@@ -50,34 +49,9 @@ const callClaude = async (messages, system, useSearch = false, imageBase64 = nul
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-
-  // Handle streaming response
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let text = '';
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop();
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.slice(6);
-        if (data === '[DONE]') continue;
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
-            text += parsed.delta.text;
-          }
-        } catch(e) {}
-      }
-    }
-  }
-
-  return { text, raw: {} };
+  const data = await response.json();
+  const text = (data.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+  return { text, raw: data };
 };
 
 // ── Auth handled by Supabase ───────────────────────────────────────────────
@@ -802,7 +776,6 @@ if (filteredGames.length > 0) {
 
 try {
     const recentMessages = [...messages, newUserMsg].slice(-20);
-    setMessages(m => [...m, { role: "assistant", text: "" }]);
     const result = await callClaude(
         recentMessages.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })),
         `You are Hunter, the sharp AI sports betting concierge inside Betcierge. Today is ${todayDisplay()}.
@@ -1008,13 +981,8 @@ You remember this user's history from previous conversations.${todayPicksContext
         }
       );
 
-      setMessages(m => {
-  const updated = [...m];
-  if (updated[updated.length - 1]?.role === 'assistant') {
-    updated[updated.length - 1] = { role: "assistant", text: result.text };
-  }
-  return updated;
-});
+      const assistantMsg = { role: "assistant", text: result.text };
+setMessages(m => [...m, assistantMsg]);
 
       // Save assistant message to Supabase
       const { error: saveError } = await supabase.from('user_conversations').insert({ user_id: userKey, role: 'assistant', content: result.text });
