@@ -802,6 +802,7 @@ if (filteredGames.length > 0) {
 
 try {
     const recentMessages = [...messages, newUserMsg].slice(-20);
+    setMessages(m => [...m, { role: "assistant", text: "" }]);
     const result = await callClaude(
         recentMessages.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })),
         `You are Hunter, the sharp AI sports betting concierge inside Betcierge. Today is ${todayDisplay()}.
@@ -997,11 +998,23 @@ Be sharp, warm, direct. Give a clear recommendation with your confidence level. 
 You remember this user's history from previous conversations.${todayPicksContext}${todayOddsContext}`,
         true,
         null,
-        4000
+        4000,
+        (chunk) => {
+          setMessages(m => {
+            const updated = [...m];
+            updated[updated.length - 1] = { role: "assistant", text: updated[updated.length - 1].text + chunk };
+            return updated;
+          });
+        }
       );
 
-      const assistantMsg = { role: "assistant", text: result.text };
-      setMessages(m => [...m, assistantMsg]);
+      setMessages(m => {
+  const updated = [...m];
+  if (updated[updated.length - 1]?.role === 'assistant') {
+    updated[updated.length - 1] = { role: "assistant", text: result.text };
+  }
+  return updated;
+});
 
       // Save assistant message to Supabase
       const { error: saveError } = await supabase.from('user_conversations').insert({ user_id: userKey, role: 'assistant', content: result.text });
