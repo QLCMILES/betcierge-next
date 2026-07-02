@@ -1995,7 +1995,7 @@ function Gamecast({ bets, parlays = [], onNav }) {
     </div>
   );
 }
-function History({ bets, onUpdate, onNav }) {
+function History({ bets, onUpdate, onDelete, onNav }) {
   const [filterSport, setFilterSport] = useState("All");
   const [filterResult, setFilterResult] = useState("All");
   const [expandedGroups, setExpandedGroups] = useState({});
@@ -2070,7 +2070,7 @@ function History({ bets, onUpdate, onNav }) {
               - losses.reduce((s, b) => s + b.amount, 0);
   const winRate = settled.length > 0 ? ((wins.length / settled.length) * 100).toFixed(0) : 0;
 
-  const BetCard = ({ bet, onUpdate }) => (
+  const BetCard = ({ bet, onUpdate, onDelete }) => (
     <div key={bet.id} style={S.betCard}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -2093,6 +2093,7 @@ function History({ bets, onUpdate, onNav }) {
               {r === "Win" ? "W" : r === "Loss" ? "L" : "P"}
             </button>
           ))}
+          <button onClick={() => onDelete(bet.id, bet.isParlay)} style={{ background: "#2a0f0f", color: "#e74c3c", border: "1px solid #e74c3c33", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>🗑️</button>
         </div>
       </div>
 
@@ -2153,7 +2154,7 @@ function History({ bets, onUpdate, onNav }) {
             <span style={{ color: "#555", fontSize: 12 }}>{isExpanded ? "▲" : "▼"}</span>
           </div>
         </div>
-        {isExpanded && dayBets.map(bet => <BetCard key={bet.id} bet={bet} onUpdate={onUpdate} />)}
+        {isExpanded && dayBets.map(bet => <BetCard key={bet.id} bet={bet} onUpdate={onUpdate} onDelete={onDelete} />)}
       </div>
     );
   };
@@ -2528,6 +2529,19 @@ const updateBet = async (id, result) => {
   }
 };
 
+const deleteBet = async (id, isParlay) => {
+  if (!window.confirm('Delete this bet?')) return;
+  setBets(p => p.filter(b => b.id !== id));
+  if (userKey) {
+    if (isParlay) {
+      await supabase.from('parlay_legs').delete().eq('parlay_id', id);
+      await supabase.from('parlays').delete().eq('id', id);
+    } else {
+      await supabase.from('user_bets').delete().eq('id', id);
+    }
+  }
+};
+
  if (authLoading) return (
   <div style={{ minHeight: "100vh", background: "#0a0a0a", display: "flex",
     alignItems: "center", justifyContent: "center", color: "#fff",
@@ -2572,7 +2586,7 @@ if (!user?.name) return <Onboarding onComplete={handleComplete} />;
       {screen === "card" && <TodayCard bets={bets} onNav={setScreen} />}
 {screen === "gamecast" && <Gamecast bets={bets} onNav={setScreen} />}
       {screen === "logger" && <BetLogger onSave={addBet} onNav={setScreen} />}
-      {screen === "history" && <History bets={bets} onUpdate={updateBet} onNav={setScreen} />}
+      {screen === "history" && <History bets={bets} onUpdate={updateBet} onDelete={deleteBet} onNav={setScreen} />}
       {screen === "upgrade" && <UpgradeScreen user={user} userKey={userKey} onNav={setScreen} />}
 
       {/* Nav Bar */}
