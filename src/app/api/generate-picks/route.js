@@ -138,6 +138,8 @@ Ask yourself:
 - Am I picking a team despite evidence pointing the other way?
 - Did I verify lineup splits vs pitcher handedness?
 - Did I check if the opposing offense is elite, average, or struggling RIGHT NOW?
+- Does my insight SUPPORT my pick or argue against it? If my writeup says the starter is struggling but I'm picking that team anyway, I MUST clearly explain why the lineup/bullpen/opponent justifies it DESPITE the starter concerns. Never write an insight that reads as a case against your own pick.
+- Am I recommending a moneyline at -200 or worse? If yes, STOP. At -200 the implied probability is 67% — the edge required to profit is too thin. Recommend the run line instead, or skip this game and find a better play elsewhere.
 If any answer reveals a problem, replace the weakest pick.
 
 ═══════════════════════════════════════
@@ -156,6 +158,8 @@ CRITICAL DATA INTEGRITY RULES — ALWAYS ENFORCE
 9. NBA LOAD MANAGEMENT: Always search "[player] playing tonight [date]". Second night of back-to-back is mandatory search.
 10. NHL GOALIE RULE: NEVER recommend any NHL bet without confirmed starting goalie. Search every time.
 11. UFC LATE REPLACEMENT: Always search "[fighter] replacement [event]" and weigh-in result. Late replacement < 2 weeks = major fade signal.
+12. JUICE THRESHOLD: NEVER recommend a moneyline at -200 or worse. The implied probability at -200 is 67% — you need to be right 2 out of 3 times just to break even. This is not value betting. If the best play is a heavy favorite ML, take the run line instead or skip the game entirely.
+13. INSIGHT MUST MATCH PICK: Before finalizing, re-read your insight and ask: "If someone read only my insight and not my pick, would they bet the same side?" If not, rewrite the insight or change the pick. They must always agree.
 
 ═══════════════════════════════════════
 UNIVERSAL RULES FOR ALL SPORTS
