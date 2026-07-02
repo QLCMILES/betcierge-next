@@ -1995,82 +1995,7 @@ function Gamecast({ bets, parlays = [], onNav }) {
     </div>
   );
 }
-function History({ bets, onUpdate, onDelete, onEdit, onNav }) {
-  const [filterSport, setFilterSport] = useState("All");
-  const [filterResult, setFilterResult] = useState("All");
-  const [expandedGroups, setExpandedGroups] = useState({});
-
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-
-  // Apply filters
-  const filtered = bets.filter(b => {
-    const sportMatch = filterSport === "All" || b.sport === filterSport;
-    const resultMatch = filterResult === "All" || b.result === filterResult;
-    return sportMatch && resultMatch;
-  });
-
-  // Group bets by game_date
-  const groups = {};
-  filtered.forEach(bet => {
-    const key = bet.gameDate || "Unknown Date";
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(bet);
-  });
-
-  // Sort dates newest first
-  const sortedDates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
-
-  // Get current week's Monday
-  const now = new Date();
-  const dayOfWeek = now.getDay();
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-  monday.setHours(0, 0, 0, 0);
-
-  const isThisWeek = (dateStr) => {
-    if (!dateStr || dateStr === "Unknown Date") return false;
-    const d = new Date(dateStr + "T00:00:00");
-    return d >= monday;
-  };
-
-  const formatDateLabel = (dateStr) => {
-    if (!dateStr || dateStr === "Unknown Date") return "Unknown Date";
-    const d = new Date(dateStr + "T00:00:00");
-    const diffDays = Math.round((new Date(today + "T00:00:00") - d) / 86400000);
-    if (diffDays === 0) return "Today";
-    if (diffDays === 1) return "Yesterday";
-    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
-  };
-
-  const formatMonthLabel = (dateStr) => {
-    const d = new Date(dateStr + "T00:00:00");
-    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  };
-
-  const toggleGroup = (key) => {
-    setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  // Split into this week vs older, then group older by month
-  const thisWeekDates = sortedDates.filter(isThisWeek);
-  const olderDates = sortedDates.filter(d => !isThisWeek(d));
-
-  const olderByMonth = {};
-  olderDates.forEach(dateStr => {
-    const monthKey = formatMonthLabel(dateStr);
-    if (!olderByMonth[monthKey]) olderByMonth[monthKey] = [];
-    olderByMonth[monthKey].push(dateStr);
-  });
-
-  // All-time stats
-  const settled = filtered.filter(b => b.result !== "Pending");
-  const wins = filtered.filter(b => b.result === "Win");
-  const losses = filtered.filter(b => b.result === "Loss");
-  const netPL = wins.reduce((s, b) => s + (calcProfit(b.amount, b.odds) || 0), 0)
-              - losses.reduce((s, b) => s + b.amount, 0);
-  const winRate = settled.length > 0 ? ((wins.length / settled.length) * 100).toFixed(0) : 0;
-
-  const BetCard = ({ bet, onUpdate, onDelete, onEdit }) => {
+const BetCard = ({ bet, onUpdate, onDelete, onEdit }) => {
   const [editing, setEditing] = React.useState(false);
   const [editForm, setEditForm] = React.useState({ pick: bet.pick, odds: bet.odds, amount: bet.amount });
   return (
@@ -2258,6 +2183,81 @@ function History({ bets, onUpdate, onDelete, onEdit, onNav }) {
       )}
     </div>
   );
+  
+function History({ bets, onUpdate, onDelete, onEdit, onNav }) {
+  const [filterSport, setFilterSport] = useState("All");
+  const [filterResult, setFilterResult] = useState("All");
+  const [expandedGroups, setExpandedGroups] = useState({});
+
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
+  // Apply filters
+  const filtered = bets.filter(b => {
+    const sportMatch = filterSport === "All" || b.sport === filterSport;
+    const resultMatch = filterResult === "All" || b.result === filterResult;
+    return sportMatch && resultMatch;
+  });
+
+  // Group bets by game_date
+  const groups = {};
+  filtered.forEach(bet => {
+    const key = bet.gameDate || "Unknown Date";
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(bet);
+  });
+
+  // Sort dates newest first
+  const sortedDates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+
+  // Get current week's Monday
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  monday.setHours(0, 0, 0, 0);
+
+  const isThisWeek = (dateStr) => {
+    if (!dateStr || dateStr === "Unknown Date") return false;
+    const d = new Date(dateStr + "T00:00:00");
+    return d >= monday;
+  };
+
+  const formatDateLabel = (dateStr) => {
+    if (!dateStr || dateStr === "Unknown Date") return "Unknown Date";
+    const d = new Date(dateStr + "T00:00:00");
+    const diffDays = Math.round((new Date(today + "T00:00:00") - d) / 86400000);
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Yesterday";
+    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+  };
+
+  const formatMonthLabel = (dateStr) => {
+    const d = new Date(dateStr + "T00:00:00");
+    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  };
+
+  const toggleGroup = (key) => {
+    setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // Split into this week vs older, then group older by month
+  const thisWeekDates = sortedDates.filter(isThisWeek);
+  const olderDates = sortedDates.filter(d => !isThisWeek(d));
+
+  const olderByMonth = {};
+  olderDates.forEach(dateStr => {
+    const monthKey = formatMonthLabel(dateStr);
+    if (!olderByMonth[monthKey]) olderByMonth[monthKey] = [];
+    olderByMonth[monthKey].push(dateStr);
+  });
+
+  // All-time stats
+  const settled = filtered.filter(b => b.result !== "Pending");
+  const wins = filtered.filter(b => b.result === "Win");
+  const losses = filtered.filter(b => b.result === "Loss");
+  const netPL = wins.reduce((s, b) => s + (calcProfit(b.amount, b.odds) || 0), 0)
+              - losses.reduce((s, b) => s + b.amount, 0);
+  const winRate = settled.length > 0 ? ((wins.length / settled.length) * 100).toFixed(0) : 0;
 };
 }
 
