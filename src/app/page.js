@@ -42,6 +42,7 @@ const callClaude = async (messages, system, useSearch = false, imageBase64 = nul
     max_tokens: maxTokens,
     system,
     messages,
+    stream: true,
   };
   if (useSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
   const response = await fetch("/api/claude", {
@@ -49,9 +50,34 @@ const callClaude = async (messages, system, useSearch = false, imageBase64 = nul
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const data = await response.json();
-  const text = (data.content || []).filter(c => c.type === "text").map(c => c.text).join("");
-  return { text, raw: data };
+
+  // Handle streaming response
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+        if (data === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
+            text += parsed.delta.text;
+          }
+        } catch(e) {}
+      }
+    }
+  }
+
+  return { text, raw: {} };
 };
 
 // ── Auth handled by Supabase ───────────────────────────────────────────────
