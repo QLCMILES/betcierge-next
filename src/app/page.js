@@ -2183,8 +2183,7 @@ const BetCard = ({ bet, onUpdate, onDelete, onEdit }) => {
       )}
     </div>
   );
-};
-
+  
 function History({ bets, onUpdate, onDelete, onEdit, onNav }) {
   const [filterSport, setFilterSport] = useState("All");
   const [filterResult, setFilterResult] = useState("All");
