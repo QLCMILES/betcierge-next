@@ -1342,8 +1342,11 @@ function isOnTrial(user) {
   return new Date(user.trial_ends_at) > new Date();
 }
 // ── Dashboard ──────────────────────────────────────────────────────────────
-function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setShowNotifs, markAllRead }) {
+function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setShowNotifs, markAllRead, onAddBet }) {
   const hour = new Date().getHours();
+  const [editingPL, setEditingPL] = useState(false);
+  const [plInput, setPlInput] = useState("");
+  const [savingPL, setSavingPL] = useState(false);
 
   // Weekly window: Monday through Sunday
   const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
@@ -1416,8 +1419,59 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
           </div>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>This Week · {weekLabel}</div>
-            <div style={{ fontSize: 26, fontWeight: 800, color: netPL >= 0 ? "#2ecc71" : "#e74c3c" }}>{netPL >= 0 ? "+$" : "-$"}{Math.abs(netPL).toFixed(0)}</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
+              <div style={{ fontSize: 26, fontWeight: 800, color: netPL >= 0 ? "#2ecc71" : "#e74c3c" }}>{netPL >= 0 ? "+$" :"-$"}{Math.abs(netPL).toFixed(0)}</div>
+              <button
+                onClick={() => { setPlInput(netPL.toFixed(0)); setEditingPL(true); }}
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, padding: 0, color: "#555" }}
+                aria-label="Edit weekly P&L"
+              >✏️</button>
+            </div>
             <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>Week P&L · {goalPct.toFixed(0)}% of ${user.goal} goal</div>
+            {editingPL && (
+              <div style={{ marginTop: 8, display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
+                <input
+                  type="number"
+                  value={plInput}
+                  onChange={(e) => setPlInput(e.target.value)}
+                  placeholder="Set total week P&L"
+                  style={{ width: 110, background: "#13131a", border: "1px solid #2a2a3a", borderRadius: 6, color: "#fff", fontSize: 13, padding: "6px 8px", textAlign: "right" }}
+                />
+                <button
+                  disabled={savingPL || plInput === ""}
+                  onClick={async () => {
+                    const target = parseFloat(plInput);
+                    if (isNaN(target)) return;
+                    const diff = target - netPL;
+                    if (Math.abs(diff) < 0.01) { setEditingPL(false); return; }
+                    setSavingPL(true);
+                    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+                    await onAddBet({
+                      sport: "Other",
+                      game: "Manual Adjustment",
+                      betType: "manual_adjustment",
+                      pick: "Manual P&L Adjustment",
+                      odds: "+100",
+                      amount: Math.abs(diff),
+                      type: "Planned",
+                      result: diff >= 0 ? "Win" : "Loss",
+                      isToday: true,
+                      gameDate: todayStr,
+                      gameTime: null,
+                      gameId: null,
+                      toWin: diff >= 0 ? diff : null,
+                    });
+                    setSavingPL(false);
+                    setEditingPL(false);
+                  }}
+                  style={{ background: "#f5a623", border: "none", borderRadius: 6, color: "#0a0a0f", fontSize: 12, fontWeight: 700, padding: "6px 10px", cursor: "pointer", opacity: savingPL ? 0.6 : 1 }}
+                >{savingPL ? "..." : "Save"}</button>
+                <button
+                  onClick={() => setEditingPL(false)}
+                  style={{ background: "none", border: "none", color: "#555", fontSize: 12, cursor: "pointer" }}
+                >Cancel</button>
+              </div>
+            )}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -2581,7 +2635,7 @@ if (!user?.name) return <Onboarding onComplete={handleComplete} />;
         </div>
       )}
       <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      {screen === "dashboard" && <Dashboard user={user} bets={bets} onNav={setScreen} userKey={userKey} unreadCount={unreadCount} showNotifs={showNotifs} setShowNotifs={setShowNotifs} markAllRead={markAllRead} />}
+      {screen === "dashboard" && <Dashboard user={user} bets={bets} onNav={setScreen} userKey={userKey} unreadCount={unreadCount} showNotifs={showNotifs} setShowNotifs={setShowNotifs} markAllRead={markAllRead} onAddBet={addBet} />}
       {screen === "picks" && <PicksTab userKey={userKey} user={user} session={session} onNav={setScreen} />}
       {screen === "card" && <TodayCard bets={bets} onNav={setScreen} />}
 {screen === "gamecast" && <Gamecast bets={bets} onNav={setScreen} />}
