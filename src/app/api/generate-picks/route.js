@@ -100,7 +100,7 @@ const gamesContext = JSON.stringify(slimGames);
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4-6',
       max_tokens: 8000,
       tools: [{ type: 'web_search_20250305', name: 'web_search' }],
       system: `You are Hunter, an elite sports betting analyst and professional handicapper. Today is ${today_display}.
@@ -488,7 +488,7 @@ CRITICAL: Every game name must EXACTLY match a game from the feed. Never invent 
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
+        model: 'claude-sonnet-4-6',
         max_tokens: 4000,
         system: 'You are Hunter. Return ONLY the raw JSON picks object with no other text. No markdown, no explanation.',
         messages: [
