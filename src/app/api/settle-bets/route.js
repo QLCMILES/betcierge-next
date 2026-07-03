@@ -522,14 +522,15 @@ async function settleTeamTotal(bet) {
         home.split(' ').some(w => w.length > 3 && betGame.includes(w));
     });
     if (!matchingGame) return null;
-    const res = await fetch(`https://statsapi.mlb.com/api/v1/game/${matchingGame.gamePk}/linescore`);
+    const res = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&gamePk=${matchingGame.gamePk}&hydrate=linescore`);
     const data = await res.json();
+    const gameData = data.dates?.[0]?.games?.[0];
     const awayName = matchingGame.awayTeam?.toLowerCase() || '';
     const homeName = matchingGame.homeTeam?.toLowerCase() || '';
     const pickedHome = homeName.split(' ').some(w => w.length > 3 && pick.includes(w));
     const pickedAway = awayName.split(' ').some(w => w.length > 3 && pick.includes(w));
     if (!pickedHome && !pickedAway) return null;
-    const teamRuns = pickedHome ? data.teams?.home?.runs : data.teams?.away?.runs;
+    const teamRuns = pickedHome ? gameData?.teams?.home?.score : gameData?.teams?.away?.score;
     if (teamRuns === undefined || teamRuns === null) return null;
     const actual = parseInt(teamRuns);
     if (isNaN(actual)) return null;
@@ -862,10 +863,11 @@ async function settleMLBViaStatsAPI(bet) {
   if (!match) return null;
 
   try {
-    const res = await fetch(`https://statsapi.mlb.com/api/v1/game/${match.gamePk}/linescore`);
-    const data = await res.json();
-    const homeScore = data.teams?.home?.runs;
-    const awayScore = data.teams?.away?.runs;
+    const res = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&gamePk=${match.gamePk}&hydrate=linescore`);
+const data = await res.json();
+const gameData = data.dates?.[0]?.games?.[0];
+const homeScore = gameData?.teams?.home?.score;
+const awayScore = gameData?.teams?.away?.score;
     if (homeScore === undefined || awayScore === undefined) return null;
 
     const pick = bet.pick.toLowerCase();
