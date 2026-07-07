@@ -115,6 +115,8 @@ REQUIREMENTS FOR THE CANDIDATE POOL:
 - Each candidate needs only a ONE-SENTENCE reason — save the deep research for stage 2.
 - Every game must come EXACTLY from the feed below. Never invent games.${multiSportNote}
 
+IMPORTANT — what this diversity requirement is actually for: this pool is material to RESEARCH, not a preview of your final picks. You are being asked to make sure F5, props, and totals get genuinely looked at before you commit to anything, not to guarantee a mix of bet types in your final 3. If a real F5 or prop edge doesn't exist in today's slate, that's fine — the requirement is that you checked, not that you force one in.
+
 ${recentPicksMemory}
 
 Return ONLY this JSON, no other text:
@@ -187,6 +189,8 @@ Score based on: recent form edge, matchup quality, line value, injury risk, shar
 
 STEP 3 — SELECT TOP 3 BY SCORE
 The 3 highest-scored candidates are today's picks. Not your first instinct. Not the obvious favorites. The top 3 by research score.
+
+CRITICAL: Selection is based ENTIRELY on research score and edge quality — nothing else. If your 3 highest-scored candidates all happen to be the same bet type, that IS the correct output. Never downgrade a stronger pick or upgrade a weaker one just to create variety in your final 3. The diversity work already happened in the candidate pool; your only job now is finding the best value, full stop.
 
 STEP 4 — SELF-VALIDATION (MANDATORY before finalizing)
 Ask yourself:
