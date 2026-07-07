@@ -581,7 +581,7 @@ CRITICAL: Every game name must EXACTLY match a game from the feed. Never invent 
     }],
   });
 
-  return response;
+  return { response, system };
 }
 
 async function generatePicks() {
@@ -743,24 +743,40 @@ async function generatePicks() {
   }
 
   // ── STAGE 2: Deep Research + Final Picks ─────────────────────────────
-  let research = await runDeepResearch(gamesContext, today_display, candidatePool, recentPicksMemory);
+  let { response: research, system: stage2System } = await runDeepResearch(gamesContext, today_display, candidatePool, recentPicksMemory);
   let searchCount = countSearches(research.content);
   console.log('Stage 2 stop_reason:', research.stop_reason, 'search count:', searchCount);
+
+  // If the first call came back essentially empty (no real content to build
+  // on — e.g. a transient API hiccup), don't try to "continue" a conversation
+  // that never really started. Just retry the whole Stage 2 call fresh.
+  if ((!research.content || research.content.length === 0) && Date.now() - startTime < TIME_BUDGET_MS) {
+    console.log('Stage 2 first attempt came back empty (no content) — retrying the full call from scratch, not continuing.');
+    const retryFromScratch = await runDeepResearch(gamesContext, today_display, candidatePool, recentPicksMemory);
+    research = retryFromScratch.response;
+    stage2System = retryFromScratch.system;
+    searchCount = countSearches(research.content);
+    console.log('Stage 2 fresh retry stop_reason:', research.stop_reason, 'search count:', searchCount);
+  }
 
   let text = extractText(research.content);
 
   // If under-researched and we still have time budget, push back once with a specific correction.
+  // CRITICAL: always include the system prompt here — never rely solely on prior
+  // turns for instructions, since if the prior turn was thin or malformed the
+  // model would have zero idea what JSON schema to return.
   if (searchCount < MIN_SEARCHES_REQUIRED && Date.now() - startTime < TIME_BUDGET_MS && research.stop_reason !== 'max_tokens') {
     console.log(`Only ${searchCount} searches performed, minimum is ${MIN_SEARCHES_REQUIRED}. Requesting more research.`);
     const continueResponse = await callClaude({
       model: 'claude-sonnet-4-6',
       max_tokens: 8000,
       tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      system: stage2System,
       messages: [
-        ...(research.content ? [{ role: 'assistant', content: research.content }] : []),
+        ...(research.content && research.content.length > 0 ? [{ role: 'assistant', content: research.content }] : []),
         {
           role: 'user',
-          content: `You have only performed ${searchCount} searches so far. The minimum required is ${MIN_SEARCHES_REQUIRED}. Continue researching now — check bullpen usage, weather, umpire tendencies, line movement, or opposing offense recent form for candidates you haven't fully covered yet. Then return the final JSON with the complete research_log listing every search you have run (including the ones already done).`
+          content: `You have only performed ${searchCount} searches so far. The minimum required is ${MIN_SEARCHES_REQUIRED}. Continue researching now — check bullpen usage, weather, umpire tendencies, line movement, or opposing offense recent form for candidates you haven't fully covered yet. Then return the final JSON with the complete research_log listing every search you have run (including the ones already done). Remember the required JSON format: {"research_log":["..."],"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"..."}]}`
         }
       ],
     });
@@ -778,7 +794,7 @@ async function generatePicks() {
       max_tokens: 4000,
       system: 'You are Hunter. Return ONLY the raw JSON picks object with no other text. No markdown, no explanation.',
       messages: [
-        ...(research.content ? [{ role: 'assistant', content: research.content }] : []),
+        ...(research.content && research.content.length > 0 ? [{ role: 'assistant', content: research.content }] : []),
         { role: 'user', content: 'Now return ONLY the final JSON picks object, including research_log. Format: {"research_log":["..."],"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"..."}]}' }
       ],
     });
