@@ -10,7 +10,7 @@ const supabase = createClient(
 );
 
 const MIN_SEARCHES_REQUIRED = 15;
-const TIME_BUDGET_MS = 260000; // leave ~40s buffer under the 300s function limit
+const TIME_BUDGET_MS = 220000; // leave ~80s buffer under the 300s function limit — continuation calls alone can take 60-90+ seconds
 
 async function callClaude(body) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -747,16 +747,14 @@ async function generatePicks() {
   let searchCount = countSearches(research.content);
   console.log('Stage 2 stop_reason:', research.stop_reason, 'search count:', searchCount);
 
-  // If the first call came back essentially empty (no real content to build
-  // on — e.g. a transient API hiccup), don't try to "continue" a conversation
-  // that never really started. Just retry the whole Stage 2 call fresh.
-  if ((!research.content || research.content.length === 0) && Date.now() - startTime < TIME_BUDGET_MS) {
-    console.log('Stage 2 first attempt came back empty (no content) — retrying the full call from scratch, not continuing.');
-    const retryFromScratch = await runDeepResearch(gamesContext, today_display, candidatePool, recentPicksMemory);
-    research = retryFromScratch.response;
-    stage2System = retryFromScratch.system;
-    searchCount = countSearches(research.content);
-    console.log('Stage 2 fresh retry stop_reason:', research.stop_reason, 'search count:', searchCount);
+  // If the first call came back essentially empty (e.g. a transient API hiccup),
+  // log it for visibility — but do NOT retry the whole call from scratch here.
+  // A full extra Stage 2 attempt can itself take 60-90+ seconds, and stacking
+  // that on top of the continuation below risks blowing the 300s function
+  // timeout. The continuation path below (with the full system prompt now
+  // correctly attached) is sufficient to recover without that added risk.
+  if (!research.content || research.content.length === 0) {
+    console.log('NOTE: Stage 2 first attempt came back with no content (stop_reason undefined). Proceeding to continuation below rather than a full retry, to protect the time budget.');
   }
 
   let text = extractText(research.content);
