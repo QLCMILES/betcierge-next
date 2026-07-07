@@ -692,7 +692,19 @@ function HunterChat({ user, bets, userKey }) {
   const [initialized, setInitialized] = useState(false);
   const bottomRef = useRef(null);
 
-  const netPL = bets.reduce((s, b) => {
+  const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const dayOfWeek = nowET.getDay();
+  const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const weekStart = new Date(nowET);
+  weekStart.setDate(nowET.getDate() - daysFromMonday);
+  weekStart.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
+  const weekStartStr = weekStart.toLocaleDateString('en-CA');
+  const weekEndStr = weekEnd.toLocaleDateString('en-CA');
+  const weekBets = bets.filter(b => b.gameDate >= weekStartStr && b.gameDate <= weekEndStr);
+  const netPL = weekBets.reduce((s, b) => {
     if (b.result === "Win") return s + (calcProfit(b.amount, b.odds) || 0);
     if (b.result === "Loss") return s - b.amount;
     return s;
@@ -781,7 +793,7 @@ try {
         `You are Hunter, the sharp AI sports betting concierge inside Betcierge. Today is ${todayDisplay()}.
 
 USER CONTEXT:
-The user is ${user.name.split(" ")[0]}. Weekly bankroll: $${user.bankroll}. Weekly goal: +$${user.goal}. Current P&L: ${netPL >= 0 ? "+" : ""}$${netPL.toFixed(2)}. Bets logged this week: ${bets.filter(b => b.isToday).length}.
+The user is ${user.name.split(" ")[0]}. Weekly bankroll: $${user.bankroll}. Weekly goal: +$${user.goal}. Current P&L: ${netPL >= 0 ? "+" : ""}$${netPL.toFixed(2)}. Bets logged this week: ${weekBets.length}.
 CRITICAL DATA INTEGRITY RULES — ALWAYS ENFORCE:
 1. PITCHER TEAM VERIFICATION: The odds feed context provided contains tonight's actual starters. That is ground truth. NEVER contradict it with web search. If web search disagrees with the odds feed on which pitcher starts for which team, trust the odds feed.
 2. PITCHER REST CHECK: Before recommending any pitcher-based bet, search "[pitcher name] last start date 2026". If they started within the last 3 days, they CANNOT start tonight. Flag this and do not recommend the play.
