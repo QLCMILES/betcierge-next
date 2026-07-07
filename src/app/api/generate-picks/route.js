@@ -9,89 +9,10 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-async function generatePicks() {
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+const MIN_SEARCHES_REQUIRED = 15;
+const TIME_BUDGET_MS = 260000; // leave ~40s buffer under the 300s function limit
 
-  // Prevent duplicates
-  const { data: existingPicks } = await supabase
-    .from('daily_picks')
-    .select('id')
-    .eq('date', today)
-    .eq('status', 'active')
-    .limit(1);
-
-  if (existingPicks && existingPicks.length > 0) {
-    console.log('Picks already generated for today, skipping');
-    return;
-  }
-
-  // Mark any old picks for today inactive
-  await supabase
-    .from('daily_picks')
-    .update({ status: 'inactive' })
-    .eq('date', today);
-
-  // Fetch odds
-  const oddsRes = await fetch('https://betcierge-next.vercel.app/api/odds', { method: 'POST' });
-  const oddsData = await oddsRes.json();
-
-  const now = new Date();
-  const cutoff = new Date(now.getTime() + 15 * 60 * 1000);
-  const upperBound = new Date(now.getTime() + 14 * 60 * 60 * 1000);
-
-  const slimGames = (oddsData.games || [])
-    .filter(g => new Date(g.commence_time) > cutoff && new Date(g.commence_time) < upperBound)
-    .slice(0, 20)
-    .map(g => {
-      const bm = g.bookmakers?.[0];
-      const h2h = bm?.markets?.find(m => m.key === 'h2h');
-      const spread = bm?.markets?.find(m => m.key === 'spreads');
-      const total = bm?.markets?.find(m => m.key === 'totals');
-      return {
-  sport: g.sport_title,
-  game: `${g.away_team} @ ${g.home_team}`,
-  time: g.commence_time,
-  moneyline: h2h?.outcomes?.map(o => `${o.name}: ${o.price}`).join(', '),
-  spread: spread?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', '),
-  total: total?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', '),
-  sport_key: g.sport_key,
-};
-    });
-
-  // Enrich MLB games with confirmed starting pitchers from MLB Stats API
-try {
-  const mlbRes = await fetch(
-    `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${today}&gameType=R&hydrate=probablePitcher`
-  );
-  const mlbData = await mlbRes.json();
-  const mlbSchedule = mlbData.dates?.[0]?.games || [];
-  for (const game of slimGames) {
-    if (game.sport_key !== 'baseball_mlb') continue;
-    const awayTeam = game.game.split(' @ ')[0].toLowerCase();
-    const homeTeam = game.game.split(' @ ')[1].toLowerCase();
-    const match = mlbSchedule.find(s => {
-      const sAway = s.teams?.away?.team?.name?.toLowerCase() || '';
-      const sHome = s.teams?.home?.team?.name?.toLowerCase() || '';
-      return sAway.split(' ').some(w => w.length > 3 && awayTeam.includes(w)) ||
-             sHome.split(' ').some(w => w.length > 3 && homeTeam.includes(w));
-    });
-    if (match) {
-      const awayPitcher = match.teams?.away?.probablePitcher?.fullName;
-      const homePitcher = match.teams?.home?.probablePitcher?.fullName;
-      if (awayPitcher) game.away_starter = `${game.game.split(' @ ')[0]} starter: ${awayPitcher}`;
-      if (homePitcher) game.home_starter = `${game.game.split(' @ ')[1]} starter: ${homePitcher}`;
-    }
-  }
-} catch(e) {
-  console.error('Pitcher enrichment error:', e.message);
-}
-
-const gamesContext = JSON.stringify(slimGames);
-  const today_display = new Date().toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-    timeZone: 'America/New_York'
-  });
-
+async function callClaude(body) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -99,37 +20,175 @@ const gamesContext = JSON.stringify(slimGames);
       'x-api-key': process.env.ANTHROPIC_API_KEY,
       'anthropic-version': '2023-06-01',
     },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-      system: `You are Hunter, an elite sports betting analyst and professional handicapper. Today is ${today_display}.
+    body: JSON.stringify(body),
+  });
+  return response.json();
+}
+
+function countSearches(content) {
+  return (content || []).filter(c => c.type === 'server_tool_use' && c.name === 'web_search').length;
+}
+
+function extractText(content) {
+  return (content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+}
+
+function cleanJson(text) {
+  const clean = text
+    .replace(/```json|```/g, '')
+    .replace(/<cite[^>]*>([\s\S]*?)<\/cite>/g, '$1')
+    .replace(/<cite[^>]*>/g, '')
+    .replace(/<\/cite>/g, '')
+    .trim();
+  const jsonMatch = clean.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON found in response: ' + text.slice(0, 300));
+  return JSON.parse(jsonMatch[0]);
+}
+
+// ── Recent Picks Memory ─────────────────────────────────────────────────
+// Pulls the last 7 days of picks and flags repeat teams so Hunter can't
+// lean on the same "good team" call day after day without new information.
+async function buildRecentPicksMemory() {
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const cutoffDate = sevenDaysAgo.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
+  const { data: recentPicks } = await supabase
+    .from('daily_picks')
+    .select('date, sport, game, pick, result')
+    .gte('date', cutoffDate)
+    .order('date', { ascending: false });
+
+  if (!recentPicks || recentPicks.length === 0) {
+    return 'No picks in the last 7 days — no repetition data available yet.';
+  }
+
+  const teamCounts = {};
+  const teamPickLog = {};
+  for (const p of recentPicks) {
+    if (!p.game || !p.pick) continue;
+    const teams = p.game.split(/ @ | vs /i).map(t => t.trim()).filter(Boolean);
+    for (const team of teams) {
+      const lastWord = team.split(' ').pop();
+      if (lastWord && lastWord.length > 3 && p.pick.toLowerCase().includes(lastWord.toLowerCase())) {
+        teamCounts[team] = (teamCounts[team] || 0) + 1;
+        teamPickLog[team] = teamPickLog[team] || [];
+        teamPickLog[team].push(`${p.date}: "${p.pick}" (result: ${p.result})`);
+      }
+    }
+  }
+
+  const repeatedTeams = Object.entries(teamCounts)
+    .filter(([, count]) => count >= 2)
+    .sort((a, b) => b[1] - a[1]);
+
+  let summary = `RECENT PICKS — LAST 7 DAYS (${recentPicks.length} total picks):\n`;
+  summary += recentPicks.map(p => `- ${p.date}: [${p.sport}] ${p.game} — "${p.pick}" (${p.result})`).join('\n');
+
+  if (repeatedTeams.length > 0) {
+    summary += `\n\n⚠️ REPEAT WARNING — teams picked 2+ times in the last 7 days:\n`;
+    for (const [team, count] of repeatedTeams) {
+      summary += `- ${team}: picked ${count}x — ${teamPickLog[team].join('; ')}\n`;
+    }
+    summary += `\nDo NOT pick any of these teams again today unless you can name something CONCRETELY NEW since your last pick on that team — a different starting pitcher, a new injury, a materially different line, or a different opponent with a real mismatch. "They're just a good team" or "I like fading them" is NOT sufficient justification for a repeat. If you do pick a repeated team, your insight MUST open by stating exactly what is different this time.`;
+  }
+
+  return summary;
+}
+
+// ── Stage 1: Candidate Pool ─────────────────────────────────────────────
+// Lightweight pass — identify 8-10 candidates across bet types with brief
+// reasoning, before spending the research budget. No deep research yet.
+async function buildCandidatePool(gamesContext, today_display, recentPicksMemory, sportsAvailable) {
+  const multiSportNote = sportsAvailable.length > 1
+    ? `\n\nMULTIPLE SPORTS ARE LIVE TODAY: ${sportsAvailable.join(', ')}. Your candidate pool MUST include games from at least 2 different sports if games from 2+ sports are available in the feed. Do not let one sport dominate the pool just because it has more games listed.`
+    : '';
+
+  const system = `You are Hunter, an elite sports betting analyst. Today is ${today_display}.
+
+This is STAGE 1 of a two-stage process. Your ONLY job right now is to identify a diverse CANDIDATE POOL. Do NOT do deep research yet. Do NOT write insights yet. Just identify strong candidates worth researching further.
+
+REQUIREMENTS FOR THE CANDIDATE POOL:
+- Identify 8-10 candidates from the games feed below.
+- Candidates MUST span multiple bet types: moneyline, run line/spread, totals, AND at least one alternate market when available (first 5 innings for MLB, first half, player props). Do NOT return a pool that is all moneyline or all spread.
+- Do NOT propose a candidate on a team flagged in the repeat warning below unless you note specifically what is different this time.
+- Each candidate needs only a ONE-SENTENCE reason — save the deep research for stage 2.
+- Every game must come EXACTLY from the feed below. Never invent games.${multiSportNote}
+
+${recentPicksMemory}
+
+Return ONLY this JSON, no other text:
+{"candidates":[{"sport":"...","game":"EXACT game name from feed","bet_type":"moneyline|spread|total|f5|first_half|prop","proposed_pick":"...","reason":"one sentence"}]}`;
+
+  const response = await callClaude({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 2000,
+    system,
+    messages: [{
+      role: 'user',
+      content: `Today is ${today_display}. Available games with current lines:\n${gamesContext}\n\nReturn the candidate pool JSON now.`
+    }],
+  });
+
+  const text = extractText(response.content);
+  if (!text.trim()) throw new Error('Stage 1 returned no text');
+  return cleanJson(text);
+}
+
+// Validate the candidate pool programmatically — don't trust self-grading.
+function validateCandidatePool(pool) {
+  const problems = [];
+  const candidates = pool.candidates || [];
+
+  if (candidates.length < 5) {
+    problems.push(`Only ${candidates.length} candidates returned — need at least 5-8 for a real selection.`);
+  }
+
+  const betTypes = new Set(candidates.map(c => c.bet_type));
+  if (betTypes.size <= 1) {
+    problems.push(`All candidates are the same bet type (${[...betTypes].join(', ')}). Need diversity across moneyline/spread/total/F5/prop.`);
+  }
+  if (!candidates.some(c => ['f5', 'first_half', 'prop'].includes(c.bet_type))) {
+    problems.push(`No alternate-market candidate (F5, first half, or prop) included. At least one is required when the sport supports it.`);
+  }
+
+  return problems;
+}
+
+// ── Stage 2: Deep Research + Final Picks ────────────────────────────────
+async function runDeepResearch(gamesContext, today_display, candidatePool, recentPicksMemory) {
+  const candidateList = (candidatePool.candidates || [])
+    .map(c => `- [${c.sport}] ${c.game} — ${c.bet_type}: ${c.proposed_pick} (${c.reason})`)
+    .join('\n');
+
+  const system = `You are Hunter, an elite sports betting analyst and professional handicapper. Today is ${today_display}.
 
 You have web search — use it AGGRESSIVELY. This is a PAID service. People are counting on your research. NEVER be lazy. NEVER rely on season-long stats when recent form tells a different story. Recent form ALWAYS beats season averages.
 
 ═══════════════════════════════════════
-MANDATORY DAILY PROCESS — NEVER SKIP ANY STEP
+YOUR CANDIDATE POOL IS ALREADY SET (from Stage 1) — RESEARCH THESE
 ═══════════════════════════════════════
+${candidateList}
 
-STEP 1 — BUILD CANDIDATE POOL (do this BEFORE picking anything)
-Search all available games and identify 6-8 CANDIDATES across ALL bet types:
-- Moneyline (ML)
-- Run line / Puck line / Spread
-- First 5 innings (F5) — MLB especially. A 9/10 pitcher mismatch on F5 beats a 6/10 ML every time.
-- Game totals (Over/Under)
-- First half lines
-Do NOT limit yourself to ML only. Evaluate every bet type for every game before selecting candidates.
+Research ONLY these candidates. Only deviate if a candidate is clearly invalidated (pitcher scratched, player ruled out, line moved dramatically) — if so, explain the invalidation and substitute the next best option of the SAME bet type from the feed, do not just default back to a moneyline favorite.
 
-STEP 2 — FULL RESEARCH ON EVERY CANDIDATE
-Run ALL mandatory sport-specific searches below before scoring any candidate.
+${recentPicksMemory}
 
-STEP 3 — SCORE EACH CANDIDATE 1-10
+═══════════════════════════════════════
+MANDATORY RESEARCH DEPTH
+═══════════════════════════════════════
+Run a MINIMUM of 3 web searches per candidate — more for MLB given the research checklist below. You must run at least ${MIN_SEARCHES_REQUIRED} total web searches across all candidates before finalizing. This is a hard minimum, not a suggestion. If you finish research early, go back and check something you haven't verified yet — bullpen usage, weather, umpire tendencies, line movement, opposing offense recent form — rather than stopping short.
+
+STEP 1 — FULL RESEARCH ON EVERY CANDIDATE
+Run ALL mandatory sport-specific searches below for each candidate.
+
+STEP 2 — SCORE EACH CANDIDATE 1-10
 Score based on: recent form edge, matchup quality, line value, injury risk, sharp money direction.
 
-STEP 4 — SELECT TOP 3 BY SCORE
+STEP 3 — SELECT TOP 3 BY SCORE
 The 3 highest-scored candidates are today's picks. Not your first instinct. Not the obvious favorites. The top 3 by research score.
 
-STEP 5 — SELF-VALIDATION (MANDATORY before finalizing)
+STEP 4 — SELF-VALIDATION (MANDATORY before finalizing)
 Ask yourself:
 - Is there a higher-confidence play I'm leaving out?
 - Did I research BOTH sides — not just the pitcher/starter but the OPPOSING OFFENSE and their recent form?
@@ -154,12 +213,12 @@ CRITICAL DATA INTEGRITY RULES — ALWAYS ENFORCE
 7. CONFIRM GAME IS TONIGHT: If a game is not in the odds feed context, do not recommend it. Period.
 8. STATS MUST MATCH THE GAME: Every stat, record, or trend cited in an insight MUST be about one of the two teams IN THAT SPECIFIC PICK. Never reference a third team's stats in a pick. If you searched for Dodgers vs Twins and a search result mentions the Royals, IGNORE the Royals data entirely — it is not relevant. Before including any stat, ask: "Is this team playing in this game?" If not, delete it.
 9. RUN LINE / SPREAD DIRECTION: Before finalizing any spread or run line pick, do a mandatory self-check: read your own insight and ask "does my analysis argue this team wins by multiple runs/goals/points, or just stays close?" If your insight argues the team WINS OUTRIGHT or by a large margin, the pick MUST be [Team] -1.5 (or the negative spread). If your insight argues the team just stays within a run or covers as an underdog, the pick MUST be [Team] +1.5 (or the positive spread). NEVER recommend a negative spread pick with a positive spread line, and NEVER recommend a positive spread pick when your analysis says the team wins outright. Double-check the sign on every spread pick before returning the JSON.
-8. NFL INJURY REPORT: Always search official practice designations before any NFL recommendation. Wind 15mph+ at outdoor stadium changes every passing prop — mandatory check.
-9. NBA LOAD MANAGEMENT: Always search "[player] playing tonight [date]". Second night of back-to-back is mandatory search.
-10. NHL GOALIE RULE: NEVER recommend any NHL bet without confirmed starting goalie. Search every time.
-11. UFC LATE REPLACEMENT: Always search "[fighter] replacement [event]" and weigh-in result. Late replacement < 2 weeks = major fade signal.
-12. JUICE THRESHOLD: NEVER recommend a moneyline at -200 or worse. The implied probability at -200 is 67% — you need to be right 2 out of 3 times just to break even. This is not value betting. If the best play is a heavy favorite ML, take the run line instead or skip the game entirely.
-13. INSIGHT MUST MATCH PICK: Before finalizing, re-read your insight and ask: "If someone read only my insight and not my pick, would they bet the same side?" If not, rewrite the insight or change the pick. They must always agree.
+10. NFL INJURY REPORT: Always search official practice designations before any NFL recommendation. Wind 15mph+ at outdoor stadium changes every passing prop — mandatory check.
+11. NBA LOAD MANAGEMENT: Always search "[player] playing tonight [date]". Second night of back-to-back is mandatory search.
+12. NHL GOALIE RULE: NEVER recommend any NHL bet without confirmed starting goalie. Search every time.
+13. UFC LATE REPLACEMENT: Always search "[fighter] replacement [event]" and weigh-in result. Late replacement < 2 weeks = major fade signal.
+14. JUICE THRESHOLD: NEVER recommend a moneyline at -200 or worse. The implied probability at -200 is 67% — you need to be right 2 out of 3 times just to break even. This is not value betting. If the best play is a heavy favorite ML, take the run line instead or skip the game entirely.
+15. INSIGHT MUST MATCH PICK: Before finalizing, re-read your insight and ask: "If someone read only my insight and not my pick, would they bet the same side?" If not, rewrite the insight or change the pick. They must always agree.
 
 ═══════════════════════════════════════
 UNIVERSAL RULES FOR ALL SPORTS
@@ -442,81 +501,187 @@ WRITING STANDARDS — NON-NEGOTIABLE
 - If recommending against a historically strong team, explicitly address why
 - This is what bettors are paying for — make the case compellingly like a professional handicapper
 - CRITICAL: Never use citation tags, reference tags, or any XML/HTML tags in your response. No <cite>, no <ref>, no markdown links. Plain text and bold headers only.
-- CRITICAL: Every stat in each insight must be about one of the two teams in THAT pick only. Never bleed stats from other games into a pick. If not relevant to this exact matchup, delete it.`,
+- CRITICAL: Every stat in each insight must be about one of the two teams in THAT pick only. Never bleed stats from other games into a pick. If not relevant to this exact matchup, delete it.
 
-      messages: [{
-        role: 'user',
-        content: `Today is ${today_display}. Available games with current lines: ${gamesContext}
+CRITICAL: Your final JSON must include a "research_log" field — a simple array of every search query you ran, in order. This is checked programmatically. Do not fabricate entries; list only searches you actually performed.`;
 
-EXECUTE THE MANDATORY 5-STEP PROCESS NOW. DO NOT SKIP ANY STEP.
+  const response = await callClaude({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 8000,
+    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    system,
+    messages: [{
+      role: 'user',
+      content: `Today is ${today_display}. Available games with current lines: ${gamesContext}
 
-STEP 1 — BUILD CANDIDATE POOL: Search every game in the feed above. Use web search to identify 6-8 candidates across ALL bet types (ML, spread, F5, totals, first half). Search "[team1] vs [team2] today ${today_display}" for each game.
+EXECUTE THE MANDATORY RESEARCH AND SELECTION PROCESS NOW on the candidate pool above. Run at least ${MIN_SEARCHES_REQUIRED} total web searches. Do not skip any step.
 
-STEP 2 — DEEP RESEARCH: For every candidate, run ALL mandatory sport-specific searches from your instructions. For MLB: search both starting pitchers last 3 starts, opposing offense recent form, bullpen usage, weather, umpire. For Soccer: search both teams xG last 5, form, injuries, lineup. MINIMUM 3 web searches per candidate.
-
-STEP 3 — SCORE CANDIDATES 1-10: Based on research edge, line value, sharp money, injury risk.
-
-STEP 4 — SELECT TOP 3: Highest scored candidates only. Include at least one non-MLB pick if soccer or World Cup games are available today.
-
-STEP 5 — SELF-VALIDATE: Did you research BOTH sides? Did you check opposing offense? Did you verify line movement?
-
-After completing all 5 steps, return ONLY this raw JSON with no markdown, no citations, no cite tags:
-{"picks":[{"sport":"...","game":"EXACT game name from the feed above","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"DETAILED multi-paragraph breakdown with bold section headers, specific recent stats with actual numbers, pitcher names, line movement direction, sharp money signals, opposing offense analysis, and why you rejected other plays. MINIMUM 200 words. NO citation tags."}]}
+After completing research, return ONLY this raw JSON with no markdown, no citations, no cite tags:
+{"research_log":["search query 1","search query 2","..."],"picks":[{"sport":"...","game":"EXACT game name from the feed above","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"DETAILED multi-paragraph breakdown with bold section headers, specific recent stats with actual numbers, pitcher names, line movement direction, sharp money signals, opposing offense analysis, and why you rejected other plays. MINIMUM 200 words. NO citation tags."}]}
 
 UNIT SIZING: High confidence = 2 units. Medium = 1 unit. Low = 0.5 units. Never exceed 2 units.
 CRITICAL: Every game name must EXACTLY match a game from the feed. Never invent games. Never use memory for stats — web search only.`
-      }],
-    }),
+    }],
   });
 
-  const data = await response.json();
+  return response;
+}
 
-  console.log('Claude stop_reason:', data.stop_reason, 'content blocks:', (data.content || []).map(c => c.type));
+async function generatePicks() {
+  const startTime = Date.now();
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
-  let text = (data.content || [])
-    .filter(c => c.type === 'text')
-    .map(c => c.text)
-    .join('');
-
-  if (!text.trim() || data.stop_reason === 'tool_use') {
-    console.log('No text or stopped at tool_use, retrying...');
-    const retryResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 4000,
-        system: 'You are Hunter. Return ONLY the raw JSON picks object with no other text. No markdown, no explanation.',
-        messages: [
-          ...(data.content ? [{ role: 'assistant', content: data.content }] : []),
-          { role: 'user', content: 'Now return ONLY the final JSON picks object. Format: {"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"..."}]}' }
-        ],
-      }),
-    });
-    const retryData = await retryResponse.json();
-    text = (retryData.content || [])
-      .filter(c => c.type === 'text')
-      .map(c => c.text)
-      .join('');
-    console.log('Retry stop_reason:', retryData.stop_reason);
+  // Prevent duplicates
+  const { data: existingPicks } = await supabase
+    .from('daily_picks')
+    .select('id')
+    .eq('date', today)
+    .eq('status', 'active')
+    .limit(1);
+  if (existingPicks && existingPicks.length > 0) {
+    console.log('Picks already generated for today, skipping');
+    return;
   }
 
-  if (!text.trim()) throw new Error('No text content returned from Claude after retry');
+  // Mark any old picks for today inactive
+  await supabase
+    .from('daily_picks')
+    .update({ status: 'inactive' })
+    .eq('date', today);
 
-  const clean = text
-    .replace(/```json|```/g, '')
-    .replace(/<cite[^>]*>([\s\S]*?)<\/cite>/g, '$1')
-    .replace(/<cite[^>]*>/g, '')
-    .replace(/<\/cite>/g, '')
-    .trim();
-  const jsonMatch = clean.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('No JSON in response');
-  const parsed = JSON.parse(jsonMatch[0]);
-  if (!parsed.picks) throw new Error('Invalid format');
+  // Fetch odds
+  const oddsRes = await fetch('https://betcierge-next.vercel.app/api/odds', { method: 'POST' });
+  const oddsData = await oddsRes.json();
+  const now = new Date();
+  const cutoff = new Date(now.getTime() + 15 * 60 * 1000);
+  const upperBound = new Date(now.getTime() + 14 * 60 * 60 * 1000);
+  const slimGames = (oddsData.games || [])
+    .filter(g => new Date(g.commence_time) > cutoff && new Date(g.commence_time) < upperBound)
+    .slice(0, 20)
+    .map(g => {
+      const bm = g.bookmakers?.[0];
+      const h2h = bm?.markets?.find(m => m.key === 'h2h');
+      const spread = bm?.markets?.find(m => m.key === 'spreads');
+      const total = bm?.markets?.find(m => m.key === 'totals');
+      return {
+        sport: g.sport_title,
+        game: `${g.away_team} @ ${g.home_team}`,
+        time: g.commence_time,
+        moneyline: h2h?.outcomes?.map(o => `${o.name}: ${o.price}`).join(', '),
+        spread: spread?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', '),
+        total: total?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', '),
+        sport_key: g.sport_key,
+      };
+    });
+
+  // Enrich MLB games with confirmed starting pitchers from MLB Stats API
+  try {
+    const mlbRes = await fetch(
+      `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${today}&gameType=R&hydrate=probablePitcher`
+    );
+    const mlbData = await mlbRes.json();
+    const mlbSchedule = mlbData.dates?.[0]?.games || [];
+    for (const game of slimGames) {
+      if (game.sport_key !== 'baseball_mlb') continue;
+      const awayTeam = game.game.split(' @ ')[0].toLowerCase();
+      const homeTeam = game.game.split(' @ ')[1].toLowerCase();
+      const match = mlbSchedule.find(s => {
+        const sAway = s.teams?.away?.team?.name?.toLowerCase() || '';
+        const sHome = s.teams?.home?.team?.name?.toLowerCase() || '';
+        return sAway.split(' ').some(w => w.length > 3 && awayTeam.includes(w)) ||
+               sHome.split(' ').some(w => w.length > 3 && homeTeam.includes(w));
+      });
+      if (match) {
+        const awayPitcher = match.teams?.away?.probablePitcher?.fullName;
+        const homePitcher = match.teams?.home?.probablePitcher?.fullName;
+        if (awayPitcher) game.away_starter = `${game.game.split(' @ ')[0]} starter: ${awayPitcher}`;
+        if (homePitcher) game.home_starter = `${game.game.split(' @ ')[1]} starter: ${homePitcher}`;
+      }
+    }
+  } catch (e) {
+    console.error('Pitcher enrichment error:', e.message);
+  }
+
+  const gamesContext = JSON.stringify(slimGames);
+  const sportsAvailable = [...new Set(slimGames.map(g => g.sport))];
+  const today_display = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+    timeZone: 'America/New_York'
+  });
+
+  // Build recent-picks memory to prevent repetitive team bias
+  const recentPicksMemory = await buildRecentPicksMemory();
+  console.log('Recent picks memory built. Length:', recentPicksMemory.length);
+
+  // ── STAGE 1: Candidate Pool ──────────────────────────────────────────
+  let candidatePool = await buildCandidatePool(gamesContext, today_display, recentPicksMemory, sportsAvailable);
+  let poolProblems = validateCandidatePool(candidatePool);
+
+  if (poolProblems.length > 0 && Date.now() - startTime < TIME_BUDGET_MS) {
+    console.log('Candidate pool validation failed, retrying once:', poolProblems);
+    const correctionNote = `\n\nYOUR PREVIOUS CANDIDATE POOL WAS REJECTED for these reasons:\n${poolProblems.map(p => `- ${p}`).join('\n')}\nFix these issues and return a corrected candidate pool.`;
+    const retryPool = await buildCandidatePool(gamesContext, today_display, recentPicksMemory + correctionNote, sportsAvailable);
+    const retryProblems = validateCandidatePool(retryPool);
+    // Use the retry regardless — it's the best we'll get without spiraling retries.
+    // Log if still imperfect so we can see it in Vercel logs.
+    if (retryProblems.length > 0) {
+      console.log('Candidate pool still imperfect after retry, proceeding anyway:', retryProblems);
+    }
+    candidatePool = retryPool;
+  } else if (poolProblems.length > 0) {
+    console.log('Candidate pool validation failed but time budget exceeded, proceeding anyway:', poolProblems);
+  }
+
+  // ── STAGE 2: Deep Research + Final Picks ─────────────────────────────
+  let research = await runDeepResearch(gamesContext, today_display, candidatePool, recentPicksMemory);
+  let searchCount = countSearches(research.content);
+  console.log('Stage 2 stop_reason:', research.stop_reason, 'search count:', searchCount);
+
+  let text = extractText(research.content);
+
+  // If under-researched and we still have time budget, push back once with a specific correction.
+  if (searchCount < MIN_SEARCHES_REQUIRED && Date.now() - startTime < TIME_BUDGET_MS && research.stop_reason !== 'max_tokens') {
+    console.log(`Only ${searchCount} searches performed, minimum is ${MIN_SEARCHES_REQUIRED}. Requesting more research.`);
+    const continueResponse = await callClaude({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 8000,
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      messages: [
+        ...(research.content ? [{ role: 'assistant', content: research.content }] : []),
+        {
+          role: 'user',
+          content: `You have only performed ${searchCount} searches so far. The minimum required is ${MIN_SEARCHES_REQUIRED}. Continue researching now — check bullpen usage, weather, umpire tendencies, line movement, or opposing offense recent form for candidates you haven't fully covered yet. Then return the final JSON with the complete research_log listing every search you have run (including the ones already done).`
+        }
+      ],
+    });
+    searchCount = countSearches(continueResponse.content) + searchCount;
+    text = extractText(continueResponse.content) || text;
+    console.log('After continuation, stop_reason:', continueResponse.stop_reason, 'total search count:', searchCount);
+    research = continueResponse;
+  }
+
+  // Final safety net: if no text or stopped mid-tool-use, force a clean JSON-only reply.
+  if (!text.trim() || research.stop_reason === 'tool_use') {
+    console.log('No text or stopped at tool_use, forcing final JSON retry...');
+    const retryResponse = await callClaude({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4000,
+      system: 'You are Hunter. Return ONLY the raw JSON picks object with no other text. No markdown, no explanation.',
+      messages: [
+        ...(research.content ? [{ role: 'assistant', content: research.content }] : []),
+        { role: 'user', content: 'Now return ONLY the final JSON picks object, including research_log. Format: {"research_log":["..."],"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"..."}]}' }
+      ],
+    });
+    text = extractText(retryResponse.content);
+    console.log('Final retry stop_reason:', retryResponse.stop_reason);
+  }
+
+  if (!text.trim()) throw new Error('No text content returned from Claude after all retries');
+
+  const parsed = cleanJson(text);
+  if (!parsed.picks) throw new Error('Invalid format — no picks array');
+
+  console.log('Final research_log length:', (parsed.research_log || []).length, 'picks:', parsed.picks.length);
 
   const rows = parsed.picks.map(p => ({
     date: today,
@@ -535,24 +700,21 @@ CRITICAL: Every game name must EXACTLY match a game from the feed. Never invent 
   const { error } = await supabase
     .from('daily_picks')
     .insert(rows);
-
   if (error) throw error;
-  console.log(`Successfully generated ${rows.length} picks for ${today}`);
+
+  console.log(`Successfully generated ${rows.length} picks for ${today}. Total elapsed: ${Date.now() - startTime}ms`);
 }
 
 export async function GET(request) {
   const authHeader = request.headers.get('authorization');
   const isVercelCron = request.headers.get('x-vercel-cron') === '1';
   const cronSecret = request.headers.get('x-cron-secret');
-
   if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}` && cronSecret !== process.env.CRON_SECRET) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
-
   // Return 200 immediately so cron-job.org doesn't time out
   // Vercel continues running generatePicks() in the background
   waitUntil(generatePicks().catch(err => console.error('generatePicks error:', err)));
-
   return Response.json({ success: true, message: 'Pick generation started' });
 }
 
