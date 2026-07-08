@@ -12,7 +12,7 @@ const supabase = createClient(
 const MIN_SEARCHES_REQUIRED = 15;
 const TIME_BUDGET_MS = 220000; // leave ~80s buffer under the 300s function limit — continuation calls alone can take 60-90+ seconds
 
-async function callClaude(body) {
+async function callClaude(body, retryCount = 0) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -22,7 +22,28 @@ async function callClaude(body) {
     },
     body: JSON.stringify(body),
   });
-  return response.json();
+  const data = await response.json();
+
+  // CRITICAL: Anthropic returns error responses as {"type":"error","error":{...}}
+  // rather than a normal message object. Without this check, code downstream
+  // sees undefined content/stop_reason and misreads a real API error as an
+  // empty response — this was the root cause of repeated "stop_reason:
+  // undefined, 0 searches" failures. Transient errors (overloaded, rate
+  // limit, server errors) get one automatic retry with a short backoff
+  // before we give up and let the caller's own recovery logic take over.
+  if (data.type === 'error') {
+    const errType = data.error?.type || 'unknown';
+    const errMsg = data.error?.message || 'no message';
+    console.log(`ANTHROPIC_API_ERROR: http_status=${response.status} error_type=${errType} message="${errMsg}" retry_count=${retryCount}`);
+    const transientTypes = ['overloaded_error', 'rate_limit_error', 'api_error'];
+    if (transientTypes.includes(errType) && retryCount < 1) {
+      console.log(`Retrying once after transient API error (${errType}), waiting 3s...`);
+      await new Promise(r => setTimeout(r, 3000));
+      return callClaude(body, retryCount + 1);
+    }
+  }
+
+  return data;
 }
 
 function countSearches(content) {
@@ -814,31 +835,51 @@ async function generatePicks() {
     console.log('Final retry stop_reason:', retryResponse.stop_reason);
   }
 
-  if (!text.trim()) throw new Error('No text content returned from Claude after all retries');
-
   let parsed;
-  try {
-    parsed = cleanJson(text);
-  } catch (parseErr) {
-    // Last-resort fallback: even after the forced-JSON retry above, the text
-    // still wasn't parseable (could be a stop_reason we haven't seen yet, or
-    // another transient issue). Try one more explicit forced-JSON call before
-    // giving up entirely — but only if there's still time budget for it, so
-    // this can't stack up into another 300s timeout.
-    console.log('First JSON parse failed after retry, attempting one final forced-JSON call:', parseErr.message);
+  if (!text.trim()) {
+    // Text is completely empty even after the pause_turn/tool_use retry above
+    // (the retry itself came back empty — the same transient "empty response"
+    // pattern we've seen elsewhere). Don't give up immediately — attempt one
+    // more fresh, simple, non-tool-use call before failing the whole run.
+    console.log('Text still empty after retry — attempting last-resort forced-JSON call before giving up.');
     if (Date.now() - startTime > TIME_BUDGET_MS) {
-      throw new Error(`No valid JSON after all retries, and time budget exhausted: ${parseErr.message}`);
+      throw new Error('No text content returned from Claude after all retries, and time budget exhausted');
     }
     const lastResort = await callClaude({
       model: 'claude-sonnet-4-6',
       max_tokens: 4000,
       system: 'You are Hunter. Return ONLY the raw JSON picks object with no other text. No markdown, no explanation, no commentary.',
       messages: [
-        { role: 'user', content: `Return ONLY this JSON format based on your prior research, nothing else: {"research_log":["..."],"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"..."}]}. Here is your prior partial output to base it on: ${text.slice(0, 3000)}` }
+        { role: 'user', content: `Based on the candidate pool and games feed already provided, return ONLY this JSON format, nothing else: {"research_log":["..."],"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"..."}]}. Candidate pool: ${JSON.stringify(candidatePool.candidates || [])}` }
       ],
     });
     const lastText = extractText(lastResort.content);
+    if (!lastText.trim()) throw new Error('No text content returned from Claude after all retries, including last-resort attempt');
     parsed = cleanJson(lastText);
+  } else {
+    try {
+      parsed = cleanJson(text);
+    } catch (parseErr) {
+      // Last-resort fallback: even after the forced-JSON retry above, the text
+      // still wasn't parseable (could be a stop_reason we haven't seen yet, or
+      // another transient issue). Try one more explicit forced-JSON call before
+      // giving up entirely — but only if there's still time budget for it, so
+      // this can't stack up into another 300s timeout.
+      console.log('JSON parse failed after retry, attempting one final forced-JSON call:', parseErr.message);
+      if (Date.now() - startTime > TIME_BUDGET_MS) {
+        throw new Error(`No valid JSON after all retries, and time budget exhausted: ${parseErr.message}`);
+      }
+      const lastResort = await callClaude({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4000,
+        system: 'You are Hunter. Return ONLY the raw JSON picks object with no other text. No markdown, no explanation, no commentary.',
+        messages: [
+          { role: 'user', content: `Return ONLY this JSON format based on your prior research, nothing else: {"research_log":["..."],"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"..."}]}. Here is your prior partial output to base it on: ${text.slice(0, 3000)}` }
+        ],
+      });
+      const lastText = extractText(lastResort.content);
+      parsed = cleanJson(lastText);
+    }
   }
   if (!parsed.picks) throw new Error('Invalid format — no picks array');
 
