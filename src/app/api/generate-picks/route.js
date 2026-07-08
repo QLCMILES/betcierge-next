@@ -12,16 +12,43 @@ const supabase = createClient(
 const MIN_SEARCHES_REQUIRED = 15;
 const TIME_BUDGET_MS = 220000; // leave ~80s buffer under the 300s function limit — continuation calls alone can take 60-90+ seconds
 
-async function callClaude(body, retryCount = 0) {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify(body),
-  });
+async function callClaude(body, retryCount = 0, timeoutMs = 80000) {
+  // CRITICAL: without an explicit timeout, a single slow/hanging Anthropic
+  // call can silently consume the ENTIRE 300s function budget with zero
+  // logging, ending only in Vercel's own hard timeout — which tells us
+  // nothing about what actually happened. This gives every call a hard
+  // ceiling (80s) so a hang becomes a loggable, recoverable error instead
+  // of a silent multi-minute void. On timeout we do NOT retry internally —
+  // that would risk stacking two full timeout windows on one call. The
+  // outer generatePicks() logic already has its own time-budget-aware
+  // retry/continuation handling and decides what to do next.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response;
+  try {
+    response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (fetchErr) {
+    clearTimeout(timeoutId);
+    if (fetchErr.name === 'AbortError') {
+      console.log(`ANTHROPIC_API_TIMEOUT: call exceeded ${timeoutMs}ms and was aborted (no internal retry — returning error to caller)`);
+      // Return an error-shaped object so downstream code treats this the
+      // same as any other API error, rather than crashing on undefined.
+      return { type: 'error', error: { type: 'timeout_error', message: `Call exceeded ${timeoutMs}ms` } };
+    }
+    throw fetchErr;
+  }
+  clearTimeout(timeoutId);
+
   const data = await response.json();
 
   // CRITICAL: Anthropic returns error responses as {"type":"error","error":{...}}
@@ -39,7 +66,7 @@ async function callClaude(body, retryCount = 0) {
     if (transientTypes.includes(errType) && retryCount < 1) {
       console.log(`Retrying once after transient API error (${errType}), waiting 3s...`);
       await new Promise(r => setTimeout(r, 3000));
-      return callClaude(body, retryCount + 1);
+      return callClaude(body, retryCount + 1, timeoutMs);
     }
   }
 
