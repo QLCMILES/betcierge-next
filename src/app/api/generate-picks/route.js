@@ -784,9 +784,12 @@ async function generatePicks() {
     research = continueResponse;
   }
 
-  // Final safety net: if no text or stopped mid-tool-use, force a clean JSON-only reply.
-  if (!text.trim() || research.stop_reason === 'tool_use') {
-    console.log('No text or stopped at tool_use, forcing final JSON retry...');
+  // Final safety net: if no text, or stopped mid-turn (tool_use / pause_turn),
+  // force a clean JSON-only reply. pause_turn is a real Anthropic stop_reason
+  // for long agentic turns that pause partway through — treating it as final
+  // would mean parsing the model's mid-sentence reasoning as JSON, which fails.
+  if (!text.trim() || research.stop_reason === 'tool_use' || research.stop_reason === 'pause_turn') {
+    console.log(`Response not final (stop_reason: ${research.stop_reason}), forcing final JSON retry...`);
     const retryResponse = await callClaude({
       model: 'claude-sonnet-4-6',
       max_tokens: 4000,
@@ -802,7 +805,30 @@ async function generatePicks() {
 
   if (!text.trim()) throw new Error('No text content returned from Claude after all retries');
 
-  const parsed = cleanJson(text);
+  let parsed;
+  try {
+    parsed = cleanJson(text);
+  } catch (parseErr) {
+    // Last-resort fallback: even after the forced-JSON retry above, the text
+    // still wasn't parseable (could be a stop_reason we haven't seen yet, or
+    // another transient issue). Try one more explicit forced-JSON call before
+    // giving up entirely — but only if there's still time budget for it, so
+    // this can't stack up into another 300s timeout.
+    console.log('First JSON parse failed after retry, attempting one final forced-JSON call:', parseErr.message);
+    if (Date.now() - startTime > TIME_BUDGET_MS) {
+      throw new Error(`No valid JSON after all retries, and time budget exhausted: ${parseErr.message}`);
+    }
+    const lastResort = await callClaude({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4000,
+      system: 'You are Hunter. Return ONLY the raw JSON picks object with no other text. No markdown, no explanation, no commentary.',
+      messages: [
+        { role: 'user', content: `Return ONLY this JSON format based on your prior research, nothing else: {"research_log":["..."],"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"..."}]}. Here is your prior partial output to base it on: ${text.slice(0, 3000)}` }
+      ],
+    });
+    const lastText = extractText(lastResort.content);
+    parsed = cleanJson(lastText);
+  }
   if (!parsed.picks) throw new Error('Invalid format — no picks array');
 
   console.log('Final research_log length:', (parsed.research_log || []).length, 'picks:', parsed.picks.length);
