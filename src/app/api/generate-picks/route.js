@@ -238,12 +238,16 @@ STEP 1 — FULL RESEARCH ON EVERY CANDIDATE
 Run ALL mandatory sport-specific searches below for each candidate.
 
 STEP 2 — SCORE EACH CANDIDATE 1-10
-Score based on: recent form edge, matchup quality, line value, injury risk, sharp money direction.
+Score based on: recent form edge, matchup quality, line value, injury risk, sharp money direction, AND bet-type variance (see below).
+
+BET-TYPE VARIANCE — FACTOR THIS INTO YOUR SCORE:
+Not all bet types carry equal risk for the same "edge quality." A total/under needs the COMBINED output of both teams to stay under a number across all 9 innings — a single bad bullpen inning, one bloop-hit rally, or one long at-bat can undo an otherwise sound pre-game read. This is structurally higher variance than a moneyline or run line, which is more directly about which team is simply better and holds up more durably across a full game. When two candidates have similar edge quality on paper, prefer the moneyline/spread/run-line candidate over the total/under candidate — the under needs a genuinely EXCEPTIONAL case (elite pitcher + demonstrably cold opposing offense + confirmed bullpen fatigue + favorable park/weather, multiple factors stacking, not just one) to justify the extra variance, not merely "good enough."
+CORRELATION CHECK: If your top-scored candidates include 2 or more totals/unders, especially sharing the same or a similar total number, treat this as a signal to double-check you aren't just pattern-matching on "low-scoring day" across the whole slate. Verify each one independently earns its spot on its own distinct merits — if they don't both clearly stand alone as exceptional, replace the weaker one with the next-best non-total candidate.
 
 STEP 3 — SELECT TOP 3 BY SCORE
 The 3 highest-scored candidates are today's picks. Not your first instinct. Not the obvious favorites. The top 3 by research score.
 
-CRITICAL: Selection is based ENTIRELY on research score and edge quality — nothing else. If your 3 highest-scored candidates all happen to be the same bet type, that IS the correct output. Never downgrade a stronger pick or upgrade a weaker one just to create variety in your final 3. The diversity work already happened in the candidate pool; your only job now is finding the best value, full stop.
+CRITICAL: Selection is based ENTIRELY on research score and edge quality — nothing else. If your 3 highest-scored candidates all happen to be the same bet type, that IS the correct output, PROVIDED the bet-type variance factor above was genuinely applied to the scoring. Never downgrade a stronger pick or upgrade a weaker one just to create artificial variety in your final 3 — but do weigh the extra risk that totals/unders inherently carry, per the variance guidance above.
 
 STEP 4 — SELF-VALIDATION (MANDATORY before finalizing)
 Ask yourself:
@@ -341,6 +345,13 @@ SITUATIONAL & ENVIRONMENTAL:
 - Park factors by handedness
 - Day vs night splits
 - Pitcher pitch count history last 2 starts
+
+IF CONSIDERING A TOTAL/UNDER — ALL FOUR OF THESE MUST BE CHECKED, NOT JUST ONE:
+1. Ballpark factor — does this stadium suppress or inflate runs? (e.g. Oracle Park's cool air and deep outfield suppress; Wrigley with wind out inflates)
+2. Umpire strike zone — a larger zone means more Ks/fewer walks, favoring the Under; a smaller zone means more walks, favoring the Over
+3. Bullpen fatigue on BOTH sides — did either pen throw heavy innings in the last 1-2 days? Tired bullpens give up more runs late, favoring the Over
+4. Weather — wind direction/speed and temperature affect how far the ball carries
+A total/under case built on only one or two of these is thinner than one built on all four stacking in the same direction. Note explicitly in your insight which of these four you checked and what each one showed — do not skip any silently.
 
 PROP BET ANALYSIS — 7-STEP PROCESS:
 1. Search "[player] vs [opponent] career stats head to head"
