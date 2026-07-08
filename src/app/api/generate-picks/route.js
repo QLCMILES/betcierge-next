@@ -843,6 +843,19 @@ async function generatePicks() {
     research = continueResponse;
   }
 
+  // HARD STOP: if zero real research has happened across every attempt so
+  // far (first call + continuation both failed/timed out with 0 searches),
+  // do NOT proceed to the forced-JSON safety net below. That safety net has
+  // no games feed or candidate pool attached — with zero real grounding, a
+  // forced "just return JSON" call has no real data to work from and will
+  // fabricate plausible-looking content instead. This is exactly what
+  // caused a real incident where fictional NFL/NBA/NHL games got written
+  // to the database. Failing loudly here is far safer than risking that
+  // again — an empty picks day beats a fabricated one every time.
+  if (searchCount === 0) {
+    throw new Error(`Zero real research completed after all attempts (repeated API timeouts/errors, stop_reason: ${research.stop_reason}). Refusing to force an ungrounded JSON response — that risks fabricated games. Aborting this run cleanly instead.`);
+  }
+
   // Final safety net: if no text, or stopped mid-turn (tool_use / pause_turn),
   // force a clean JSON-only reply. pause_turn is a real Anthropic stop_reason
   // for long agentic turns that pause partway through — treating it as final
@@ -912,9 +925,37 @@ async function generatePicks() {
 
   console.log('Final research_log length:', (parsed.research_log || []).length, 'picks:', parsed.picks.length);
 
+  // CRITICAL SAFETY GATE: never trust that a pick's "game" field is real just
+  // because the model said so. Verify every single pick against the actual
+  // real games feed fetched at the top of this run. This is the same
+  // philosophy as the spread-sign correction — deterministic verification
+  // against ground truth, not trust in generated text. This exists because
+  // a real incident occurred where, after repeated API timeouts left zero
+  // real research grounding, a last-resort forced-JSON call fabricated a
+  // fully plausible-looking slate of games that do not exist (wrong sports,
+  // wrong season). Any pick whose game does not exactly match the real feed
+  // is rejected outright, regardless of how well-written its insight is.
+  const realGameSet = new Set(slimGames.map(g => g.game));
+  const verifiedPicks = [];
+  for (const p of parsed.picks) {
+    if (realGameSet.has(p.game)) {
+      verifiedPicks.push(p);
+    } else {
+      console.log(`HALLUCINATED_GAME_REJECTED: pick "${p.pick}" for game "${p.game}" does not exist in today's real odds feed — discarding.`);
+    }
+  }
+
+  if (verifiedPicks.length === 0) {
+    throw new Error(`All ${parsed.picks.length} picks failed game verification against the real odds feed — refusing to write anything rather than risk showing fabricated games. This usually means Stage 2 never completed real research (check for repeated ANTHROPIC_API_TIMEOUT above).`);
+  }
+
+  if (verifiedPicks.length < parsed.picks.length) {
+    console.log(`WARNING: ${parsed.picks.length - verifiedPicks.length} of ${parsed.picks.length} picks were rejected for referencing non-existent games. Proceeding with ${verifiedPicks.length} verified pick(s) only.`);
+  }
+
   // Correct any spread/run-line sign errors using ground-truth odds data,
   // rather than trusting the model's generated text for the +/- sign.
-  const correctedPicks = parsed.picks.map(p => normalizeSpreadSign(p, spreadLookup));
+  const correctedPicks = verifiedPicks.map(p => normalizeSpreadSign(p, spreadLookup));
 
   const rows = correctedPicks.map(p => ({
     date: today,
