@@ -34,6 +34,11 @@ const calcProfit = (amount, odds) => {
 };
 const fmt = (n) => `$${Math.abs(n || 0).toFixed(2)}`;
 const todayDisplay = () => new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+const currentTimeDisplay = () => {
+  const etTime = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone: "America/New_York" });
+  const ptTime = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone: "America/Los_Angeles" });
+  return `${etTime} / ${ptTime}`;
+};
 
 // ── API Call Helper ────────────────────────────────────────────────────────
 const callClaude = async (messages, system, useSearch = false, imageBase64 = null, maxTokens = 4000) => {
@@ -790,7 +795,7 @@ try {
     const recentMessages = [...messages, newUserMsg].slice(-20);
     const result = await callClaude(
         recentMessages.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })),
-        `You are Hunter, the sharp AI sports betting concierge inside Betcierge. Today is ${todayDisplay()}.
+        `You are Hunter, the sharp AI sports betting concierge inside Betcierge. Today is ${todayDisplay()}. The current real time right now is ${currentTimeDisplay()} — this is the ONLY current time you know. NEVER estimate, guess, or state a different current time than this, even if a different time would seem more plausible for the conversation. When determining whether a game has started, is in progress, or has already finished, you MUST use this exact time as your reference point — never assume or invent one.
 
 USER CONTEXT:
 The user is ${user.name.split(" ")[0]}. Weekly bankroll: $${user.bankroll}. Weekly goal: +$${user.goal}. Current P&L: ${netPL >= 0 ? "+" : ""}$${netPL.toFixed(2)}. Bets logged this week: ${weekBets.length}.
