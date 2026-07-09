@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { waitUntil } from '@vercel/functions';
 
-export const maxDuration = 800; // Fluid compute allows up to 800s on Pro — use the headroom instead of squeezing a heavy research pipeline into 300s
+export const maxDuration = 120; // generate-picks now only runs Stage 1 (lightweight) + submits Stage 2 as an async batch — no longer needs the long runway the old synchronous design required
 export const dynamic = 'force-dynamic';
 
 const supabase = createClient(
@@ -10,7 +10,7 @@ const supabase = createClient(
 );
 
 const MIN_SEARCHES_REQUIRED = 15;
-const TIME_BUDGET_MS = 650000; // leave ~150s buffer under the 800s function limit — a full Stage 2 research call can legitimately take 90-150+ seconds under normal healthy conditions, not just during outages
+const TIME_BUDGET_MS = 60000; // gates the Stage 1 candidate-pool retry only — Stage 1 is lightweight (no web search), this is generous headroom for it, not the old full-research budget
 
 async function callClaude(body, retryCount = 0, timeoutMs = 500000) {
   // INTERIM FIX (500s), pending a real architectural fix: we do NOT stream
@@ -262,7 +262,7 @@ function validateCandidatePool(pool) {
 }
 
 // ── Stage 2: Deep Research + Final Picks ────────────────────────────────
-async function runDeepResearch(gamesContext, today_display, candidatePool, recentPicksMemory) {
+async function buildStage2RequestBody(gamesContext, today_display, candidatePool, recentPicksMemory) {
   const candidateList = (candidatePool.candidates || [])
     .map(c => `- [${c.sport}] ${c.game} — ${c.bet_type}: ${c.proposed_pick} (${c.reason})`)
     .join('\n');
@@ -624,7 +624,7 @@ STEELMANNING IS INTERNAL ONLY — NEVER VISIBLE TO THE READER: You must still ge
 
 CRITICAL: Your final JSON must include a "research_log" field — a simple array of every search query you ran, in order. This is checked programmatically. Do not fabricate entries; list only searches you actually performed.`;
 
-  const response = await callClaude({
+  return {
     model: 'claude-sonnet-4-6',
     max_tokens: 8000,
     tools: [{ type: 'web_search_20250305', name: 'web_search' }],
@@ -641,9 +641,25 @@ After completing research, return ONLY this raw JSON with no markdown, no citati
 UNIT SIZING: High confidence = 2 units. Medium = 1 unit. Low = 0.5 units. Never exceed 2 units.
 CRITICAL: Every game name must EXACTLY match a game from the feed. Never invent games. Never use memory for stats — web search only.`
     }],
-  });
+  };
+}
 
-  return { response, system };
+// ── Anthropic Message Batches API helpers ───────────────────────────────
+async function submitBatch(requestBody, customId) {
+  const response = await fetch('https://api.anthropic.com/v1/messages/batches', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({ requests: [{ custom_id: customId, params: requestBody }] }),
+  });
+  const data = await response.json();
+  if (data.type === 'error') {
+    throw new Error(`Batch submission failed: ${data.error?.type} - ${data.error?.message}`);
+  }
+  return data; // contains .id, .processing_status, etc.
 }
 
 async function generatePicks() {
@@ -662,11 +678,13 @@ async function generatePicks() {
     return;
   }
 
-  // Mark any old picks for today inactive
-  await supabase
-    .from('daily_picks')
-    .update({ status: 'inactive' })
-    .eq('date', today);
+  // NOTE: we deliberately do NOT mark existing picks inactive here anymore.
+  // Under the old synchronous design, that gap was only a few minutes. Under
+  // the new async Batches design, the gap between submission and completion
+  // can be much longer (up to an hour or more) — marking old picks inactive
+  // this early would leave the app showing zero active picks for that whole
+  // window. Old picks now get marked inactive in poll-batch-picks, right
+  // before the new ones are written, keeping the visible gap minimal.
 
   // Fetch odds
   const oddsRes = await fetch('https://betcierge-next.vercel.app/api/odds', { method: 'POST' });
@@ -804,182 +822,47 @@ async function generatePicks() {
     console.log('Candidate pool validation failed but time budget exceeded, proceeding anyway:', poolProblems);
   }
 
-  // ── STAGE 2: Deep Research + Final Picks ─────────────────────────────
-  let { response: research, system: stage2System } = await runDeepResearch(gamesContext, today_display, candidatePool, recentPicksMemory);
-  let searchCount = countSearches(research.content);
-  console.log('Stage 2 stop_reason:', research.stop_reason, 'search count:', searchCount);
+  // ── STAGE 2: Submit Deep Research to the Anthropic Batches API ──────
+  // This is the core reliability fix: instead of running Stage 2 as a long
+  // synchronous call we have to babysit with a guessed timeout, submit it
+  // to Anthropic's Message Batches API and return immediately. A separate
+  // polling cron (poll-batch-picks) checks for completion, applies the same
+  // validation/safety gates that used to run inline here, and writes the
+  // final picks once the batch is done — with an explicit deadline/fallback
+  // and a publish-time freshness check, since the batch window can be much
+  // longer than the old synchronous call ever was.
+  const stage2Body = await buildStage2RequestBody(gamesContext, today_display, candidatePool, recentPicksMemory);
+  const customId = `picks-${today}-${Date.now()}`;
+  const batch = await submitBatch(stage2Body, customId);
+  console.log(`Stage 2 submitted as batch ${batch.id} (custom_id: ${customId})`);
 
-  // If the first call came back essentially empty (e.g. a transient API hiccup),
-  // log it for visibility — but do NOT retry the whole call from scratch here.
-  // A full extra Stage 2 attempt can itself take 60-90+ seconds, and stacking
-  // that on top of the continuation below risks blowing the 300s function
-  // timeout. The continuation path below (with the full system prompt now
-  // correctly attached) is sufficient to recover without that added risk.
-  if (!research.content || research.content.length === 0) {
-    console.log('NOTE: Stage 2 first attempt came back with no content (stop_reason undefined). Proceeding to continuation below rather than a full retry, to protect the time budget.');
-  }
+  // Deadline: earliest game's start time minus 2 hours, so we always have
+  // enough runway to fall back cleanly rather than publish a rushed or
+  // stale pick right before first pitch/kickoff. If no games have a parsed
+  // start time for some reason, fall back to a conservative 4-hour deadline
+  // from now so the job can never wait indefinitely.
+  const earliestGameTime = slimGames
+    .map(g => new Date(g.time))
+    .filter(d => !isNaN(d.getTime()))
+    .sort((a, b) => a - b)[0];
+  const deadlineAt = earliestGameTime
+    ? new Date(earliestGameTime.getTime() - 2 * 60 * 60 * 1000)
+    : new Date(Date.now() + 4 * 60 * 60 * 1000);
 
-  let text = extractText(research.content);
-
-  // If under-researched and we still have time budget, push back once with a specific correction.
-  // CRITICAL: always include the system prompt here — never rely solely on prior
-  // turns for instructions, since if the prior turn was thin or malformed the
-  // model would have zero idea what JSON schema to return.
-  if (searchCount < MIN_SEARCHES_REQUIRED && Date.now() - startTime < TIME_BUDGET_MS && research.stop_reason !== 'max_tokens') {
-    console.log(`Only ${searchCount} searches performed, minimum is ${MIN_SEARCHES_REQUIRED}. Requesting more research.`);
-    const continueResponse = await callClaude({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-      system: stage2System,
-      messages: [
-        ...(research.content && research.content.length > 0 ? [{ role: 'assistant', content: research.content }] : []),
-        {
-          role: 'user',
-          content: `You have only performed ${searchCount} searches so far. The minimum required is ${MIN_SEARCHES_REQUIRED}. Continue researching now — check bullpen usage, weather, umpire tendencies, line movement, or opposing offense recent form for candidates you haven't fully covered yet. Then return the final JSON with the complete research_log listing every search you have run (including the ones already done). Remember the required JSON format: {"research_log":["..."],"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"..."}]}`
-        }
-      ],
-    });
-    searchCount = countSearches(continueResponse.content) + searchCount;
-    text = extractText(continueResponse.content) || text;
-    console.log('After continuation, stop_reason:', continueResponse.stop_reason, 'total search count:', searchCount);
-    research = continueResponse;
-  }
-
-  // HARD STOP: if zero real research has happened across every attempt so
-  // far (first call + continuation both failed/timed out with 0 searches),
-  // do NOT proceed to the forced-JSON safety net below. That safety net has
-  // no games feed or candidate pool attached — with zero real grounding, a
-  // forced "just return JSON" call has no real data to work from and will
-  // fabricate plausible-looking content instead. This is exactly what
-  // caused a real incident where fictional NFL/NBA/NHL games got written
-  // to the database. Failing loudly here is far safer than risking that
-  // again — an empty picks day beats a fabricated one every time.
-  if (searchCount === 0) {
-    throw new Error(`Zero real research completed after all attempts (repeated API timeouts/errors, stop_reason: ${research.stop_reason}). Refusing to force an ungrounded JSON response — that risks fabricated games. Aborting this run cleanly instead.`);
-  }
-
-  // Final safety net: if no text, or stopped mid-turn (tool_use / pause_turn),
-  // force a clean JSON-only reply. pause_turn is a real Anthropic stop_reason
-  // for long agentic turns that pause partway through — treating it as final
-  // would mean parsing the model's mid-sentence reasoning as JSON, which fails.
-  if (!text.trim() || research.stop_reason === 'tool_use' || research.stop_reason === 'pause_turn') {
-    console.log(`Response not final (stop_reason: ${research.stop_reason}), forcing final JSON retry...`);
-    const retryResponse = await callClaude({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
-      system: 'You are Hunter. Return ONLY the raw JSON picks object with no other text. No markdown, no explanation.',
-      messages: [
-        ...(research.content && research.content.length > 0 ? [{ role: 'assistant', content: research.content }] : []),
-        { role: 'user', content: 'Now return ONLY the final JSON picks object, including research_log. Format: {"research_log":["..."],"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"..."}]}' }
-      ],
-    });
-    text = extractText(retryResponse.content);
-    console.log('Final retry stop_reason:', retryResponse.stop_reason);
-  }
-
-  let parsed;
-  if (!text.trim()) {
-    // Text is completely empty even after the pause_turn/tool_use retry above
-    // (the retry itself came back empty — the same transient "empty response"
-    // pattern we've seen elsewhere). Don't give up immediately — attempt one
-    // more fresh, simple, non-tool-use call before failing the whole run.
-    console.log('Text still empty after retry — attempting last-resort forced-JSON call before giving up.');
-    if (Date.now() - startTime > TIME_BUDGET_MS) {
-      throw new Error('No text content returned from Claude after all retries, and time budget exhausted');
-    }
-    const lastResort = await callClaude({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
-      system: 'You are Hunter. Return ONLY the raw JSON picks object with no other text. No markdown, no explanation, no commentary.',
-      messages: [
-        { role: 'user', content: `Based on the candidate pool and games feed already provided, return ONLY this JSON format, nothing else: {"research_log":["..."],"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"..."}]}. Candidate pool: ${JSON.stringify(candidatePool.candidates || [])}` }
-      ],
-    });
-    const lastText = extractText(lastResort.content);
-    if (!lastText.trim()) throw new Error('No text content returned from Claude after all retries, including last-resort attempt');
-    parsed = cleanJson(lastText);
-  } else {
-    try {
-      parsed = cleanJson(text);
-    } catch (parseErr) {
-      // Last-resort fallback: even after the forced-JSON retry above, the text
-      // still wasn't parseable (could be a stop_reason we haven't seen yet, or
-      // another transient issue). Try one more explicit forced-JSON call before
-      // giving up entirely — but only if there's still time budget for it, so
-      // this can't stack up into another 300s timeout.
-      console.log('JSON parse failed after retry, attempting one final forced-JSON call:', parseErr.message);
-      if (Date.now() - startTime > TIME_BUDGET_MS) {
-        throw new Error(`No valid JSON after all retries, and time budget exhausted: ${parseErr.message}`);
-      }
-      const lastResort = await callClaude({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 4000,
-        system: 'You are Hunter. Return ONLY the raw JSON picks object with no other text. No markdown, no explanation, no commentary.',
-        messages: [
-          { role: 'user', content: `Return ONLY this JSON format based on your prior research, nothing else: {"research_log":["..."],"picks":[{"sport":"...","game":"...","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"..."}]}. Here is your prior partial output to base it on: ${text.slice(0, 3000)}` }
-        ],
-      });
-      const lastText = extractText(lastResort.content);
-      parsed = cleanJson(lastText);
-    }
-  }
-  if (!parsed.picks) throw new Error('Invalid format — no picks array');
-
-  console.log('Final research_log length:', (parsed.research_log || []).length, 'picks:', parsed.picks.length);
-
-  // CRITICAL SAFETY GATE: never trust that a pick's "game" field is real just
-  // because the model said so. Verify every single pick against the actual
-  // real games feed fetched at the top of this run. This is the same
-  // philosophy as the spread-sign correction — deterministic verification
-  // against ground truth, not trust in generated text. This exists because
-  // a real incident occurred where, after repeated API timeouts left zero
-  // real research grounding, a last-resort forced-JSON call fabricated a
-  // fully plausible-looking slate of games that do not exist (wrong sports,
-  // wrong season). Any pick whose game does not exactly match the real feed
-  // is rejected outright, regardless of how well-written its insight is.
-  const realGameSet = new Set(slimGames.map(g => g.game));
-  const verifiedPicks = [];
-  for (const p of parsed.picks) {
-    if (realGameSet.has(p.game)) {
-      verifiedPicks.push(p);
-    } else {
-      console.log(`HALLUCINATED_GAME_REJECTED: pick "${p.pick}" for game "${p.game}" does not exist in today's real odds feed — discarding.`);
-    }
-  }
-
-  if (verifiedPicks.length === 0) {
-    throw new Error(`All ${parsed.picks.length} picks failed game verification against the real odds feed — refusing to write anything rather than risk showing fabricated games. This usually means Stage 2 never completed real research (check for repeated ANTHROPIC_API_TIMEOUT above).`);
-  }
-
-  if (verifiedPicks.length < parsed.picks.length) {
-    console.log(`WARNING: ${parsed.picks.length - verifiedPicks.length} of ${parsed.picks.length} picks were rejected for referencing non-existent games. Proceeding with ${verifiedPicks.length} verified pick(s) only.`);
-  }
-
-  // Correct any spread/run-line sign errors using ground-truth odds data,
-  // rather than trusting the model's generated text for the +/- sign.
-  const correctedPicks = verifiedPicks.map(p => normalizeSpreadSign(p, spreadLookup));
-
-  const rows = correctedPicks.map(p => ({
+  const { error: insertError } = await supabase.from('batch_jobs').insert({
     date: today,
-    sport: p.sport,
-    game: p.game,
-    pick: p.pick,
-    odds: p.odds,
-    confidence: p.confidence,
-    insight: p.insight,
-    units: p.confidence === 'High' ? 2 : p.confidence === 'Low' ? 0.5 : parseFloat(p.units) || 1,
-    game_time: p.game_time || null,
-    status: 'active',
-    created_at: new Date().toISOString(),
-  }));
+    anthropic_batch_id: batch.id,
+    status: 'submitted',
+    deadline_at: deadlineAt.toISOString(),
+    candidate_pool: candidatePool,
+    games_context: slimGames,
+    spread_lookup: spreadLookup,
+    slim_games: slimGames,
+    recent_picks_memory: recentPicksMemory,
+  });
+  if (insertError) throw insertError;
 
-  const { error } = await supabase
-    .from('daily_picks')
-    .insert(rows);
-  if (error) throw error;
-
-  console.log(`Successfully generated ${rows.length} picks for ${today}. Total elapsed: ${Date.now() - startTime}ms`);
+  console.log(`Batch job recorded. Deadline: ${deadlineAt.toISOString()}. Total submission time: ${Date.now() - startTime}ms`);
 }
 
 export async function GET(request) {
