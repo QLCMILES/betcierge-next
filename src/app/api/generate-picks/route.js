@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { waitUntil } from '@vercel/functions';
 
-export const maxDuration = 300;
+export const maxDuration = 800; // Fluid compute allows up to 800s on Pro — use the headroom instead of squeezing a heavy research pipeline into 300s
 export const dynamic = 'force-dynamic';
 
 const supabase = createClient(
@@ -10,18 +10,24 @@ const supabase = createClient(
 );
 
 const MIN_SEARCHES_REQUIRED = 15;
-const TIME_BUDGET_MS = 220000; // leave ~80s buffer under the 300s function limit — continuation calls alone can take 60-90+ seconds
+const TIME_BUDGET_MS = 650000; // leave ~150s buffer under the 800s function limit — a full Stage 2 research call can legitimately take 90-150+ seconds under normal healthy conditions, not just during outages
 
-async function callClaude(body, retryCount = 0, timeoutMs = 80000) {
+async function callClaude(body, retryCount = 0, timeoutMs = 150000) {
   // CRITICAL: without an explicit timeout, a single slow/hanging Anthropic
-  // call can silently consume the ENTIRE 300s function budget with zero
-  // logging, ending only in Vercel's own hard timeout — which tells us
-  // nothing about what actually happened. This gives every call a hard
-  // ceiling (80s) so a hang becomes a loggable, recoverable error instead
-  // of a silent multi-minute void. On timeout we do NOT retry internally —
-  // that would risk stacking two full timeout windows on one call. The
-  // outer generatePicks() logic already has its own time-budget-aware
-  // retry/continuation handling and decides what to do next.
+  // call can silently consume the ENTIRE function budget with zero logging,
+  // ending only in Vercel's own hard timeout — which tells us nothing about
+  // what actually happened. This gives every call a hard ceiling (150s) so
+  // a hang becomes a loggable, recoverable error instead of a silent void.
+  // NOTE: an earlier version of this used an 80s ceiling, which turned out
+  // to be too aggressive — a full Stage 2 research call (15-22 web searches
+  // plus reasoning) can legitimately take 90-150+ seconds under completely
+  // normal, healthy API conditions, not just during an outage. That shorter
+  // timeout was cutting off genuine in-progress successful research, not
+  // just true hangs. 150s gives real research room to finish while still
+  // catching a genuine multi-minute hang. On timeout we do NOT retry
+  // internally — that would risk stacking two full timeout windows on one
+  // call. The outer generatePicks() logic already has its own time-budget-
+  // aware retry/continuation handling and decides what to do next.
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
