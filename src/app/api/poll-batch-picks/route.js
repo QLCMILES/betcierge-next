@@ -10,6 +10,24 @@ const supabase = createClient(
 
 const MIN_SEARCHES_REQUIRED = 15;
 
+// Phase 1 hardening: dynamic pick count instead of a forced exactly-3.
+// The model now scores every researched candidate honestly; code selects
+// the final list based on this fixed, non-negotiable threshold — never
+// adjusted based on how many candidates happen to clear it that day.
+const MIN_SCORE_THRESHOLD = 7.0;
+const MAX_DAILY_PICKS = 3;
+// Correlation cap: avoid publishing 3 picks that could all lose together
+// from one unusual game (e.g. three correlated unders). Not about cosmetic
+// bet-type variety — this only intervenes when there's a real concentration
+// of the same sport + bet type among the highest-scored candidates.
+const MAX_SAME_SPORT_AND_TYPE = 2;
+
+// Red-flag substrings that mean the model reported an eligibility field as
+// technically "true" but the actual confirmed_names text still reads like
+// an unconfirmed guess — a string-based safety net in case the boolean
+// itself is wrong or gamed.
+const UNCERTAIN_NAME_PATTERNS = ['tbd', 'not listed', 'unconfirmed', 'unknown', 'not confirmed', 'unclear', 'not yet announced'];
+
 // Thresholds for the publish-time freshness check. These are starting
 // defaults — reasonable, but worth revisiting once we've seen real
 // distributions of line movement over a real batch processing window.
@@ -197,6 +215,104 @@ async function cancelBatch(batchId) {
   });
 }
 
+// ── Phase 1 hardening: deterministic enforcement, not model discretion ──
+
+// Eligibility gate: never trust that a mandatory fact was actually verified
+// just because the model said so. This is the direct fix for the real
+// incident where a pick was published despite the model's own insight
+// admitting it didn't know the starting pitcher — that check existed in
+// the prompt, but nothing stopped the model from proceeding anyway. Now
+// it's enforced here, in code, not in the model's own judgment.
+function checkEligibility(pick) {
+  const elig = pick.eligibility;
+  if (!elig) {
+    return { eligible: false, reason: 'No eligibility object returned at all' };
+  }
+  if (elig.mandatory_participant_confirmed !== true) {
+    return { eligible: false, reason: 'mandatory_participant_confirmed is not explicitly true' };
+  }
+  if (elig.data_confidence !== 'confirmed') {
+    return { eligible: false, reason: `data_confidence is "${elig.data_confidence}", not "confirmed"` };
+  }
+  const names = (elig.confirmed_names || '').toLowerCase();
+  if (!names.trim()) {
+    return { eligible: false, reason: 'confirmed_names is empty despite claiming confirmation' };
+  }
+  for (const pattern of UNCERTAIN_NAME_PATTERNS) {
+    if (names.includes(pattern)) {
+      return { eligible: false, reason: `confirmed_names contains uncertainty language ("${pattern}") despite claiming confirmation` };
+    }
+  }
+  return { eligible: true, reason: null };
+}
+
+// Entity-consistency check: the direct fix for the confirmed second incident
+// (a rejected-alternative mention bled in a team/stat from a different,
+// unrelated game). Real team names for TODAY's full slate are known in
+// code (slim_games) — check that no pick's insight references a real team
+// from today's slate that isn't actually part of that pick's own game or
+// one of the other surviving picks (a legitimate same-day cross-reference).
+function checkEntityConsistency(pick, allSlimGames, allSurvivingPicks) {
+  const ownTeams = new Set(
+    (pick.game || '').split(/ @ | vs /i).map(t => t.trim().toLowerCase()).filter(Boolean)
+  );
+  const allowedTeams = new Set(ownTeams);
+  for (const other of allSurvivingPicks) {
+    if (other === pick) continue;
+    (other.game || '').split(/ @ | vs /i).forEach(t => allowedTeams.add(t.trim().toLowerCase()));
+  }
+
+  const insightLower = (pick.insight || '').toLowerCase();
+  for (const g of allSlimGames) {
+    const teamsInThisGame = (g.game || '').split(/ @ | vs /i).map(t => t.trim()).filter(Boolean);
+    for (const team of teamsInThisGame) {
+      const teamLower = team.toLowerCase();
+      if (allowedTeams.has(teamLower)) continue; // belongs to this pick or another surviving pick — fine
+      if (teamLower.length > 4 && insightLower.includes(teamLower)) {
+        return { consistent: false, reason: `Insight mentions "${team}", a real team from today's slate not part of this pick's own game or any other selected pick` };
+      }
+    }
+  }
+  return { consistent: true, reason: null };
+}
+
+// Infer a rough bet-type bucket from pick text, for the correlation cap —
+// same lightweight heuristic already used elsewhere in this pipeline.
+function inferBetTypeBucket(pickText) {
+  const t = (pickText || '').toLowerCase();
+  if (/\b(over|under)\b/.test(t)) return 'total';
+  if (/\bf5\b|first\s*5|1h\b|first\s*half/.test(t)) return 'alt_line';
+  if (/[+-]\d/.test(t)) return 'spread';
+  return 'moneyline';
+}
+
+// Dynamic selection: replaces "always take whatever the model returned" with
+// a fixed, code-enforced score threshold and a correlation cap. The model no
+// longer selects its own final 3 — every eligible, entity-consistent
+// candidate is scored, and code picks the final list. Publishing fewer than
+// 3 (even zero) is the correct outcome on a day the market doesn't offer it —
+// the threshold is never lowered to hit a count.
+function selectFinalPicks(candidates) {
+  const eligible = candidates
+    .filter(p => typeof p.score === 'number' && p.score >= MIN_SCORE_THRESHOLD)
+    .sort((a, b) => b.score - a.score);
+
+  const selected = [];
+  const bucketCounts = {};
+  for (const candidate of eligible) {
+    if (selected.length >= MAX_DAILY_PICKS) break;
+    const key = `${candidate.sport}::${inferBetTypeBucket(candidate.pick)}`;
+    const currentCount = bucketCounts[key] || 0;
+    if (currentCount >= MAX_SAME_SPORT_AND_TYPE) {
+      console.log(`CORRELATION_CAP: skipping "${candidate.pick}" (score ${candidate.score}) — already have ${currentCount} picks in ${key}`);
+      continue;
+    }
+    selected.push(candidate);
+    bucketCounts[key] = currentCount + 1;
+  }
+  return selected;
+}
+
 async function processPendingBatches() {
   const { data: pendingJobs, error: fetchErr } = await supabase
     .from('batch_jobs')
@@ -268,20 +384,70 @@ async function processPendingBatches() {
       // the ORIGINAL stored snapshot (slim_games from submission time) —
       // never trust a pick's "game" field just because the model said so.
       const realGameSet = new Set((job.slim_games || []).map(g => g.game));
-      const verifiedPicks = [];
+      const gameVerifiedPicks = [];
       for (const p of parsed.picks) {
         if (realGameSet.has(p.game)) {
-          verifiedPicks.push(p);
+          gameVerifiedPicks.push(p);
         } else {
           console.log(`HALLUCINATED_GAME_REJECTED: pick "${p.pick}" for game "${p.game}" does not exist in the original odds feed — discarding.`);
         }
       }
 
-      if (verifiedPicks.length === 0) {
+      if (gameVerifiedPicks.length === 0) {
         console.log(`All picks from batch ${job.anthropic_batch_id} failed game verification. Refusing to write anything.`);
         await supabase.from('batch_jobs').update({
           status: 'failed',
           notes: 'All picks failed game verification against original odds snapshot.',
+          completed_at: new Date().toISOString(),
+        }).eq('id', job.id);
+        continue;
+      }
+
+      // Eligibility gate — the direct code-level fix for the missing-starter
+      // incident. A candidate whose mandatory participant confirmation
+      // wasn't genuinely verified is disqualified here, unconditionally,
+      // regardless of how strong the rest of its case reads.
+      const eligiblePicks = [];
+      for (const p of gameVerifiedPicks) {
+        const { eligible, reason } = checkEligibility(p);
+        if (eligible) {
+          eligiblePicks.push(p);
+        } else {
+          console.log(`ELIGIBILITY_REJECTED: pick "${p.pick}" for "${p.game}" — ${reason}`);
+        }
+      }
+
+      if (eligiblePicks.length === 0) {
+        console.log(`All picks from batch ${job.anthropic_batch_id} failed the eligibility gate (no candidate had genuinely confirmed mandatory data). Refusing to write anything.`);
+        await supabase.from('batch_jobs').update({
+          status: 'failed',
+          notes: 'All picks failed eligibility gate (mandatory participant confirmation not verified).',
+          completed_at: new Date().toISOString(),
+        }).eq('id', job.id);
+        continue;
+      }
+
+      // Entity-consistency check — the direct fix for the confirmed
+      // stat-bleed incident (a name/stat from an unrelated game leaking
+      // into a different pick's text, including "alternatives considered").
+      // Checked against every eligible candidate as the "surviving picks"
+      // set, so legitimate same-day cross-references between candidates
+      // aren't falsely flagged.
+      const verifiedPicks = [];
+      for (const p of eligiblePicks) {
+        const { consistent, reason } = checkEntityConsistency(p, job.slim_games || [], eligiblePicks);
+        if (consistent) {
+          verifiedPicks.push(p);
+        } else {
+          console.log(`ENTITY_CONSISTENCY_REJECTED: pick "${p.pick}" for "${p.game}" — ${reason}`);
+        }
+      }
+
+      if (verifiedPicks.length === 0) {
+        console.log(`All picks from batch ${job.anthropic_batch_id} failed the entity-consistency check. Refusing to write anything.`);
+        await supabase.from('batch_jobs').update({
+          status: 'failed',
+          notes: 'All picks failed entity-consistency check (unrelated team/stat bleed detected).',
           completed_at: new Date().toISOString(),
         }).eq('id', job.id);
         continue;
@@ -322,7 +488,27 @@ async function processPendingBatches() {
         continue;
       }
 
-      const correctedPicks = finalPicks.map(p => normalizeSpreadSign(p, job.spread_lookup || {}));
+      // Dynamic selection — the model no longer picks its own final 3. Every
+      // eligible, entity-consistent, fresh candidate has an honest 1-10
+      // score; code applies a fixed threshold (never adjusted based on how
+      // many candidates happen to clear it) and a correlation cap, then
+      // takes up to MAX_DAILY_PICKS. Publishing fewer than 3 — including
+      // zero — is the correct, intended outcome on a day the market doesn't
+      // offer enough real edges, not a failure state.
+      const selectedPicks = selectFinalPicks(finalPicks);
+      console.log(`Dynamic selection: ${finalPicks.length} candidate(s) survived all gates, ${selectedPicks.length} cleared the score threshold (${MIN_SCORE_THRESHOLD}) and correlation cap.`);
+
+      if (selectedPicks.length === 0) {
+        console.log(`No candidates from batch ${job.anthropic_batch_id} cleared the minimum score threshold of ${MIN_SCORE_THRESHOLD}. This is a valid outcome — publishing zero picks rather than lowering the bar.`);
+        await supabase.from('batch_jobs').update({
+          status: 'completed',
+          notes: `No candidates cleared the ${MIN_SCORE_THRESHOLD} score threshold today. 0 picks published — this is expected behavior on a weak slate, not an error.`,
+          completed_at: new Date().toISOString(),
+        }).eq('id', job.id);
+        continue;
+      }
+
+      const correctedPicks = selectedPicks.map(p => normalizeSpreadSign(p, job.spread_lookup || {}));
 
       const rows = correctedPicks.map(p => ({
         date: job.date,

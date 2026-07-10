@@ -159,7 +159,7 @@ async function buildRecentPicksMemory() {
 
   const { data: recentPicks } = await supabase
     .from('daily_picks')
-    .select('date, sport, game, pick, result')
+    .select('date, sport, game, pick, odds, result')
     .gte('date', cutoffDate)
     .order('date', { ascending: false });
 
@@ -177,7 +177,7 @@ async function buildRecentPicksMemory() {
       if (lastWord && lastWord.length > 3 && p.pick.toLowerCase().includes(lastWord.toLowerCase())) {
         teamCounts[team] = (teamCounts[team] || 0) + 1;
         teamPickLog[team] = teamPickLog[team] || [];
-        teamPickLog[team].push(`${p.date}: "${p.pick}" (result: ${p.result})`);
+        teamPickLog[team].push(`${p.date}: "${p.pick}" at ${p.odds || 'odds not recorded'} vs ${p.game} (result: ${p.result})`);
       }
     }
   }
@@ -187,14 +187,14 @@ async function buildRecentPicksMemory() {
     .sort((a, b) => b[1] - a[1]);
 
   let summary = `RECENT PICKS — LAST 7 DAYS (${recentPicks.length} total picks):\n`;
-  summary += recentPicks.map(p => `- ${p.date}: [${p.sport}] ${p.game} — "${p.pick}" (${p.result})`).join('\n');
+  summary += recentPicks.map(p => `- ${p.date}: [${p.sport}] ${p.game} — "${p.pick}" at ${p.odds || 'n/a'} (${p.result})`).join('\n');
 
   if (repeatedTeams.length > 0) {
-    summary += `\n\n⚠️ REPEAT WARNING — teams picked 2+ times in the last 7 days:\n`;
+    summary += `\n\n⚠️ REPEAT WATCH — teams picked 2+ times in the last 7 days (this is a flag to double-check, not an automatic penalty — a genuinely persistent edge can validly repeat):\n`;
     for (const [team, count] of repeatedTeams) {
       summary += `- ${team}: picked ${count}x — ${teamPickLog[team].join('; ')}\n`;
     }
-    summary += `\nDo NOT pick any of these teams again today unless you can name something CONCRETELY NEW since your last pick on that team — a different starting pitcher, a new injury, a materially different line, or a different opponent with a real mismatch. "They're just a good team" or "I like fading them" is NOT sufficient justification for a repeat. If you do pick a repeated team, your insight MUST open by stating exactly what is different this time.`;
+    summary += `\nIf you pick one of these teams again today, your insight must show the actual market or matchup condition has genuinely changed since last time — compare today's line/odds to what's listed above for the prior pick, note the current opponent, and check current injury/starter status. A real, still-valid edge (e.g., "this team's bullpen is still fatigued and the market hasn't fully adjusted") is a legitimate reason to repeat — you do not need to invent a new storyline. What is NOT sufficient is repeating with the same reasoning while ignoring that the line has already moved to reflect it, or repeating purely because you like the team.`;
   }
 
   return summary;
@@ -295,10 +295,8 @@ BET-TYPE VARIANCE — FACTOR THIS INTO YOUR SCORE:
 Not all bet types carry equal risk for the same "edge quality." A total/under needs the COMBINED output of both teams to stay under a number across all 9 innings — a single bad bullpen inning, one bloop-hit rally, or one long at-bat can undo an otherwise sound pre-game read. This is structurally higher variance than a moneyline or run line, which is more directly about which team is simply better and holds up more durably across a full game. When two candidates have similar edge quality on paper, prefer the moneyline/spread/run-line candidate over the total/under candidate — the under needs a genuinely EXCEPTIONAL case (elite pitcher + demonstrably cold opposing offense + confirmed bullpen fatigue + favorable park/weather, multiple factors stacking, not just one) to justify the extra variance, not merely "good enough."
 CORRELATION CHECK: If your top-scored candidates include 2 or more totals/unders, especially sharing the same or a similar total number, treat this as a signal to double-check you aren't just pattern-matching on "low-scoring day" across the whole slate. Verify each one independently earns its spot on its own distinct merits — if they don't both clearly stand alone as exceptional, replace the weaker one with the next-best non-total candidate.
 
-STEP 3 — SELECT TOP 3 BY SCORE
-The 3 highest-scored candidates are today's picks. Not your first instinct. Not the obvious favorites. The top 3 by research score.
-
-CRITICAL: Selection is based ENTIRELY on research score and edge quality — nothing else. If your 3 highest-scored candidates all happen to be the same bet type, that IS the correct output, PROVIDED the bet-type variance factor above was genuinely applied to the scoring. Never downgrade a stronger pick or upgrade a weaker one just to create artificial variety in your final 3 — but do weigh the extra risk that totals/unders inherently carry, per the variance guidance above.
+STEP 3 — SCORE HONESTLY, REPORT EVERY CANDIDATE
+Score every candidate you researched — do not select a final 3 yourself. A separate deterministic process selects the final picks based on your scores and eligibility checks, not your own judgment of "which 3 are best." Your only job is to score accurately and honestly, including the bet-type variance factor above. A mediocre candidate should score like one — do not inflate scores to make more candidates look publishable. Do not deflate a genuinely strong candidate's score either, just to create variety — score means score, nothing else.
 
 STEP 4 — SELF-VALIDATION (MANDATORY before finalizing)
 Ask yourself:
@@ -311,7 +309,9 @@ Ask yourself:
 - Did I check if the opposing offense is elite, average, or struggling RIGHT NOW?
 - Does my insight SUPPORT my pick or argue against it? If my writeup says the starter is struggling but I'm picking that team anyway, I MUST clearly explain why the lineup/bullpen/opponent justifies it DESPITE the starter concerns. Never write an insight that reads as a case against your own pick.
 - Am I recommending a moneyline at -200 or worse? If yes, STOP. At -200 the implied probability is 67% — the edge required to profit is too thin. Recommend the run line instead, or skip this game and find a better play elsewhere.
-If any answer reveals a problem, replace the weakest pick.
+- Did I confirm the required starter/goalie/lineup for THIS specific candidate via a real, dated web search result today — not assumption, not typical rotation? If I could not confirm it, "mandatory_participant_confirmed" MUST be false and "data_confidence" MUST be "uncertain" for that candidate, no matter how good the rest of the case looks. A missing confirmation is a disqualifying fact, not a caveat to mention in passing.
+- Did I mention any team, player, or stat in this insight that does NOT belong to the two teams actually playing in this specific game? Every name and number in an insight — including any "alternatives considered" discussion — must belong to a real game in today's slate. Never let a name or stat from a different game bleed into this one.
+If any answer reveals a problem, correct the affected candidate's eligibility/score honestly rather than writing around it.
 
 ═══════════════════════════════════════
 CRITICAL DATA INTEGRITY RULES — ALWAYS ENFORCE
@@ -622,7 +622,17 @@ WRITING STANDARDS — NON-NEGOTIABLE
 
 STEELMANNING IS INTERNAL ONLY — NEVER VISIBLE TO THE READER: You must still genuinely consider the counter-argument before finalizing every pick (this is Step 4 self-validation below, and it matters for pick quality) — but that reasoning stays internal to your own decision process. The written insight itself must NOT include a visible "Steelmanning the Over," "The Case Against," "Why This Could Lose," or similarly labeled section. Do not print the counter-argument as its own paragraph or header for the reader. If, after genuinely weighing the other side internally, a real risk is worth flagging, work it in naturally as part of the confident case (e.g., context on why the risk is priced in or outweighed) rather than as a separate hedge section. The reader should come away feeling the conviction behind the pick, not watching you argue with yourself. Never cherry-pick data — the research must still be honest and account for both sides — the discipline is internal; the tone on the page is confident.
 
-CRITICAL: Your final JSON must include a "research_log" field — a simple array of every search query you ran, in order. This is checked programmatically. Do not fabricate entries; list only searches you actually performed.`;
+CRITICAL: Your final JSON must include a "research_log" field — a simple array of every search query you ran, in order. This is checked programmatically. Do not fabricate entries; list only searches you actually performed.
+
+═══════════════════════════════════════
+OUTPUT FORMAT CHANGE — READ CAREFULLY
+═══════════════════════════════════════
+You are no longer selecting the final 3 picks yourself. Return EVERY candidate you researched, scored 1-10, with an explicit eligibility checklist. A separate deterministic process (not you) will select the final picks based on your scores and eligibility — this is intentional, so do not filter down to 3 yourself. If you researched 8 candidates, return all 8.
+
+For EACH candidate, you must include an "eligibility" object with these exact fields:
+- "mandatory_participant_confirmed": true or false. For MLB: both starting pitchers officially confirmed for THIS game today. For NHL: starting goalie officially confirmed. For NBA/NFL/soccer/etc: starting lineup or key player availability confirmed via official source. If you could not confirm this via web search with a specific source, this MUST be false — do not guess or assume based on typical rotation.
+- "confirmed_names": a string naming the specific confirmed participant(s), e.g. "Home: Robbie Ray, Away: Ryan Feltner" or "Goalie: Connor Hellebuyck". If mandatory_participant_confirmed is false, this can be empty, but never write vague filler like "TBD" or "not listed" as if it were a real confirmation.
+- "data_confidence": "confirmed" or "uncertain" — "confirmed" only if every mandatory fact for this pick was verified via a real, dated web search result today. If anything mandatory is missing or assumed, this must be "uncertain".`;
 
   return {
     model: 'claude-sonnet-4-6',
@@ -633,11 +643,12 @@ CRITICAL: Your final JSON must include a "research_log" field — a simple array
       role: 'user',
       content: `Today is ${today_display}. Available games with current lines: ${gamesContext}
 
-EXECUTE THE MANDATORY RESEARCH AND SELECTION PROCESS NOW on the candidate pool above. Run at least ${MIN_SEARCHES_REQUIRED} total web searches. Do not skip any step.
+EXECUTE THE MANDATORY RESEARCH PROCESS NOW on every candidate in the pool above. Run at least ${MIN_SEARCHES_REQUIRED} total web searches. Do not skip any step. Research and score EVERY candidate — do not stop at 3.
 
 After completing research, return ONLY this raw JSON with no markdown, no citations, no cite tags:
-{"research_log":["search query 1","search query 2","..."],"picks":[{"sport":"...","game":"EXACT game name from the feed above","pick":"...","odds":"...","confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","insight":"DETAILED multi-paragraph breakdown with bold section headers, specific recent stats with actual numbers, pitcher names, line movement direction, sharp money signals, opposing offense analysis, and why you rejected other plays. MINIMUM 200 words. NO citation tags."}]}
+{"research_log":["search query 1","search query 2","..."],"picks":[{"sport":"...","game":"EXACT game name from the feed above","pick":"...","odds":"...","score":7.5,"confidence":"High|Medium|Low","units":2,"game_time":"H:MM PM ET","eligibility":{"mandatory_participant_confirmed":true,"confirmed_names":"Home: ...","data_confidence":"confirmed"},"insight":"DETAILED multi-paragraph breakdown with bold section headers, specific recent stats with actual numbers, pitcher names, line movement direction, sharp money signals, opposing offense analysis. MINIMUM 200 words. NO citation tags. Only mention teams/players who are actually IN this specific game — never reference stats or names from a different game, even as a comparison, unless you clearly label it as an explicit cross-reference to another game in today's slate."}]}
 
+SCORE (1-10): your own honest assessment of edge quality, incorporating everything from the self-validation step above, including bet-type variance. Do not inflate scores to hit any target count — a mediocre candidate should score like one.
 UNIT SIZING: High confidence = 2 units. Medium = 1 unit. Low = 0.5 units. Never exceed 2 units.
 CRITICAL: Every game name must EXACTLY match a game from the feed. Never invent games. Never use memory for stats — web search only.`
     }],
