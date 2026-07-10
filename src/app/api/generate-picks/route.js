@@ -856,9 +856,23 @@ async function generatePicks() {
     .map(g => new Date(g.time))
     .filter(d => !isNaN(d.getTime()))
     .sort((a, b) => a - b)[0];
-  const deadlineAt = earliestGameTime
+  let deadlineAt = earliestGameTime
     ? new Date(earliestGameTime.getTime() - 2 * 60 * 60 * 1000)
     : new Date(Date.now() + 4 * 60 * 60 * 1000);
+
+  // SAFETY FLOOR — caught during manual testing: if generation is ever
+  // triggered later than usual (a manual test, a retried cron run, etc.),
+  // the earliest game's "T-minus 2 hours" point may have already passed
+  // by the time the batch is actually submitted. Without this floor, the
+  // batch would be born already past its own deadline and get cancelled
+  // by the very next poll, regardless of whether the research itself was
+  // ever too slow. Guarantee at least 30 minutes of real runway from
+  // submission time, no matter what the game-time math produces.
+  const minimumDeadline = new Date(Date.now() + 30 * 60 * 1000);
+  if (deadlineAt < minimumDeadline) {
+    console.log(`Computed deadline (${deadlineAt.toISOString()}) was already at or before now — this run was likely triggered later than the game's normal T-minus-2hr window. Using a 30-minute safety floor instead: ${minimumDeadline.toISOString()}`);
+    deadlineAt = minimumDeadline;
+  }
 
   const { error: insertError } = await supabase.from('batch_jobs').insert({
     date: today,
