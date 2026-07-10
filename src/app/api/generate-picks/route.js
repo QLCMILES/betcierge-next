@@ -636,7 +636,7 @@ For EACH candidate, you must include an "eligibility" object with these exact fi
 
   return {
     model: 'claude-sonnet-4-6',
-    max_tokens: 8000,
+    max_tokens: 16000, // raised from 8000 — the new schema requires a score, eligibility object, and full insight for EVERY researched candidate (8-10), not just 3, which meaningfully increases required output length
     tools: [{ type: 'web_search_20250305', name: 'web_search' }],
     system,
     messages: [{

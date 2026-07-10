@@ -57,7 +57,28 @@ function cleanJson(text) {
     .trim();
   const jsonMatch = clean.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON found in batch result: ' + text.slice(0, 300));
-  return JSON.parse(jsonMatch[0]);
+
+  try {
+    return JSON.parse(jsonMatch[0]);
+  } catch (parseErr) {
+    // CRITICAL: without this, a JSON parse failure only ever surfaces a
+    // generic message like "Expected ',' or '}' at position X" with zero
+    // visibility into what the model actually returned — undiagnosable in
+    // production. Extract the position from the error and log real
+    // surrounding context, plus the total length, so a future failure is
+    // actually debuggable instead of a guess.
+    const posMatch = parseErr.message.match(/position (\d+)/);
+    const pos = posMatch ? parseInt(posMatch[1], 10) : null;
+    console.log(`JSON_PARSE_FAILED: ${parseErr.message}. Total matched length: ${jsonMatch[0].length} chars.`);
+    if (pos !== null) {
+      const start = Math.max(0, pos - 200);
+      const end = Math.min(jsonMatch[0].length, pos + 200);
+      console.log(`JSON_PARSE_FAILED context around position ${pos}:\n...${jsonMatch[0].slice(start, end)}...`);
+    } else {
+      console.log(`JSON_PARSE_FAILED — no position in error, logging first/last 500 chars:\nSTART: ${jsonMatch[0].slice(0, 500)}\nEND: ${jsonMatch[0].slice(-500)}`);
+    }
+    throw parseErr;
+  }
 }
 
 // Same spread-sign correction used in generate-picks, applied here against
