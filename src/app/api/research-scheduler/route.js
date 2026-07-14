@@ -213,6 +213,21 @@ async function submitNewResearch(today) {
 
   for (const candidate of candidates) {
     try {
+      // Deadline check FIRST, before spending anything \u2014 if the
+      // confirmation deadline has already passed, this candidate can
+      // never be confirmed and published in time regardless of how good
+      // the research turns out. Submitting anyway would be a wasted,
+      // real-money Anthropic API call on something already dead.
+      if (candidate.confirmation_deadline_at && new Date(candidate.confirmation_deadline_at) < new Date()) {
+        console.log(`ALREADY_EXPIRED_AT_SUBMIT: "${candidate.game}" \u2014 confirmation deadline already passed before research was even submitted \u2014 skipping entirely, not spending a research call.`);
+        await supabase.from('game_candidates').update({
+          research_status: 'discarded_stale',
+          status: 'expired_unconfirmed',
+          notes: 'Confirmation deadline had already passed by the time the research scheduler reached this candidate \u2014 never submitted.',
+        }).eq('id', candidate.id);
+        continue;
+      }
+
       // Pre-flight freshness check \u2014 cheap, no Claude call. Skip
       // spending a Stage 2 research call on a candidate that's already
       // gone stale since this morning (Stage 1 pool decay fix).

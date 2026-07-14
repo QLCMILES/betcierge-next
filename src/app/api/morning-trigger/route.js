@@ -293,8 +293,14 @@ async function generateMorningTrigger() {
   const oddsRes = await fetch('https://betcierge-next.vercel.app/api/odds', { method: 'POST' });
   const oddsData = await oddsRes.json();
   const now = new Date();
+  // Lookahead window widened to 24 hours (was 14). Stage 1 has no
+  // staleness downside \u2014 it doesn't need fresh confirmed lineups the
+  // way Stage 2 does, just current lines to pick candidates from. This
+  // lets a single early run (see intended 3 AM ET cron) still catch the
+  // WHOLE day's slate \u2014 early Wednesday MLB matinees AND evening
+  // primetime games alike \u2014 without needing a second run per day.
   const cutoff = new Date(now.getTime() + 15 * 60 * 1000);
-  const upperBound = new Date(now.getTime() + 14 * 60 * 60 * 1000);
+  const upperBound = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
   const slimGames = (oddsData.games || [])
     .filter(g => new Date(g.commence_time) > cutoff && new Date(g.commence_time) < upperBound)
@@ -401,6 +407,10 @@ async function generateMorningTrigger() {
       sport: c.sport,
       game: c.game,
       game_time: gameTime.toISOString(),
+      sport_key: matchedGame.sport_key || null,
+      original_moneyline: matchedGame.moneyline || null,
+      original_spread: matchedGame.spread || null,
+      original_total: matchedGame.total || null,
       research_trigger_at: timing.research_trigger_at.toISOString(),
       confirmation_deadline_at: timing.confirmation_deadline_at.toISOString(),
       publish_deadline_at: timing.publish_deadline_at.toISOString(),
