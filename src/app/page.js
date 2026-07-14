@@ -1274,7 +1274,7 @@ function PicksTab({ userKey, user, session, onNav }) {
 
       {lastUpdated && (
         <div style={{ color: "#555", fontSize: 12, marginBottom: 14 }}>
-          Generated at 11 AM · {new Date(lastUpdated).toLocaleDateString()}
+          Updated {new Date(lastUpdated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })} ET · {new Date(lastUpdated).toLocaleDateString()}
         </div>
       )}
 
@@ -1289,8 +1289,8 @@ function PicksTab({ userKey, user, session, onNav }) {
       {!loading && picks.length === 0 && (
         <div style={{ textAlign: "center", padding: 40 }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🕐</div>
-          <div style={{ color: "#fff", fontSize: 16, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginBottom: 8 }}>Picks drop at 11 AM ET</div>
-          <div style={{ color: "#555", fontSize: 13 }}>Hunter researches every morning and posts his top plays for the day.</div>
+          <div style={{ color: "#fff", fontSize: 16, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginBottom: 8 }}>Still hunting</div>
+          <div style={{ color: "#555", fontSize: 13 }}>Lineups aren't locked yet — Hunter won't call a play until they are.</div>
         </div>
       )}
 
