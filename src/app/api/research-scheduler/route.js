@@ -283,7 +283,6 @@ async function pollSubmittedResearch(today) {
   const { data: submitted, error } = await supabase
     .from('game_candidates')
     .select('*')
-    .eq('date', today)
     .eq('research_status', 'research_submitted');
 
   if (error) throw error;
