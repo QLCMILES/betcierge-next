@@ -104,13 +104,10 @@ function buildSportsNeeded(items) {
     const key = normalizeSport(sport);
     if (key) {
       needed.add(key);
-      // If it's any soccer key, always pull ALL soccer leagues —
-      // World Cup / MLS / etc. are separate endpoints
       if (isSoccerKey(key)) {
         getAllSoccerLeagues().forEach(l => needed.add(l));
       }
     }
-    // Explicit fallback: if sport string has any soccer signal, add all leagues
     if (
       sport.includes('soccer') || sport.includes('world cup') || sport.includes('fifa') ||
       sport.includes('mls') || sport.includes('epl') || sport.includes('bundesliga') ||
@@ -129,8 +126,11 @@ function buildSportsNeeded(items) {
 function inferBetType(pick) {
   if (!pick) return 'moneyline';
   const p = pick.toLowerCase();
-  // Combo pick (e.g. "France to Win & Over 2.5 Goals")
+  // Combo pick (e.g. "France to Win & Over 2.5 Goals") — checked first so a
+  // combo leg containing BTTS still splits and re-classifies correctly.
   if (p.includes(' & ') || p.includes(' and ')) return 'combo';
+  // Both Teams to Score
+  if (p.includes('both teams to score') || p.includes('btts')) return 'btts';
   // Game total
   if ((p.includes('over') || p.includes('under')) &&
       p.match(/\d+\.?\d*/)) return 'total';
@@ -147,16 +147,13 @@ function inferBetType(pick) {
 function findScoreForTeam(game, teamName) {
   if (!game.scores || !teamName) return null;
   const target = teamName.toLowerCase().trim();
-  // Try exact match first
   let match = game.scores.find(s => s.name?.toLowerCase().trim() === target);
   if (match) return parseInt(match.score);
-  // Try if one contains the other
   match = game.scores.find(s => {
     const n = s.name?.toLowerCase().trim() || '';
     return n.includes(target) || target.includes(n);
   });
   if (match) return parseInt(match.score);
-  // Try word-level match (last meaningful word)
   const targetWords = target.split(' ').filter(w => w.length > 3);
   match = game.scores.find(s => {
     const scoreWords = (s.name?.toLowerCase() || '').split(' ');
@@ -178,11 +175,8 @@ function findMatchingGame(bet, scores) {
       ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
       : null;
     const dateMatch = !betDate || !gameDate || gameDate === betDate;
-
-    // Must match date
     if (!dateMatch) return false;
 
-    // Team name matching — try progressively looser
     const exactMatch = betGame.includes(home) || betGame.includes(away);
     if (exactMatch) return true;
 
@@ -202,7 +196,6 @@ function determineResult(bet, game) {
   const homeScore = findScoreForTeam(game, game.home_team);
   const awayScore = findScoreForTeam(game, game.away_team);
 
-  // FIX: if either score is missing/NaN, return null — never return a wrong result
   if (homeScore === null || awayScore === null || isNaN(homeScore) || isNaN(awayScore)) {
     console.warn(`[settle] Score lookup failed for game ${game.id}: home=${homeScore} away=${awayScore}`);
     return null;
@@ -227,12 +220,21 @@ function determineResult(bet, game) {
     const spreadMatch = pick.match(/([+-]?\d+\.?\d*)/);
     if (!spreadMatch) return null;
     const spread = parseFloat(spreadMatch[1]);
-    // FIX: use fuzzy team name check, not just last word
     const homeWords = game.home_team.toLowerCase().split(' ').filter(w => w.length > 3);
     const pickedHome = homeWords.some(w => pick.includes(w));
     const diff = pickedHome ? homeScore - awayScore : awayScore - homeScore;
     if (diff + spread === 0) return 'Push';
     return diff + spread > 0 ? 'Win' : 'Loss';
+  }
+
+  // ── Both Teams to Score ──
+  // Binary: did each team score at least once. No push scenario — either
+  // both scored or they didn't. Direction defaults to "Yes" unless the
+  // pick text explicitly says "No".
+  if (betType === 'btts') {
+    const isNo = /\bno\b/.test(pick);
+    const bothScored = homeScore > 0 && awayScore > 0;
+    return isNo ? (bothScored ? 'Loss' : 'Win') : (bothScored ? 'Win' : 'Loss');
   }
 
   // ── Moneyline ──
@@ -253,10 +255,8 @@ function determineResult(bet, game) {
 
 // ─── COMBO PICK SETTLEMENT ───────────────────────────────────
 // FIX 4: Handles "France to Win & Over 2.5 Goals" style picks
-// All legs must win for the combo to win. One loss = Loss.
 
 async function settleComboPick(pick, game, scores) {
-  // Split on " & " or " and "
   const parts = pick.pick.toLowerCase().split(/\s+&\s+|\s+and\s+/);
   if (parts.length < 2) return null;
 
@@ -268,7 +268,7 @@ async function settleComboPick(pick, game, scores) {
   for (const part of parts) {
     const partBet = { ...pick, pick: part.trim(), bet_type: inferBetType(part.trim()) };
     const result = determineResult(partBet, match);
-    if (result === null) return null; // Can't settle yet
+    if (result === null) return null;
     results.push(result);
   }
 
@@ -918,12 +918,10 @@ async function settleDailyPicks() {
 
   if (error || !pendingPicks?.length) return { settled: 0, log: [] };
 
-  // FIX 2: Use buildSportsNeeded() — single source of truth, no dual systems
   const picksNeeded = buildSportsNeeded(pendingPicks.map(p => ({ sport: p.sport })));
 
   const apiKey = process.env.ODDS_API_KEY;
 
-  // FIX 1: daysFrom=2 — 48hr window ensures evening West Coast games are always included
   const picksScoresResults = await Promise.all(
     [...picksNeeded].map(s =>
       fetch(`https://api.the-odds-api.com/v4/sports/${s}/scores/?apiKey=${apiKey}&daysFrom=2&dateFormat=iso`)
@@ -939,9 +937,8 @@ async function settleDailyPicks() {
   for (const pick of pendingPicks) {
     const pickLower = pick.pick?.toLowerCase() || '';
     const sport = pick.sport?.toLowerCase() || '';
-    const betType = inferBetType(pick.pick); // FIX: use centralized inferBetType
+    const betType = inferBetType(pick.pick);
 
-    // Build a bet-like object with consistent shape
     const betLike = {
       game: pick.game,
       pick: pick.pick,
@@ -954,24 +951,20 @@ async function settleDailyPicks() {
 
     let result = null;
 
-    // ── Combo pick (e.g. "France to Win & Over 2.5 Goals") ──
     if (betType === 'combo') {
       result = await settleComboPick(betLike, pick.game, allScores);
       log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'combo', result });
     }
-    // ── Team total ──
     else if (pickLower.includes('team total')) {
       result = await settleTeamTotal(betLike);
       log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'team_total', result });
     }
-    // ── F5 / 1H MLB ──
     else if (pickLower.includes('first 5') || pickLower.includes('f5') || pickLower.includes('1h ml')) {
       if (sport.includes('mlb') || sport.includes('baseball')) {
         result = await settleMLBF5(betLike);
         log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'espn_f5', result });
       }
     }
-    // ── Props ──
     else if (
       pickLower.match(/\b(over|under)\b/) &&
       (pickLower.includes('strikeout') || pickLower.includes('point') || pickLower.includes('rebound') ||
@@ -984,22 +977,19 @@ async function settleDailyPicks() {
       else if (sport.includes('nfl') || sport.includes('football')) result = await settleNFLProp(betLike);
       log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'prop', result });
     }
-    // ── Standard game bets (moneyline, spread, total) ──
-else {
-  const match = findMatchingGame(betLike, allScores);
-  if (match) {
-    result = determineResult(betLike, match);
-    log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'odds_api', result });
-  } else if (sport.includes('mlb') || sport.includes('baseball')) {
-    // Fallback: use MLB Stats API directly for MLB games not found in Odds API
-    result = await settleMLBViaStatsAPI(betLike);
-    log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'mlb_stats_fallback', result });
-  } else {
-    log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'odds_api', result: 'NO_MATCH' });
-  }
-}
+    else {
+      const match = findMatchingGame(betLike, allScores);
+      if (match) {
+        result = determineResult(betLike, match);
+        log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'odds_api', result });
+      } else if (sport.includes('mlb') || sport.includes('baseball')) {
+        result = await settleMLBViaStatsAPI(betLike);
+        log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'mlb_stats_fallback', result });
+      } else {
+        log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'odds_api', result: 'NO_MATCH' });
+      }
+    }
 
-    // Only write to DB if we got a real result — never write null
     if (result !== null) {
       await supabase
         .from('daily_picks')
@@ -1029,15 +1019,12 @@ export async function GET(request) {
 
     if (fetchError) throw fetchError;
     if (!pendingBets || pendingBets.length === 0) {
-      // Still settle daily picks even if no user bets pending
       const { settled: picksSettled, log: picksLog } = await settleDailyPicks();
       return Response.json({ message: 'No pending user bets', picksSettled, picksLog });
     }
 
-    // FIX 2: Use buildSportsNeeded() for user bets too
     const sportsNeeded = buildSportsNeeded(pendingBets.map(b => ({ sport: b.sport })));
 
-    // Also add sports from pending parlay legs
     const { data: pendingParlays } = await supabase
       .from('parlays')
       .select('*, parlay_legs(*)')
@@ -1050,7 +1037,6 @@ export async function GET(request) {
     }
 
     const apiKey = process.env.ODDS_API_KEY;
-    // FIX 1: daysFrom=3 for user bets (same as before — they can be old)
     const scoresResults = await Promise.all(
       [...sportsNeeded].map(s =>
         fetch(`https://api.the-odds-api.com/v4/sports/${s}/scores/?apiKey=${apiKey}&daysFrom=3&dateFormat=iso`)
@@ -1064,7 +1050,7 @@ export async function GET(request) {
     const settlementLog = [];
 
     for (const bet of pendingBets) {
-      const betType = inferBetType(bet.pick); // FIX: centralized
+      const betType = inferBetType(bet.pick);
       const sport = bet.sport?.toLowerCase() || '';
       const pick = bet.pick?.toLowerCase() || '';
       let result = null;
@@ -1094,7 +1080,6 @@ export async function GET(request) {
         }
       }
 
-      // FIX: only write to DB if result is non-null
       if (!result) continue;
 
       await supabase
