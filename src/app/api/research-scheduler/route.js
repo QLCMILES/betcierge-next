@@ -367,7 +367,14 @@ async function pollSubmittedResearch(today) {
       // ── Gate 2: eligibility ───────────────────────────────────────
       const elig = pick.eligibility || {};
       const vaguePattern = /\b(TBD|tbd|likely starter|probable|unconfirmed|not yet announced)\b/i;
-      const namesLookVague = (elig.confirmed_names || []).some(n => vaguePattern.test(n));
+      // "MLB.com probable pitchers page" is the literal, official name of
+      // MLB's own pitcher-confirmation source (same terminology as the
+      // hydrate=probablePitcher API parameter used elsewhere in this
+      // codebase) — citing it is a legitimate confirmation, not uncertainty.
+      // Strip that known-safe phrase before checking for actual vague
+      // language, so citing the correct source doesn't get punished.
+      const stripKnownSafePhrases = (text) => (text || '').replace(/MLB\.com probable pitchers? page/gi, '');
+      const namesLookVague = (elig.confirmed_names || []).some(n => vaguePattern.test(stripKnownSafePhrases(n)));
       if (elig.mandatory_participant_confirmed !== true || namesLookVague || !elig.confirmed_names || elig.confirmed_names.length === 0) {
         console.log(`ELIGIBILITY_FAILED: "${candidate.game}" \u2014 mandatory_participant_confirmed=${elig.mandatory_participant_confirmed}, names=${JSON.stringify(elig.confirmed_names)}`);
         await supabase.from('game_candidates').update({
