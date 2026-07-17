@@ -406,6 +406,7 @@ async function generateMorningTrigger() {
       date: today,
       sport: c.sport,
       game: c.game,
+      bet_type: c.bet_type || null,
       game_time: gameTime.toISOString(),
       sport_key: matchedGame.sport_key || null,
       original_moneyline: matchedGame.moneyline || null,
