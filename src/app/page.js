@@ -1719,6 +1719,75 @@ function TodayCard({ bets, onNav }) {
   );
 }
 
+// Tries to match a manually-typed bet to a real game, so it can get a
+// gameId and show a live score in Gamecast — mirrors what Snap to Log
+// already does. Manual entries have no photo to extract a precise ticket
+// timestamp from, so "now" (the moment of logging) stands in for that.
+//
+// Three steps, each only tried if the previous one comes up empty:
+// 1. Strict pregame match (/api/odds) — same .every() logic Snap to Log
+//    already uses, safest, no false positives.
+// 2. Loose pregame match (/api/odds) — .some() instead of .every(), for
+//    abbreviated manual entries (e.g. "angels" vs "Los Angeles Angels")
+//    the strict match would miss. Sport+date filters still apply, keeping
+//    false-positive risk narrow.
+// 3. Live/in-progress match (/api/live-scores-lookup) — /api/odds only
+//    carries upcoming pregame lines, so an already-started game (tonight's
+//    real test case) needs this separate endpoint, the same one Snap to
+//    Log's live-bet path already relies on. NOTE: this endpoint's own
+//    matching is strict-only (.every()) — that's shared code Snap to Log
+//    depends on, so it isn't loosened here without a separate decision (see
+//    note below). A manual live bet with a heavily abbreviated name can
+//    still legitimately come up empty at this step.
+const SPORT_KEY_MAP = { 'MLB': 'baseball_mlb', 'NBA': 'basketball_nba', 'NFL': 'americanfootball_nfl', 'NHL': 'icehockey_nhl', 'UFC/MMA': 'mma_mixed_martial_arts', 'NCAAB': 'basketball_ncaab', 'NCAAF': 'americanfootball_ncaaf' };
+
+async function tryMatchGameId(game, sport, gameDate) {
+  const parsedSportKey = SPORT_KEY_MAP[sport] || null;
+  const gameLower = (game || '').toLowerCase();
+
+  try {
+    const oddsRes = await fetch('/api/odds', { method: 'POST' });
+    const oddsData = await oddsRes.json();
+    if (oddsData.games) {
+      const candidates = oddsData.games.filter(g => {
+        const gDate = g.commence_time ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) : null;
+        if (parsedSportKey && g.sport_key && g.sport_key !== parsedSportKey) return false;
+        if (gameDate && gDate && gDate !== gameDate) return false;
+        return true;
+      });
+      let match = candidates.find(g => {
+        const home = g.home_team.toLowerCase();
+        const away = g.away_team.toLowerCase();
+        const homeMatch = home.split(' ').filter(w => w.length > 3).every(w => gameLower.includes(w));
+        const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => gameLower.includes(w));
+        return homeMatch || awayMatch;
+      });
+      if (!match) {
+        match = candidates.find(g => {
+          const home = g.home_team.toLowerCase();
+          const away = g.away_team.toLowerCase();
+          const homeMatch = home.split(' ').filter(w => w.length > 3).some(w => gameLower.includes(w));
+          const awayMatch = away.split(' ').filter(w => w.length > 3).some(w => gameLower.includes(w));
+          return homeMatch || awayMatch;
+        });
+      }
+      if (match) return match.id;
+    }
+  } catch (e) {}
+
+  if (parsedSportKey) {
+    try {
+      const nowIso = new Date().toISOString();
+      const liveRes = await fetch(`/api/live-scores-lookup?sport=${parsedSportKey}&game=${encodeURIComponent(gameLower)}&ticket_time=${encodeURIComponent(nowIso)}`);
+      if (liveRes.ok) {
+        const liveData = await liveRes.json();
+        if (liveData.game_id) return liveData.game_id;
+      }
+    } catch (e) {}
+  }
+
+  return null;
+}
 // ── Bet Logger ─────────────────────────────────────────────────────────────
 function BetLogger({ onSave, onNav }) {
   const [mode, setMode] = useState("choose");
@@ -1775,11 +1844,14 @@ function BetLogger({ onSave, onNav }) {
     return Object.keys(e).length === 0;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!validate()) return;
     const finalOdds = isParlay ? parlayOdds() : odds;
     const finalPick = isParlay ? legs.map(l => l.pick).join(" + ") : needsLine ? `${pick} ${line}` : pick;
-    onSave({ sport, game, betType, pick: finalPick, odds: finalOdds, amount: parseFloat(amount), type: category, result: "Pending", profit: 0, isToday: true, id: Date.now(), gameDate, gameTime });
+    // Parlays aren't matched — the manual parlay form only captures a
+    // pick/odds string per leg, no game/sport/date fields to match against.
+    const matchedGameId = isParlay ? null : await tryMatchGameId(game, sport, gameDate);
+    onSave({ sport, game, betType, pick: finalPick, odds: finalOdds, amount: parseFloat(amount), type: category, result: "Pending", profit: 0, isToday: true, id: Date.now(), gameDate, gameTime, gameId: matchedGameId });
     setSaved(true);
     setTimeout(() => { setSaved(false); setGame(""); setPick(""); setLine(""); setOdds(""); setAmount(""); setLegs([{ pick: "", odds: "" }, { pick: "", odds: "" }]); setErrors({}); setMode("choose"); }, 1500);
   };
