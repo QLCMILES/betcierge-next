@@ -1885,9 +1885,9 @@ function Gamecast({ bets, parlays = [], onNav }) {
   const [lastUpdated, setLastUpdated] = useState(null);
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-  const activeBets = bets.filter(b => !b.isParlay && b.gameDate === today && b.gameId);
+  const activeBets = bets.filter(b => !b.isParlay && b.gameDate === today);
   const parlayGameIds = bets.filter(b => b.isParlay && b.gameDate === today).flatMap(p => (p.legs || []).map(l => l.gameId).filter(Boolean));
-  const gameIds = [...new Set([...activeBets.map(b => b.gameId), ...parlayGameIds])];
+  const gameIds = [...new Set([...activeBets.map(b => b.gameId).filter(Boolean), ...parlayGameIds])];
 
   const fetchScores = async () => {
     if (!gameIds.length) { setLoading(false); return; }
@@ -1995,6 +1995,35 @@ function Gamecast({ bets, parlays = [], onNav }) {
               <div style={{ borderTop: '1px solid #1e1e2e', marginTop: 8, paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ color: '#555', fontSize: 12 }}>{oddsDisplay} · <span style={{ color: '#fff' }}>${parlay.amount}</span> to win</div>
                 <div style={{ color: '#f5a623', fontSize: 16, fontWeight: 700, fontFamily: "'Cormorant Garamond',serif" }}>${parlay.toWin}</div>
+              </div>
+            </div>
+          );
+        })}
+        {/* Bets with no matched game (e.g. manually logged bets — manual entry
+            never attempts an odds-feed match at all, unlike Snap to Log) still
+            deserve to show up here, just without a live score to display. */}
+        {activeBets.filter(b => !b.gameId && !b.isParlayLeg).map(bet => {
+          const oddsDisplay = String(bet.odds).startsWith('+') ? String(bet.odds) : Number(bet.odds) > 0 ? `+${bet.odds}` : `${bet.odds}`;
+          const toWin = bet.toWin || (bet.odds > 0 ? (bet.amount * bet.odds / 100).toFixed(2) : (bet.amount * 100 / Math.abs(bet.odds)).toFixed(2));
+          return (
+            <div key={bet.id} style={{ ...S.card, marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <span style={{ fontSize: 20 }}>{getSportEmoji(bet.sport)}</span>
+                <span style={{ color: '#f5a623', fontSize: 11, fontWeight: 700, letterSpacing: 1 }}>PENDING</span>
+              </div>
+              <div style={{ background: '#0f0f18', borderRadius: 12, padding: '14px 16px', marginBottom: 16, textAlign: 'center' }}>
+                <div style={{ color: '#fff', fontSize: 14, fontWeight: 600 }}>{bet.game}</div>
+                <div style={{ color: '#555', fontSize: 12, marginTop: 4 }}>{bet.gameTime || 'Time TBD'}</div>
+              </div>
+              <div style={{ color: '#666', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Your Bets</div>
+              <div style={{ background: '#0a0a0f', borderRadius: 10, padding: '10px 12px', border: `1px solid ${bet.result === 'Win' ? '#2ecc7130' : bet.result === 'Loss' ? '#e74c3c30' : '#1e1e2e'}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>{bet.pick}</div>
+                  <div style={{ color: bet.result === 'Win' ? '#2ecc71' : bet.result === 'Loss' ? '#e74c3c' : '#f5a623', fontSize: 11, fontWeight: 700 }}>
+                    {bet.result === 'Win' ? '✓ WIN' : bet.result === 'Loss' ? '✗ LOSS' : 'PENDING'}
+                  </div>
+                </div>
+                <div style={{ color: '#555', fontSize: 11, marginTop: 4 }}>{bet.betType} · {oddsDisplay} · ${bet.amount} to win ${toWin}</div>
               </div>
             </div>
           );
