@@ -22,6 +22,32 @@ const DAILY_OFFICIAL_CAP = 3;
 const CORRELATION_CAP_PER_SPORT_BETTYPE = 2;
 const ELITE_OVERRIDE_THRESHOLD = 8.5; // a pick this strong publishes even if the daily cap is already full — "too good not to put out." Does NOT override the correlation cap, which is a risk-concentration guard, not a quality gate.
 
+// Same logic as settle-bets.js's inferBetType() — deriving from the ACTUAL
+// final pick text, not the Stage 1 label. Stage 1's bet_type is a guess
+// made before real research; Stage 2 can (correctly) land on a completely
+// different bet type once the research is done (e.g. "moneyline" candidate
+// becomes a run line pick). Using the stale label here would feed wrong
+// data into the correlation cap, which reads this exact field.
+//
+// Stage 2 sometimes embeds odds directly in the pick text (e.g. "Giants ML
+// +120") and sometimes doesn't (e.g. "Chicago Cubs ML") — inconsistent
+// output, not something to special-case. Strip the known odds value out
+// first if present, so an embedded "+120" doesn't get misread as a spread
+// number and misclassify a moneyline pick as a runline.
+function inferBetTypeFromPickText(pickText, oddsText) {
+  if (!pickText) return 'unknown';
+  let p = pickText.toLowerCase();
+  if (oddsText) {
+    p = p.split(oddsText.toLowerCase().trim()).join('');
+  }
+  if (p.includes(' & ') || p.includes(' and ')) return 'combo';
+  if (p.includes('both teams to score') || p.includes('btts')) return 'btts';
+  if ((p.includes('over') || p.includes('under')) && p.match(/\d+\.?\d*/)) return 'total';
+  if (p.match(/[+-]\d+\.?\d+/) && !p.match(/^[+-]\d{3,}$/)) return 'runline';
+  if (p.includes(' ml') || p.endsWith(' ml') || p.includes('moneyline')) return 'moneyline';
+  return 'moneyline';
+}
+
 function parseOddsString(str) {
   const out = {};
   if (!str) return out;
@@ -242,7 +268,9 @@ async function finalizePicks() {
       }
 
       const pick = candidate.research_log || {};
-      const betType = candidate.bet_type || 'unknown';
+      // Derive from the ACTUAL final pick text, not candidate.bet_type (the
+      // stale Stage 1 guess) — see inferBetTypeFromPickText() above for why.
+      const betType = inferBetTypeFromPickText(pick.pick, pick.odds) || candidate.bet_type || 'unknown';
 
       if (score < LEAN_SCORE_FLOOR) {
         console.log(`FINAL_BELOW_LEAN_FLOOR: "${candidate.game}" scored ${score}, below ${LEAN_SCORE_FLOOR} \u2014 not shown anywhere.`);
