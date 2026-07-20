@@ -1325,7 +1325,7 @@ function PicksTab({ userKey, user, session, onNav }) {
       )}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, background: '#0f0f18', borderRadius: 12, padding: 4 }}>
-        <button onClick={() => setPicksView('official')} style={{ flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 9, border: 'none', cursor: 'pointer', background: picksView === 'official' ? '#1a1a2e' : 'transparent', color: picksView === 'official' ? '#fff' : '#888', fontSize: 13, fontWeight: 500 }}>Official</button>
+        <button onClick={() => setPicksView('official')} style={{ flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 9, border: 'none', cursor: 'pointer', background: picksView === 'official' ? '#1a1a2e' : 'transparent', color: picksView === 'official' ? '#fff' : '#888', fontSize: 13, fontWeight: 500 }}>Official Picks</button>
         <button onClick={() => setPicksView('lean')} style={{ flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 9, border: 'none', cursor: 'pointer', background: picksView === 'lean' ? '#f5a623' : 'transparent', color: picksView === 'lean' ? '#1a0f00' : '#888', fontSize: 13, fontWeight: 500 }}>Lean Machine</button>
       </div>
 
