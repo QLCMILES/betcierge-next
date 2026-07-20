@@ -1065,6 +1065,14 @@ return (
   );
 }
 
+// Old pipeline stores a clean display string already (e.g. "7:41 PM ET").
+// New pipeline stores a raw ISO datetime instead — detect that shape
+// specifically and format it properly, rather than display it as-is.
+function formatGameTime(gameTime) {
+  if (!gameTime) return null;
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(gameTime)) return gameTime;
+  return new Date(gameTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }) + ' ET';
+}
 // ── Insight Formatter ──────────────────────────────────────────────────────
 // STAGING ONLY — do not port this to main until the pipeline cutover
 // happens. Production's current pipeline generates markdown (**bold**,
@@ -1322,7 +1330,7 @@ function PicksTab({ userKey, user, session, onNav }) {
                               <div style={{ flex: 1 }}>
                                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 3 }}>
                                   <span style={{ fontSize: 9, background: '#1a1a00', color: '#f5a623', padding: '1px 6px', borderRadius: 4, fontWeight: 700, textTransform: 'uppercase' }}>{pick.sport}</span>
-                                  {pick.game_time && <span style={{ fontSize: 10, color: '#555' }}>{pick.game_time}</span>}
+                                  {pick.game_time && <span style={{ fontSize: 10, color: '#555' }}>{formatGameTime(pick.game_time)}</span>}
                                 </div>
                                 <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>{pick.game}</div>
                                 <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{pick.pick}</div>
@@ -1403,7 +1411,7 @@ function PicksTab({ userKey, user, session, onNav }) {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <span style={{ background: "#1a1a00", color: "#f5a623", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6 }}>{pick.sport}</span>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  {pick.game_time && <span style={{ color: "#f5a623", fontSize: 12, fontWeight: 600, background: "#2a1a00", padding: "2px 8px", borderRadius: 4 }}>🕐 {pick.game_time}</span>}
+                  {pick.game_time && <span style={{ color: "#f5a623", fontSize: 12, fontWeight: 600, background: "#2a1a00", padding: "2px 8px", borderRadius: 4 }}>🕐 {formatGameTime(pick.game_time)}</span>}
                   <span style={{ background: '#1a1a00', color: '#f5a623', border: '1px solid #f5a623', fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>{pick.units} Unit{pick.units === 1 ? '' : 's'}</span>
                 </div>
               </div>
@@ -1489,7 +1497,7 @@ function PicksTab({ userKey, user, session, onNav }) {
                                   <div style={{ flex: 1 }}>
                                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 3 }}>
                                       <span style={{ fontSize: 9, background: '#1a1a00', color: '#f5a623', padding: '1px 6px', borderRadius: 4, fontWeight: 700, textTransform: 'uppercase' }}>{pick.sport}</span>
-                                      {pick.game_time && <span style={{ fontSize: 10, color: '#555' }}>{pick.game_time}</span>}
+                                      {pick.game_time && <span style={{ fontSize: 10, color: '#555' }}>{formatGameTime(pick.game_time)}</span>}
                                     </div>
                                     <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>{pick.game}</div>
                                     <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{pick.pick}</div>
