@@ -1066,25 +1066,29 @@ return (
 }
 
 // ── Insight Formatter ──────────────────────────────────────────────────────
-function formatInsight(text) {
-  if (!text) return null;
-  const clean = text.replace(/<cite[^>]*>|<\/cite>/g, '');
-  return clean.split('\n').map((line, i) => {
-    if (line.trim() === '') return <div key={i} style={{ height: 8 }} />;
-    if (line.startsWith('**') && line.endsWith('**')) {
-      return <div key={i} style={{ color: "#f5a623", fontFamily: "'Cormorant Garamond',serif", fontSize: 14, fontWeight: 700, marginTop: 10, marginBottom: 4 }}>{line.replace(/\*\*/g, '')}</div>;
-    }
-    const parts = line.split(/(\*\*[^*]+\*\*)/g);
-    return (
-      <div key={i} style={{ marginBottom: 4 }}>
-        {parts.map((part, k) =>
-          part.startsWith('**') && part.endsWith('**')
-            ? <span key={k} style={{ color: "#fff", fontWeight: 700 }}>{part.slice(2, -2)}</span>
-            : <span key={k}>{part.replace(/<cite[^>]*>|<\/cite>/g, '')}</span>
-        )}
-      </div>
-    );
-  });
+// STAGING ONLY — do not port this to main until the pipeline cutover
+// happens. Production's current pipeline generates markdown (**bold**,
+// real line breaks), which the function above already parses correctly.
+// Staging's new pipeline generates real HTML instead (per the database's
+// own long-standing schema comment: "insight text (full HTML writeup)") —
+// this renders that HTML directly rather than re-parsing it as markdown.
+// The moment the real pipeline cutover happens, this same change must ship
+// to main in the exact same deploy — not before (nothing to render yet)
+// and not after (production's markdown content would break instantly).
+function formatInsight(html) {
+  if (!html) return null;
+  const clean = html.replace(/<cite[^>]*>|<\/cite>/g, '');
+  return (
+    <div className="hunter-insight">
+      <style>{`
+        .hunter-insight p { margin: 0 0 10px; }
+        .hunter-insight p:last-child { margin-bottom: 0; }
+        .hunter-insight strong { color: #fff; font-weight: 700; }
+        .hunter-insight em { color: #f5a623; font-style: normal; }
+      `}</style>
+      <div dangerouslySetInnerHTML={{ __html: clean }} />
+    </div>
+  );
 }
 // ── Picks Tab ──────────────────────────────────────────────────────────────
 function PicksTab({ userKey, user, session, onNav }) {
