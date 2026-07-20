@@ -49,7 +49,7 @@ export async function POST(req) {
       .eq('user_id', user.id)
       .single();
     if (!adminRow) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+      return NextResponse.json({ error: 'Not authorized', debugUserId: user.id, debugEmail: user.email }, { status: 403 });
     }
 
     const body = await req.json();
