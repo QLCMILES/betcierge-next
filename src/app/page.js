@@ -1094,27 +1094,73 @@ function PicksTab({ userKey, user, session, onNav }) {
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [expandedDates, setExpandedDates] = useState({});
+  const [leans, setLeans] = useState([]);
+  const [leansLoading, setLeansLoading] = useState(true);
+  const [picksView, setPicksView] = useState('official');
+  const [evaluatedCount, setEvaluatedCount] = useState(null);
 
-  useEffect(() => { loadPicks(); loadHistory(); }, []);
+  useEffect(() => { loadPicks(); loadHistory(); loadLeans(); loadEvaluatedCount(); }, []);
 
   const updatePickResult = async (pickId, result) => {
     await supabase.from('daily_picks').update({ result }).eq('id', pickId);
     setPicks(prev => prev.map(p => p.id === pickId ? { ...p, result } : p));
     setHistory(prev => prev.map(p => p.id === pickId ? { ...p, result } : p));
   };
+
+  // Reads directly from daily_picks (tier='official') instead of the older
+  // /api/claude GET route, which predates the tier system and doesn't
+  // distinguish Official from Lean — a Lean pick could otherwise silently
+  // render here as if it were an official call.
   const loadPicks = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/claude', { method: 'GET' });
-      const data = await res.json();
-      if (data.picks && data.picks.length > 0) {
-        setPicks(data.picks);
-        setLastUpdated(data.picks[0]?.created_at);
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const { data } = await supabase
+        .from('daily_picks')
+        .select('*')
+        .eq('date', today)
+        .eq('tier', 'official')
+        .eq('status', 'active')
+        .order('id', { ascending: true });
+      if (data && data.length > 0) {
+        setPicks(data);
+        setLastUpdated(data[0]?.created_at);
       }
     } catch (e) {
       console.error(e);
     }
     setLoading(false);
+  };
+
+  const loadLeans = async () => {
+    setLeansLoading(true);
+    try {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const { data } = await supabase
+        .from('daily_picks')
+        .select('*')
+        .eq('date', today)
+        .eq('tier', 'lean')
+        .eq('status', 'active')
+        .order('id', { ascending: true });
+      if (data) setLeans(data);
+    } catch (e) {
+      console.error(e);
+    }
+    setLeansLoading(false);
+  };
+
+  // Best-effort — powers the rigor framing line. Fails silently if
+  // game_candidates isn't client-readable; the line just omits that clause.
+  const loadEvaluatedCount = async () => {
+    try {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const { count } = await supabase
+        .from('game_candidates')
+        .select('id', { count: 'exact', head: true })
+        .eq('date', today);
+      if (typeof count === 'number') setEvaluatedCount(count);
+    } catch (e) {}
   };
 
   const loadHistory = async () => {
@@ -1126,6 +1172,7 @@ function PicksTab({ userKey, user, session, onNav }) {
         .gte('date', '2026-06-11')
 .lte('date', new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }))
         .eq('status', 'active')
+        .eq('tier', 'official')
         .order('date', { ascending: false })
         .order('id', { ascending: true });
       if (data) {
@@ -1269,64 +1316,122 @@ function PicksTab({ userKey, user, session, onNav }) {
         )}
       </div>
 
-      <div style={{ borderTop: '1px solid #1a1a28', marginBottom: 20 }} />
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Today's Picks</div>
+ <div style={{ borderTop: '1px solid #1a1a28', marginBottom: 20 }} />
 
-      {lastUpdated && (
-        <div style={{ color: "#555", fontSize: 12, marginBottom: 14 }}>
-          Updated {new Date(lastUpdated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })} ET · {new Date(lastUpdated).toLocaleDateString()}
+      {evaluatedCount !== null && (
+        <div style={{ color: '#ccc', fontSize: 13, fontWeight: 500, lineHeight: 1.5, marginBottom: 14 }}>
+          Hunter evaluated {evaluatedCount} opportunit{evaluatedCount === 1 ? 'y' : 'ies'} today — {picks.length} became Official Pick{picks.length === 1 ? '' : 's'}{leans.length > 0 ? `, ${leans.length} more ${leans.length === 1 ? 'is' : 'are'} in Lean Machine` : ''}.
         </div>
       )}
 
-      {loading && (
-        <div style={{ padding: "40px 0", textAlign: "center" }}>
-          <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-          <div style={{ width: 28, height: 28, border: "3px solid #2a2a38", borderTopColor: "#f5a623", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px" }} />
-          <div style={{ color: "#555", fontSize: 13 }}>Loading today's picks...</div>
-        </div>
-      )}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, background: '#0f0f18', borderRadius: 12, padding: 4 }}>
+        <button onClick={() => setPicksView('official')} style={{ flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 9, border: 'none', cursor: 'pointer', background: picksView === 'official' ? '#1a1a2e' : 'transparent', color: picksView === 'official' ? '#fff' : '#888', fontSize: 13, fontWeight: 500 }}>Official</button>
+        <button onClick={() => setPicksView('lean')} style={{ flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 9, border: 'none', cursor: 'pointer', background: picksView === 'lean' ? '#f5a623' : 'transparent', color: picksView === 'lean' ? '#1a0f00' : '#888', fontSize: 13, fontWeight: 500 }}>Lean Machine</button>
+      </div>
 
-      {!loading && picks.length === 0 && (
-        <div style={{ textAlign: "center", padding: 40 }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>🕐</div>
-          <div style={{ color: "#fff", fontSize: 16, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginBottom: 8 }}>Still hunting</div>
-          <div style={{ color: "#555", fontSize: 13 }}>Lineups aren't locked yet — Hunter won't call a play until they are.</div>
-        </div>
-      )}
-
-      {!loading && picks.map((pick, i) => {
-        const locked = i > 0 && !isPaid(user);
-        return (
-        <div key={i} style={{ background: "#0f0f18", border: `1px solid ${locked ? '#1e1e2e' : '#2a2a38'}`, borderRadius: 14, padding: 16, marginBottom: 12, position: 'relative', opacity: 1 }}>
-          {locked && <div style={{ position: 'absolute', inset: 0, borderRadius: 14, backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', zIndex: 1 }} />}
-          {locked && (
-            <div style={{ position: 'absolute', inset: 0, borderRadius: 14, background: 'rgba(10,10,15,0.85)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 2, gap: 8 }}>
-              <div style={{ fontSize: 28 }}>🔒</div>
-              <div style={{ color: '#fff', fontSize: 14, fontWeight: 700, fontFamily: "'Cormorant Garamond',serif" }}>Team Members Only</div>
-              <div style={{ color: '#888', fontSize: 12, marginBottom: 8 }}>Start your 3-day free trial</div>
-              <button onClick={() => onNav('upgrade')} style={{ background: '#f5a623', color: '#000', fontWeight: 700, fontSize: 13, padding: '8px 20px', borderRadius: 8, border: 'none', cursor: 'pointer' }}>
-                Upgrade →
-              </button>
+      {picksView === 'official' && (
+        <>
+          {lastUpdated && (
+            <div style={{ color: "#555", fontSize: 12, marginBottom: 14 }}>
+              Updated {new Date(lastUpdated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })} ET · {new Date(lastUpdated).toLocaleDateString()}
             </div>
           )}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ background: "#1a1a00", color: "#f5a623", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6 }}>{pick.sport}</span>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {pick.game_time && <span style={{ color: "#f5a623", fontSize: 12, fontWeight: 600, background: "#2a1a00", padding: "2px 8px", borderRadius: 4 }}>🕐 {pick.game_time}</span>}
-              <span style={{ background: '#1a1a00', color: '#f5a623', border: '1px solid #f5a623', fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>{pick.units}U</span>
+
+          {loading && (
+            <div style={{ padding: "40px 0", textAlign: "center" }}>
+              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+              <div style={{ width: 28, height: 28, border: "3px solid #2a2a38", borderTopColor: "#f5a623", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px" }} />
+              <div style={{ color: "#555", fontSize: 13 }}>Loading today's picks...</div>
             </div>
+          )}
+
+          {!loading && picks.length === 0 && (
+            <div style={{ textAlign: "center", padding: 40 }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>🕐</div>
+              <div style={{ color: "#fff", fontSize: 16, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginBottom: 8 }}>Still hunting</div>
+              <div style={{ color: "#555", fontSize: 13 }}>Lineups aren't locked yet — Hunter won't call a play until they are. There's no guaranteed number of picks today; a forced pick is worse than no pick. Got a question about a specific game right now? Ask Hunter in chat.</div>
+            </div>
+          )}
+
+          {!loading && picks.map((pick, i) => {
+            const locked = i > 0 && !isPaid(user);
+            return (
+            <div key={pick.id ?? i} style={{ background: "#0f0f18", border: `1px solid ${locked ? '#1e1e2e' : '#2a2a38'}`, borderRadius: 14, padding: 16, marginBottom: 12, position: 'relative', opacity: 1 }}>
+              {locked && <div style={{ position: 'absolute', inset: 0, borderRadius: 14, backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', zIndex: 1 }} />}
+              {locked && (
+                <div style={{ position: 'absolute', inset: 0, borderRadius: 14, background: 'rgba(10,10,15,0.85)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 2, gap: 8 }}>
+                  <div style={{ fontSize: 28 }}>🔒</div>
+                  <div style={{ color: '#fff', fontSize: 14, fontWeight: 700, fontFamily: "'Cormorant Garamond',serif" }}>Team Members Only</div>
+                  <div style={{ color: '#888', fontSize: 12, marginBottom: 8 }}>Start your 3-day free trial</div>
+                  <button onClick={() => onNav('upgrade')} style={{ background: '#f5a623', color: '#000', fontWeight: 700, fontSize: 13, padding: '8px 20px', borderRadius: 8, border: 'none', cursor: 'pointer' }}>
+                    Upgrade →
+                  </button>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ background: "#1a1a00", color: "#f5a623", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6 }}>{pick.sport}</span>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  {pick.game_time && <span style={{ color: "#f5a623", fontSize: 12, fontWeight: 600, background: "#2a1a00", padding: "2px 8px", borderRadius: 4 }}>🕐 {pick.game_time}</span>}
+                  <span style={{ background: '#1a1a00', color: '#f5a623', border: '1px solid #f5a623', fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>{pick.units} Unit{pick.units === 1 ? '' : 's'}</span>
+                </div>
+              </div>
+              <div style={{ color: "#fff", fontSize: 15, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginBottom: 8 }}>{pick.game}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <span style={{ color: "#fff", fontSize: 16, fontWeight: 700 }}>{pick.pick}</span>
+                <span style={{ color: "#f5a623", fontSize: 14, fontWeight: 600 }}>{String(pick.odds).startsWith('+') ? pick.odds : pick.odds > 0 ? `+${pick.odds}` : pick.odds}</span>
+              </div>
+              <div style={{ color: "#888", fontSize: 13, lineHeight: 1.6, background: "#13131a", borderRadius: 8, padding: "12px 14px" }}>
+                {formatInsight(pick.insight)}
+              </div>
+            </div>
+            );
+          })}
+        </>
+      )}
+
+      {picksView === 'lean' && getAccessLevel(user) === 'edge' && (
+        <>
+          {leansLoading && (
+            <div style={{ padding: "40px 0", textAlign: "center" }}>
+              <div style={{ color: "#555", fontSize: 13 }}>Loading Lean Machine...</div>
+            </div>
+          )}
+
+          {!leansLoading && leans.length === 0 && (
+            <div style={{ textAlign: "center", padding: 40 }}>
+              <div style={{ color: "#555", fontSize: 13 }}>No additional qualified leans today.</div>
+            </div>
+          )}
+
+          {!leansLoading && leans.map((pick) => (
+            <div key={pick.id} style={{ background: "#0f0f18", border: '1px solid #2a2a38', borderRadius: 14, padding: 16, marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ background: "#1a1a00", color: "#f5a623", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6 }}>{pick.sport}</span>
+                <span style={{ background: '#1a1a00', color: '#f5a623', border: '1px solid #f5a623', fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>{pick.units} Unit{pick.units === 1 ? '' : 's'}</span>
+              </div>
+              <div style={{ color: "#fff", fontSize: 15, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginBottom: 8 }}>{pick.game}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <span style={{ color: "#fff", fontSize: 16, fontWeight: 700 }}>{pick.pick}</span>
+                <span style={{ color: "#f5a623", fontSize: 14, fontWeight: 600 }}>{String(pick.odds).startsWith('+') ? pick.odds : pick.odds > 0 ? `+${pick.odds}` : pick.odds}</span>
+              </div>
+              <div style={{ color: "#888", fontSize: 13, lineHeight: 1.6, background: "#13131a", borderRadius: 8, padding: "12px 14px" }}>
+                {formatInsight(pick.insight)}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {picksView === 'lean' && getAccessLevel(user) !== 'edge' && (
+        <div style={{ background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 14, padding: 24, textAlign: 'center' }}>
+          <div style={{ fontSize: 22, marginBottom: 8 }}>🔒</div>
+          <div style={{ color: '#fff', fontSize: 15, fontWeight: 700, fontFamily: "'Cormorant Garamond',serif", marginBottom: 6 }}>
+            {leansLoading ? 'Checking Lean Machine...' : leans.length === 0 ? 'No leans today' : `${leans.length} lean${leans.length === 1 ? '' : 's'} available today`}
           </div>
-          <div style={{ color: "#fff", fontSize: 15, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginBottom: 8 }}>{pick.game}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-            <span style={{ color: "#fff", fontSize: 16, fontWeight: 700 }}>{pick.pick}</span>
-            <span style={{ color: "#f5a623", fontSize: 14, fontWeight: 600 }}>{String(pick.odds).startsWith('+') ? pick.odds : pick.odds > 0 ? `+${pick.odds}` : pick.odds}</span>
-          </div>
-          <div style={{ color: "#888", fontSize: 13, lineHeight: 1.6, background: "#13131a", borderRadius: 8, padding: "12px 14px" }}>
-            {formatInsight(pick.insight)}
-          </div>
+          <div style={{ color: '#888', fontSize: 12, marginBottom: 16 }}>Fully researched, real units on each play — reserved for Edge.</div>
+          <button onClick={() => onNav('upgrade')} style={{ background: '#a78bfa', color: '#1a0f2e', border: 'none', borderRadius: 10, padding: '10px 24px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Upgrade to Edge</button>
         </div>
-        );
-      })}
+      )}
     </div>
   );
 }
