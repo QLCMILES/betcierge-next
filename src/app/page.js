@@ -2607,17 +2607,14 @@ if (foundingPriceId && session.user.email) {
         game: leg.game,
         pick: leg.pick,
         odds: leg.odds,
-        game_date: leg.gameDate ?? bet.gameDate ?? null,
+        game_date: (leg.gameDate || bet.gameDate || null),
         game_time: leg.gameTime ?? null,
         game_id: leg.gameId ?? null,
         result: 'Pending',
         leg_number: i + 1,
       }));
       const { error: legsError } = await supabase.from('parlay_legs').insert(legRows);
-      if (legsError) {
-        console.error('parlay_legs insert error:', legsError);
-        alert('LEG INSERT FAILED: ' + JSON.stringify(legsError));
-      }
+      if (legsError) console.error('parlay_legs insert error:', legsError);
 
       // Add to local state as a parlay object
       setBets(p => [{ ...bet, id: parlayData.id, isParlay: true, result: 'Pending' }, ...p]);
