@@ -43,13 +43,13 @@ export async function POST(req) {
     // Step 3 — verify admin status server-side, against a table with zero
     // client-facing grants or policies (RLS enabled, no policies at all) —
     // only this service-role client can ever read admin_users.
-    const { data: adminRow } = await adminClient
+    const { data: adminRow, error: adminLookupError } = await adminClient
       .from('admin_users')
       .select('role')
       .eq('user_id', user.id)
       .single();
     if (!adminRow) {
-      return NextResponse.json({ error: 'Not authorized', debugUserId: user.id, debugEmail: user.email }, { status: 403 });
+      return NextResponse.json({ error: 'Not authorized', debugUserId: user.id, debugEmail: user.email, debugLookupError: adminLookupError }, { status: 403 });
     }
 
     const body = await req.json();
