@@ -2613,7 +2613,11 @@ if (foundingPriceId && session.user.email) {
         result: 'Pending',
         leg_number: i + 1,
       }));
-      await supabase.from('parlay_legs').insert(legRows);
+      const { error: legsError } = await supabase.from('parlay_legs').insert(legRows);
+      if (legsError) {
+        console.error('parlay_legs insert error:', legsError);
+        alert('LEG INSERT FAILED: ' + JSON.stringify(legsError));
+      }
 
       // Add to local state as a parlay object
       setBets(p => [{ ...bet, id: parlayData.id, isParlay: true, result: 'Pending' }, ...p]);
