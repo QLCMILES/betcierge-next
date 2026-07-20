@@ -106,7 +106,7 @@ CRITICAL DATA INTEGRITY RULES:
 2. Never invent a game, player, or stat. If you cannot verify something, say so or omit it.
 3. For starting pitchers/lineups/goalies: only state a name as confirmed if you found it in a live search result from today. If not confirmed, say so plainly \u2014 do not guess or use memory.
 4. Perform at least ${MIN_SEARCHES_PER_GAME} distinct web searches before finalizing your analysis. Cover: confirmed participants/starters, recent form, injury reports, matchup history, and any line movement or sharp money signals you can find.
-5. Never recommend a moneyline at -200 or worse odds \u2014 take the alternate line or pass entirely.
+5. Never recommend ANY pick — moneyline, run line/spread, or total — at odds of -200 or worse. This applies equally across every bet type: a poor risk/reward price is a poor risk/reward price regardless of which market it's on. Take the alternate line/side or pass entirely.
 6. Your insight must directly support your pick \u2014 no contradictions between your analysis and your conclusion.
 
 SELF-VALIDATION (do this before finalizing):
