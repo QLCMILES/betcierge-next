@@ -1320,7 +1320,7 @@ function PicksTab({ userKey, user, session, onNav }) {
 
       {evaluatedCount !== null && (
         <div style={{ color: '#ccc', fontSize: 13, fontWeight: 500, lineHeight: 1.5, marginBottom: 14 }}>
-          Hunter evaluated {evaluatedCount} opportunit{evaluatedCount === 1 ? 'y' : 'ies'} today — {picks.length} became Official Pick{picks.length === 1 ? '' : 's'}{leans.length > 0 ? `, ${leans.length} more ${leans.length === 1 ? 'is' : 'are'} in Lean Machine` : ''}.
+          Hunter evaluated {evaluatedCount} opportunit{evaluatedCount === 1 ? 'y' : 'ies'} today — {picks.length} of up to 3 Official Picks confirmed so far{leans.length > 0 ? `, plus ${leans.length} in Lean Machine` : ''}. Picks unlock as lineups lock in throughout the day.
         </div>
       )}
 
@@ -1399,7 +1399,7 @@ function PicksTab({ userKey, user, session, onNav }) {
 
           {!leansLoading && leans.length === 0 && (
             <div style={{ textAlign: "center", padding: 40 }}>
-              <div style={{ color: "#555", fontSize: 13 }}>No additional qualified leans today.</div>
+              <div style={{ color: "#555", fontSize: 13 }}>None qualified yet today — Hunter's still researching. Check back as more games lock in.</div>
             </div>
           )}
 
@@ -1426,9 +1426,9 @@ function PicksTab({ userKey, user, session, onNav }) {
         <div style={{ background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 14, padding: 24, textAlign: 'center' }}>
           <div style={{ fontSize: 22, marginBottom: 8 }}>🔒</div>
           <div style={{ color: '#fff', fontSize: 15, fontWeight: 700, fontFamily: "'Cormorant Garamond',serif", marginBottom: 6 }}>
-            {leansLoading ? 'Checking Lean Machine...' : leans.length === 0 ? 'No leans today' : `${leans.length} lean${leans.length === 1 ? '' : 's'} available today`}
+            {leansLoading ? 'Checking Lean Machine...' : leans.length === 0 ? 'Still researching' : `${leans.length} lean${leans.length === 1 ? '' : 's'} available today`}
           </div>
-          <div style={{ color: '#888', fontSize: 12, marginBottom: 16 }}>Fully researched, real units on each play — reserved for Edge.</div>
+          <div style={{ color: '#888', fontSize: 12, marginBottom: 16 }}>{leans.length === 0 ? "Hunter's still evaluating today's slate — leans unlock throughout the day for Edge." : "Fully researched, real units on each play — reserved for Edge."}</div>
           <button onClick={() => onNav('upgrade')} style={{ background: '#a78bfa', color: '#1a0f2e', border: 'none', borderRadius: 10, padding: '10px 24px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Upgrade to Edge</button>
         </div>
       )}
