@@ -280,30 +280,44 @@ async function finalizePicks() {
         continue;
       }
 
+      // Correlation cap now checks BOTH tiers combined for this sport+bet_type
+      // today — a Lean pick of a given type occupies a real "slot" in the
+      // day's slate just as much as an Official one does, so it must count
+      // against new candidates of either tier, not just against would-be-
+      // Official ones. Previously, anything scoring 6.0-6.9 skipped this
+      // check entirely and went straight to Lean with no concentration
+      // limit at all — this is the fix for that gap.
+      const { data: sameTypeAnyTierToday } = await supabase
+        .from('daily_picks')
+        .select('id', { count: 'exact' })
+        .eq('date', today)
+        .eq('sport', candidate.sport)
+        .eq('bet_type', betType);
+
+      const correlationCapHit = (sameTypeAnyTierToday || []).length >= CORRELATION_CAP_PER_SPORT_BETTYPE;
+
       let tier = 'lean';
       let missReason = 'score';
 
-      if (score >= OFFICIAL_SCORE_THRESHOLD) {
-        // Check correlation cap first (max 2 official picks per sport+bet_type today)
-        const { data: sameTypeToday } = await supabase
-          .from('daily_picks')
-          .select('id', { count: 'exact' })
-          .eq('date', today)
-          .eq('tier', 'official')
-          .eq('sport', candidate.sport)
-          .eq('bet_type', betType);
-
+      if (correlationCapHit && score >= OFFICIAL_SCORE_THRESHOLD) {
+        tier = 'lean';
+        missReason = 'correlation_cap';
+        console.log(`FINAL_CORRELATION_CAP: "${candidate.game}" scored ${score} (would be official) but ${candidate.sport}/${betType} already has ${CORRELATION_CAP_PER_SPORT_BETTYPE} picks (any tier) today \u2014 publishing as Lean Machine instead. The elite override does NOT apply here \u2014 correlation risk is a separate concern from pick quality.`);
+      } else if (correlationCapHit) {
+        missReason = 'lean_correlation_cap';
+        console.log(`FINAL_LEAN_CORRELATION_CAP: "${candidate.game}" scored ${score} but ${candidate.sport}/${betType} already has ${CORRELATION_CAP_PER_SPORT_BETTYPE} picks (any tier) today \u2014 discarding rather than adding a third same-type pick to an already-concentrated slate.`);
+        await supabase.from('game_candidates').update({
+          status: 'discarded_lean_correlation_cap',
+        }).eq('id', candidate.id);
+        continue;
+      } else if (score >= OFFICIAL_SCORE_THRESHOLD) {
         const { data: officialToday } = await supabase
           .from('daily_picks')
           .select('id', { count: 'exact' })
           .eq('date', today)
           .eq('tier', 'official');
 
-        if ((sameTypeToday || []).length >= CORRELATION_CAP_PER_SPORT_BETTYPE) {
-          tier = 'lean';
-          missReason = 'correlation_cap';
-          console.log(`FINAL_CORRELATION_CAP: "${candidate.game}" scored ${score} (would be official) but ${candidate.sport}/${betType} already has ${CORRELATION_CAP_PER_SPORT_BETTYPE} official picks today \u2014 publishing as Lean Machine instead. The elite override does NOT apply here \u2014 correlation risk is a separate concern from pick quality.`);
-        } else if ((officialToday || []).length >= DAILY_OFFICIAL_CAP && score < ELITE_OVERRIDE_THRESHOLD) {
+        if ((officialToday || []).length >= DAILY_OFFICIAL_CAP && score < ELITE_OVERRIDE_THRESHOLD) {
           tier = 'lean';
           missReason = 'daily_cap';
           console.log(`FINAL_DAILY_CAP: "${candidate.game}" scored ${score} (would be official) but today's slate already has ${DAILY_OFFICIAL_CAP} official picks \u2014 publishing as Lean Machine instead. Did not qualify for the ${ELITE_OVERRIDE_THRESHOLD}+ elite override.`);
