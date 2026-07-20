@@ -58,29 +58,57 @@ export default function AdminDashboard() {
     setStats({ userCount, betCount, pendingCount });
   };
 
+  // Every privileged write now goes through the server-side admin route —
+  // it verifies the caller's identity against Supabase Auth directly and
+  // checks admin_users (a table with no client-facing grants at all), so
+  // this dashboard's own client-side email check is no longer the only
+  // thing standing between a request and a real database write.
+  const callAdminAction = async (payload) => {
+    const { data: { session: currentSession } } = await supabase.auth.getSession();
+    const res = await fetch('/api/admin/actions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${currentSession?.access_token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Action failed');
+    return data;
+  };
+
   const updateUserTier = async (userId, tier) => {
-    await supabase.from('user_profiles').update({ subscription_tier: tier }).eq('user_id', userId);
-    loadUsers();
-    setFeedback(`Updated tier to ${tier}`);
+    try {
+      await callAdminAction({ action: 'update_user_tier', userId, tier });
+      loadUsers();
+      setFeedback(`Updated tier to ${tier}`);
+    } catch (e) {
+      setFeedback(`Error: ${e.message}`);
+    }
     setTimeout(() => setFeedback(''), 3000);
   };
 
   const updatePickResult = async (pickId, result) => {
-    await supabase.from('daily_picks').update({ result }).eq('id', pickId);
-    loadPicks();
-    setFeedback(`Pick marked as ${result}`);
+    try {
+      await callAdminAction({ action: 'mark_pick_result', pickId, newResult: result });
+      loadPicks();
+      setFeedback(`Pick marked as ${result}`);
+    } catch (e) {
+      setFeedback(`Error: ${e.message}`);
+    }
     setTimeout(() => setFeedback(''), 3000);
   };
 
   const massVoidPick = async (pick) => {
     if (!confirm(`Void "${pick.pick}" for ALL users?`)) return;
-    await supabase.from('user_bets')
-      .update({ result: 'Void' })
-      .eq('game_date', pick.date)
-      .ilike('pick', `%${pick.pick}%`);
-    await supabase.from('daily_picks').update({ result: 'Void' }).eq('id', pick.id);
-    loadPicks();
-    setFeedback(`Voided "${pick.pick}" for all users`);
+    try {
+      const result = await callAdminAction({ action: 'mass_void_pick', pickId: pick.id });
+      loadPicks();
+      setFeedback(`Voided "${pick.pick}" for ${result.betsAffected} user bet(s)`);
+    } catch (e) {
+      setFeedback(`Error: ${e.message}`);
+    }
     setTimeout(() => setFeedback(''), 3000);
   };
 
