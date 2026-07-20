@@ -1098,8 +1098,10 @@ function PicksTab({ userKey, user, session, onNav }) {
   const [leansLoading, setLeansLoading] = useState(true);
   const [picksView, setPicksView] = useState('official');
   const [evaluatedCount, setEvaluatedCount] = useState(null);
+  const [leanHistory, setLeanHistory] = useState([]);
+  const [leanHistoryLoading, setLeanHistoryLoading] = useState(true);
 
-  useEffect(() => { loadPicks(); loadHistory(); loadLeans(); loadEvaluatedCount(); }, []);
+  useEffect(() => { loadPicks(); loadHistory(); loadLeans(); loadEvaluatedCount(); loadLeanHistory(); }, []);
 
   const updatePickResult = async (pickId, result) => {
     await supabase.from('daily_picks').update({ result }).eq('id', pickId);
@@ -1185,6 +1187,30 @@ function PicksTab({ userKey, user, session, onNav }) {
     setHistoryLoading(false);
   };
 
+  // Lean Machine's own history — separate from Official's tracker above.
+  // Deliberately NOT paired with an aggregate win-rate/units/ROI box yet:
+  // with only a handful of Lean picks published so far, a single number
+  // would be more noise than signal. Individual result badges are real
+  // and honest at any sample size; a rolled-up percentage isn't yet.
+  const loadLeanHistory = async () => {
+    setLeanHistoryLoading(true);
+    try {
+      const { data } = await supabase
+        .from('daily_picks')
+        .select('*')
+        .gte('date', '2026-06-11')
+        .lte('date', new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }))
+        .eq('status', 'active')
+        .eq('tier', 'lean')
+        .order('date', { ascending: false })
+        .order('id', { ascending: true });
+      if (data) setLeanHistory(data);
+    } catch (e) {
+      console.error(e);
+    }
+    setLeanHistoryLoading(false);
+  };
+
   const confColor = (c) => ({ High: "#2ecc71", Medium: "#f5a623", Low: "#888" })[c] || "#888";
   const confBg = (c) => ({ High: "#1a2e1a", Medium: "#2a1f00", Low: "#1a1a1a" })[c] || "#1a1a1a";
 
@@ -1199,6 +1225,8 @@ function PicksTab({ userKey, user, session, onNav }) {
 
   const byDate = history.reduce((acc, p) => { (acc[p.date] = acc[p.date] || []).push(p); return acc; }, {});
   const sortedDates = Object.keys(byDate).sort((a, b) => new Date(b) - new Date(a));
+  const leanByDate = leanHistory.reduce((acc, p) => { (acc[p.date] = acc[p.date] || []).push(p); return acc; }, {});
+  const leanSortedDates = Object.keys(leanByDate).sort((a, b) => new Date(b) - new Date(a));
   const toggleDate = (d) => setExpandedDates(prev => ({ ...prev, [d]: !prev[d] }));
   const formatDate = (s) => new Date(s + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
@@ -1407,7 +1435,10 @@ function PicksTab({ userKey, user, session, onNav }) {
             <div key={pick.id} style={{ background: "#0f0f18", border: '1px solid #2a2a38', borderRadius: 14, padding: 16, marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <span style={{ background: "#1a1a00", color: "#f5a623", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6 }}>{pick.sport}</span>
-                <span style={{ background: '#1a1a00', color: '#f5a623', border: '1px solid #f5a623', fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>{pick.units} Unit{pick.units === 1 ? '' : 's'}</span>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  {resultBadge(pick.result)}
+                  <span style={{ background: '#1a1a00', color: '#f5a623', border: '1px solid #f5a623', fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>{pick.units} Unit{pick.units === 1 ? '' : 's'}</span>
+                </div>
               </div>
               <div style={{ color: "#fff", fontSize: 15, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginBottom: 8 }}>{pick.game}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
@@ -1419,6 +1450,63 @@ function PicksTab({ userKey, user, session, onNav }) {
               </div>
             </div>
           ))}
+
+          <div style={{ borderTop: '1px solid #1a1a28', marginTop: 8, marginBottom: 16 }} />
+          <div style={{ marginBottom: 4 }}>
+            <button onClick={() => toggleDate('lean-history')} style={{ width: '100%', background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 10, cursor: 'pointer', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase' }}>Lean Machine History</span>
+              <span style={{ color: '#444', fontSize: 12 }}>{expandedDates['lean-history'] ? '▲' : '▼'}</span>
+            </button>
+            {expandedDates['lean-history'] && (
+              <>
+                <div style={{ color: '#666', fontSize: 11, marginBottom: 10, lineHeight: 1.5 }}>
+                  Every Lean Machine pick, win or loss, shown here as it settles. A combined record and ROI will show once there's enough of a sample to be meaningful — right now that number would be more noise than signal.
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {leanHistoryLoading && <div style={{ color: '#555', fontSize: 12, textAlign: 'center', padding: 12 }}>Loading...</div>}
+                  {!leanHistoryLoading && leanSortedDates.length === 0 && <div style={{ color: '#555', fontSize: 12, textAlign: 'center', padding: 12 }}>No Lean Machine picks yet.</div>}
+                  {leanSortedDates.map(date => {
+                    const dayPicks = leanByDate[date];
+                    const isExpanded = expandedDates['lean-' + date];
+                    return (
+                      <div key={date} style={{ background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 10, overflow: 'hidden' }}>
+                        <button onClick={() => toggleDate('lean-' + date)} style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{formatDate(date)}</span>
+                            <span style={{ fontSize: 11, color: '#555' }}>{dayPicks.length} pick{dayPicks.length === 1 ? '' : 's'}</span>
+                          </div>
+                          <span style={{ color: '#444', fontSize: 12 }}>{isExpanded ? '▲' : '▼'}</span>
+                        </button>
+                        {isExpanded && (
+                          <div style={{ borderTop: '1px solid #1a1a28' }}>
+                            {dayPicks.map((pick, i) => (
+                              <div key={pick.id} style={{ padding: '10px 14px', borderBottom: i < dayPicks.length - 1 ? '1px solid #13131a' : 'none' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 3 }}>
+                                      <span style={{ fontSize: 9, background: '#1a1a00', color: '#f5a623', padding: '1px 6px', borderRadius: 4, fontWeight: 700, textTransform: 'uppercase' }}>{pick.sport}</span>
+                                      {pick.game_time && <span style={{ fontSize: 10, color: '#555' }}>{pick.game_time}</span>}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>{pick.game}</div>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{pick.pick}</div>
+                                    <div style={{ fontSize: 10, color: '#f5a623', marginTop: 3 }}>{pick.units || 1}U</div>
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 10 }}>
+                                    {resultBadge(pick.result)}
+                                    <span style={{ fontSize: 11, color: '#f5a623' }}>{String(pick.odds).startsWith('+') ? pick.odds : pick.odds > 0 ? `+${pick.odds}` : pick.odds}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
         </>
       )}
 
