@@ -210,6 +210,226 @@ async function sendPickSMS(pickRow) {
   return null;
 }
 
+// ── Weight the impact of a missing named batter — fast, NO search ──────
+// The structured check below already confirms the FACT (this specific
+// player isn't in today's posted lineup) — so this call needs zero
+// searching. It only needs baseball judgment: how much does THIS
+// player's absence matter to THIS pick. Claude already knows who real
+// players are; feeding the fact directly instead of asking it to search
+// is what keeps this fast AND properly weighted (a 7-hole hitter and a
+// genuine superstar can't be treated as the same -2.0, per Miles).
+async function weighMissingBatters(candidate, missingBatters) {
+  const pickText = candidate.research_log?.pick || candidate.odds || '(pick text unavailable)';
+
+  const system = `You are Hunter. A structured, official MLB data check has already confirmed the following FACT — this is not something to verify or search for, it is already confirmed true:
+
+Game: ${candidate.game} (MLB)
+Pick: ${pickText}
+Original score: ${candidate.score}/10
+CONFIRMED FACT: the following player(s), previously confirmed as relevant to this pick's research, do NOT appear in today's official posted starting lineup for either team: ${missingBatters.join(', ')}
+
+Your job: judge how much THIS SPECIFIC absence matters to THIS SPECIFIC pick, using your own knowledge of these players — do not search, the fact above is already confirmed and final.
+
+Consider: is this player a genuine offensive focal point of their team's lineup (a real, meaningful bat), or a lower-impact role player? Weight the adjustment roughly in proportion to how much this specific player's presence actually mattered to the case for this specific pick — a true middle-of-the-order star missing should move the score significantly; a marginal bench-caliber player missing should barely move it at all.
+
+Return ONLY this JSON, no other text:
+{
+  "impact_tier": "bench_or_low_impact" or "regular_contributor" or "clear_focal_point",
+  "adjustment_reasoning": "one or two plain-language sentences explaining why, referencing who this player actually is"
+}`;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 500,
+      system,
+      messages: [{ role: 'user', content: `Judge the impact now and return the JSON.` }],
+      // Deliberately NO web_search tool \u2014 the fact is already confirmed
+      // structurally; this is pure judgment, which is what keeps it fast.
+    }),
+  });
+  const data = await response.json();
+  const text = extractText(data.content);
+  if (!text.trim()) throw new Error('Batter-weighting call returned no text');
+  return cleanJson(text);
+}
+
+// ── MLB structured lineup check (fast path, minimal LLM use) ────────────
+// Runs BEFORE the general search-based currency check, MLB only. Reads the
+// actual posted MLB boxscore directly \u2014 deterministic, sub-second, no
+// search round trip \u2014 instead of asking a model to search for something
+// a beat reporter may have posted only minutes ago that generic web
+// search might not have indexed yet.
+//
+// Checks TWO things, matching how automatic-cancel already works:
+//   1. Starting pitcher (either team) \u2014 mismatch = automatic cancel, per
+//      the existing load-bearing-pitcher rule. No judgment needed.
+//   2. Any other named participant from confirmed_names (e.g. a key
+//      hitter the pick depends on) \u2014 if missing from today's posted
+//      batting order, gets a REAL weighted judgment via
+//      weighMissingBatters() above, not a flat guess.
+//
+// Returns null ONLY if the boxscore has no posted lineup yet (too early)
+// \u2014 caller falls back to the search-based check in that case.
+async function checkMLBLineupStructured(candidate) {
+  if (candidate.sport_key !== 'baseball_mlb') return null;
+
+  const gameDate = new Date(candidate.game_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const awayTeam = candidate.game.split(' @ ')[0]?.trim();
+  const homeTeam = candidate.game.split(' @ ')[1]?.trim();
+  if (!awayTeam || !homeTeam) return null;
+
+  const wordMatch = (full, target) => {
+    const words = (target || '').toLowerCase().split(' ').filter(w => w.length > 3);
+    return words.some(w => (full || '').toLowerCase().includes(w));
+  };
+
+  let gamePk;
+  try {
+    const schedRes = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${gameDate}&gameType=R`);
+    const schedData = await schedRes.json();
+    const games = schedData.dates?.[0]?.games || [];
+    const match = games.find(g =>
+      wordMatch(g.teams?.away?.team?.name, awayTeam) ||
+      wordMatch(g.teams?.home?.team?.name, homeTeam)
+    );
+    if (!match) {
+      console.log(`MLB_STRUCTURED_NO_GAME_MATCH: "${candidate.game}" not found in schedule for ${gameDate} \u2014 falling back to search-based check.`);
+      return null;
+    }
+    gamePk = match.gamePk;
+  } catch (e) {
+    console.log(`MLB_STRUCTURED_SCHEDULE_ERROR: ${e.message} \u2014 falling back to search-based check.`);
+    return null;
+  }
+
+  let boxscore;
+  try {
+    const boxRes = await fetch(`https://statsapi.mlb.com/api/v1/game/${gamePk}/boxscore`);
+    boxscore = await boxRes.json();
+  } catch (e) {
+    console.log(`MLB_STRUCTURED_BOXSCORE_ERROR: ${e.message} \u2014 falling back to search-based check.`);
+    return null;
+  }
+
+  function getStartingPitcherName(sideData) {
+    const pitcherIds = sideData?.pitchers || [];
+    if (pitcherIds.length === 0) return null;
+    return sideData.players?.[`ID${pitcherIds[0]}`]?.person?.fullName || null;
+  }
+
+  function getBattingOrderNames(sideData) {
+    const order = sideData?.battingOrder || [];
+    return order.map((id) => sideData.players?.[`ID${id}`]?.person?.fullName || null).filter(Boolean);
+  }
+
+  const awaySide = boxscore.teams?.away;
+  const homeSide = boxscore.teams?.home;
+
+  const awayStarter = getStartingPitcherName(awaySide);
+  const homeStarter = getStartingPitcherName(homeSide);
+  const awayLineup = getBattingOrderNames(awaySide);
+  const homeLineup = getBattingOrderNames(homeSide);
+
+  if (!awayStarter && !homeStarter && awayLineup.length === 0 && homeLineup.length === 0) {
+    console.log(`MLB_STRUCTURED_NO_LINEUP_YET: "${candidate.game}" \u2014 boxscore has no posted starters or lineup yet \u2014 falling back to search-based check.`);
+    return null;
+  }
+
+  const confirmedNames = candidate.eligibility?.confirmed_names || [];
+  const lastWord = (n) => (n || '').trim().split(' ').pop().toLowerCase();
+
+  // ── Check 1: starting pitcher (automatic cancel, no judgment needed) ──
+  const pitcherStillMatches = (postedName) => {
+    if (!postedName) return true;
+    if (confirmedNames.length === 0) return true;
+    return confirmedNames.some(cn => lastWord(cn) === lastWord(postedName));
+  };
+
+  const awayPitcherOk = pitcherStillMatches(awayStarter);
+  const homePitcherOk = pitcherStillMatches(homeStarter);
+
+  if (!awayPitcherOk || !homePitcherOk) {
+    const mismatchSide = !awayPitcherOk ? `away (${awayStarter})` : `home (${homeStarter})`;
+    return {
+      any_change_detected: true,
+      changes: [{
+        player: 'starting pitcher',
+        what_changed: `Posted boxscore starter for ${mismatchSide} does not match research-time confirmed_names: ${confirmedNames.join(', ') || '(none recorded)'}`,
+        source: 'MLB Stats API boxscore (structured, direct \u2014 not a search)',
+      }],
+      automatic_cancel_triggered: true,
+      automatic_cancel_reason: 'MLB starting pitcher confirmed at research time no longer matches the official posted boxscore.',
+      score_adjustment: -5.0,
+      adjustment_reasoning: 'Structured MLB boxscore check found a starting pitcher mismatch \u2014 automatic cancel per the load-bearing pitcher rule.',
+    };
+  }
+
+  // ── Check 2: other named participants still in the batting order ───
+  const pitcherLastWords = [lastWord(awayStarter), lastWord(homeStarter)].filter(Boolean);
+  const battersToCheck = confirmedNames.filter(cn => !pitcherLastWords.includes(lastWord(cn)));
+
+  const fullLineupNames = [...awayLineup, ...homeLineup];
+  const missingBatters = [];
+  for (const cn of battersToCheck) {
+    const found = fullLineupNames.some(name => lastWord(name) === lastWord(cn));
+    if (!found && fullLineupNames.length > 0) {
+      missingBatters.push(cn);
+    }
+  }
+
+  if (missingBatters.length === 0) {
+    console.log(`MLB_STRUCTURED_LINEUP_OK: "${candidate.game}" \u2014 posted starters and lineup match research-time confirmation, no search needed.`);
+    return {
+      any_change_detected: false,
+      changes: [],
+      automatic_cancel_triggered: false,
+      automatic_cancel_reason: null,
+      score_adjustment: 0,
+      adjustment_reasoning: 'Structured MLB boxscore check: pitcher and all named participants confirmed still in the posted lineup.',
+    };
+  }
+
+  // Real weighted judgment on the missing batter(s) \u2014 NOT a flat guess.
+  // MILES: these three numbers are your call \u2014 tune freely. The model only
+  // picks a CATEGORY; your code decides the actual point value, so a
+  // low-impact player can never be assigned an open-ended, unpredictable hit.
+  const IMPACT_TIER_ADJUSTMENTS = {
+    bench_or_low_impact: 0,
+    regular_contributor: -0.5,
+    clear_focal_point: -1.5,
+  };
+
+  let weighting;
+  try {
+    weighting = await weighMissingBatters(candidate, missingBatters);
+  } catch (e) {
+    console.log(`MLB_STRUCTURED_WEIGHT_ERROR: ${e.message} — falling back to the most conservative tier (bench_or_low_impact) rather than over-penalizing on a failed call.`);
+    weighting = { impact_tier: 'bench_or_low_impact', adjustment_reasoning: `Weighting call failed (${e.message}) — defaulted to least-damaging tier.` };
+  }
+  const adjustment = IMPACT_TIER_ADJUSTMENTS[weighting.impact_tier] ?? IMPACT_TIER_ADJUSTMENTS.bench_or_low_impact;
+
+  console.log(`MLB_STRUCTURED_BATTER_MISSING: "${candidate.game}" \u2014 ${missingBatters.join(', ')} missing from posted lineup \u2014 weighted adjustment: ${adjustment} (${weighting.adjustment_reasoning})`);
+
+  return {
+    any_change_detected: true,
+    changes: missingBatters.map(name => ({
+      player: name,
+      what_changed: `Named participant not found in either team's posted starting batting order.`,
+      source: 'MLB Stats API boxscore (structured, direct \u2014 not a search)',
+    })),
+    automatic_cancel_triggered: false,
+    automatic_cancel_reason: null,
+    score_adjustment: adjustment,
+    adjustment_reasoning: weighting.adjustment_reasoning || `Structured check found ${missingBatters.length} named participant(s) missing: ${missingBatters.join(', ')}.`,
+  };
+}
 async function finalizePicks() {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
   const now = new Date();
@@ -260,7 +480,13 @@ async function finalizePicks() {
       }
 
       // \u2500\u2500 Final lineup-currency check \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-      const currency = await checkLineupCurrency(candidate);
+      let currency = null;
+      if (candidate.sport_key === 'baseball_mlb') {
+        currency = await checkMLBLineupStructured(candidate);
+      }
+      if (!currency) {
+        currency = await checkLineupCurrency(candidate);
+      }
 
       if (currency.automatic_cancel_triggered === true) {
         console.log(`FINAL_LINEUP_AUTOCANCEL: "${candidate.game}" \u2014 ${currency.automatic_cancel_reason || 'key role changed'} (${JSON.stringify(currency.changes)}) \u2014 discarding outright, this is one of the three roles no adjustment can capture.`);
