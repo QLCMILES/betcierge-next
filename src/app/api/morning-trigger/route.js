@@ -1,9 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { waitUntil } from '@vercel/functions';
 
-// Stage 1 only — lightweight, no web search. Generous headroom, but this
-// should complete in a few seconds in practice.
-export const maxDuration = 60;
+// Stage 1 now includes a real, search-enabled verification pass per
+// candidate (added to fix a measured totals-quality problem), so this
+// genuinely needs real time — 300s gives comfortable room while staying
+// well under Pro's 800s general-availability ceiling.
+export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 const supabase = createClient(
@@ -70,6 +72,79 @@ function cleanJson(text) {
   const jsonMatch = clean.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON found in response: ' + text.slice(0, 300));
   return JSON.parse(jsonMatch[0]);
+}
+
+const VERIFY_CONCURRENCY_CAP = 5;
+
+// Real, search-enabled sanity check on ONE raw Stage 1 proposal, before it
+// gets written as a real candidate. Deliberately lighter than Stage 2's
+// full research (a handful of searches, not 10+) — this is a fast check,
+// not the deep dive. Specifically targets the failure mode that produced
+// a real 0-6 day on totals: a pitching-only narrative that never actually
+// checked whether either team can genuinely hit.
+async function verifyCandidate(candidate, matchedGame, today_display) {
+  const system = `You are Hunter, an elite sports betting analyst. Today is ${today_display}.
+
+A colleague has proposed this candidate for deeper research later today:
+Game: ${candidate.game}
+Sport: ${candidate.sport}
+Proposed bet type: ${candidate.bet_type}
+Proposed pick: ${candidate.proposed_pick}
+One-sentence reason given: ${candidate.reason}
+
+Your job right now is a QUICK VERIFICATION PASS — not the full deep research that happens later. Run 3-5 targeted web searches to sanity-check this specific proposal before it gets a full research slot.
+
+FOR TOTALS SPECIFICALLY: this system has a real, measured problem — totals proposed on pitching/bullpen narratives alone, without weighing both team's actual offensive quality, have underperformed badly. If this proposal is a total, you MUST search and report on BOTH teams' real recent offensive output (runs per game, recent form), not just the pitching matchup. If either team is a genuinely strong offense, say so plainly — do not let a hot-pitcher story override that.
+
+Return ONLY this JSON, no other text:
+{
+  "holds_up": true or false,
+  "verified_bet_type": "moneyline|spread|total|f5|first_half|prop",
+  "verified_pick": "the pick to actually use — same as proposed if it holds up, or a better-supported alternative for this SAME game if it doesn't",
+  "verification_note": "one or two sentences on what you actually found, including both sides if this is a total"
+}`;
+
+  const response = await callClaude({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1000,
+    system,
+    messages: [{ role: 'user', content: `Verify this candidate now.` }],
+    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+  }, 0, 45000);
+
+  const text = extractText(response.content);
+  if (!text.trim()) return null;
+  try {
+    return cleanJson(text);
+  } catch (e) {
+    console.log(`VERIFY_PARSE_FAILED for "${candidate.game}": ${e.message}`);
+    return null;
+  }
+}
+
+// Runs verification across all raw candidates with a concurrency cap
+// (same pattern already used elsewhere in this codebase), so 8-10
+// candidates take roughly 2 batches worth of wall-clock time, not 8-10
+// sequential calls. Fails OPEN per-candidate — if a verification call
+// errors or times out, that candidate keeps its original, unverified
+// proposal rather than being dropped or blocking the whole run.
+async function verifyAllCandidates(candidates, slimGames, today_display) {
+  const results = new Array(candidates.length).fill(null);
+  for (let i = 0; i < candidates.length; i += VERIFY_CONCURRENCY_CAP) {
+    const batch = candidates.slice(i, i + VERIFY_CONCURRENCY_CAP);
+    const batchResults = await Promise.all(batch.map(async (c) => {
+      const matchedGame = slimGames.find(g => g.game === c.game);
+      if (!matchedGame) return null;
+      try {
+        return await verifyCandidate(c, matchedGame, today_display);
+      } catch (e) {
+        console.log(`VERIFY_ERROR for "${c.game}": ${e.message}`);
+        return null;
+      }
+    }));
+    batchResults.forEach((r, idx) => { results[i + idx] = r; });
+  }
+  return results;
 }
 
 // ── Recent Picks Memory (unchanged from generate-picks) ─────────────────
@@ -378,8 +453,31 @@ async function generateMorningTrigger() {
     console.log('Candidate pool validation failed but time budget exceeded, proceeding anyway:', poolProblems);
   }
 
+  // ── STAGE 1B: Verification pass ──────────────────────────────────────
+  // Real, search-enabled sanity check on each raw proposal before writing
+  // it as a real candidate — specifically targets totals proposed on
+  // pitching alone without weighing real offensive strength on both sides
+  // (the exact failure mode behind a real 0-6 day on totals).
+  const rawCandidates = candidatePool.candidates || [];
+  const verifications = await verifyAllCandidates(rawCandidates, slimGames, today_display);
+  const candidates = rawCandidates.map((c, i) => {
+    const v = verifications[i];
+    if (!v) {
+      console.log(`VERIFY_SKIPPED for "${c.game}" — verification failed or timed out, keeping original unverified proposal.`);
+      return c;
+    }
+    if (v.holds_up === false) {
+      console.log(`VERIFY_REVISED: "${c.game}" — original proposal (${c.bet_type}: ${c.proposed_pick}) did not hold up — ${v.verification_note}`);
+    }
+    return {
+      ...c,
+      bet_type: v.verified_bet_type || c.bet_type,
+      proposed_pick: v.verified_pick || c.proposed_pick,
+      reason: v.verification_note || c.reason,
+    };
+  });
+
   // ── Write game_candidates rows, one per candidate, with timing ───────
-  const candidates = candidatePool.candidates || [];
   const rows = [];
   let benchRank = 0;
 
