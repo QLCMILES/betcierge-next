@@ -17,6 +17,18 @@ const MONEYLINE_REJECT_CENTS = 50;
 const POINT_REJECT = 3.0;
 
 const OFFICIAL_SCORE_THRESHOLD = 7.0;
+// Totals get their own, deliberately higher bar than sides (moneyline, run
+// line/spread) — real July 20 data showed totals going 0-6 across both
+// tiers that day while every side won. This isn't "totals never hit," it's
+// "the same threshold that works for sides doesn't reliably work for
+// totals" — so totals now need a genuinely higher score to appear at all,
+// and are capped at 2 per day regardless of sport, on top of the existing
+// per-sport correlation cap. Stage 1 also now runs a real verification
+// pass on totals before they even reach this stage — these two layers
+// work together, not as alternatives to each other.
+const TOTAL_LEAN_FLOOR = 7.0;
+const TOTAL_OFFICIAL_THRESHOLD = 8.5;
+const MAX_TOTALS_PER_DAY = 2;
 const LEAN_SCORE_FLOOR = 6.0;
 const DAILY_OFFICIAL_CAP = 3;
 const CORRELATION_CAP_PER_SPORT_BETTYPE = 2;
@@ -272,8 +284,27 @@ async function finalizePicks() {
       // stale Stage 1 guess) — see inferBetTypeFromPickText() above for why.
       const betType = inferBetTypeFromPickText(pick.pick, pick.odds) || candidate.bet_type || 'unknown';
 
-      if (score < LEAN_SCORE_FLOOR) {
-        console.log(`FINAL_BELOW_LEAN_FLOOR: "${candidate.game}" scored ${score}, below ${LEAN_SCORE_FLOOR} \u2014 not shown anywhere.`);
+      const isTotal = betType === 'total';
+      const effectiveLeanFloor = isTotal ? TOTAL_LEAN_FLOOR : LEAN_SCORE_FLOOR;
+      const effectiveOfficialThreshold = isTotal ? TOTAL_OFFICIAL_THRESHOLD : OFFICIAL_SCORE_THRESHOLD;
+
+      if (isTotal) {
+        const { data: totalsToday } = await supabase
+          .from('daily_picks')
+          .select('id', { count: 'exact' })
+          .eq('date', today)
+          .eq('bet_type', 'total');
+        if ((totalsToday || []).length >= MAX_TOTALS_PER_DAY) {
+          console.log(`FINAL_TOTALS_DAILY_CAP: "${candidate.game}" is a total but today's slate already has ${MAX_TOTALS_PER_DAY} totals published (any tier) — discarding rather than adding another, regardless of this candidate's own score.`);
+          await supabase.from('game_candidates').update({
+            status: 'discarded_totals_daily_cap',
+          }).eq('id', candidate.id);
+          continue;
+        }
+      }
+
+      if (score < effectiveLeanFloor) {
+        console.log(`FINAL_BELOW_LEAN_FLOOR: "${candidate.game}" (${betType}) scored ${score}, below ${effectiveLeanFloor} — not shown anywhere.`);
         await supabase.from('game_candidates').update({
           status: 'discarded_low_score',
         }).eq('id', candidate.id);
@@ -299,7 +330,7 @@ async function finalizePicks() {
       let tier = 'lean';
       let missReason = 'score';
 
-      if (correlationCapHit && score >= OFFICIAL_SCORE_THRESHOLD) {
+      if (correlationCapHit && score >= effectiveOfficialThreshold) {
         tier = 'lean';
         missReason = 'correlation_cap';
         console.log(`FINAL_CORRELATION_CAP: "${candidate.game}" scored ${score} (would be official) but ${candidate.sport}/${betType} already has ${CORRELATION_CAP_PER_SPORT_BETTYPE} picks (any tier) today \u2014 publishing as Lean Machine instead. The elite override does NOT apply here \u2014 correlation risk is a separate concern from pick quality.`);
@@ -310,7 +341,7 @@ async function finalizePicks() {
           status: 'discarded_lean_correlation_cap',
         }).eq('id', candidate.id);
         continue;
-      } else if (score >= OFFICIAL_SCORE_THRESHOLD) {
+      } else if (score >= effectiveOfficialThreshold) {
         const { data: officialToday } = await supabase
           .from('daily_picks')
           .select('id', { count: 'exact' })
