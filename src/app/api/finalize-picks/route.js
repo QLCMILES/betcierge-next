@@ -345,11 +345,24 @@ async function checkMLBLineupStructured(candidate) {
   const confirmedNames = candidate.eligibility?.confirmed_names || [];
   const lastWord = (n) => (n || '').trim().split(' ').pop().toLowerCase();
 
+  // confirmed_names entries are full sentences from Stage 2 research (e.g.
+  // "Framber Valdez confirmed starting for Detroit Tigers per FanDuel
+  // Research..."), not bare names. Taking the literal last word of that
+  // whole sentence grabs a stray word from the citation, not the player's
+  // actual surname \u2014 this pulls out just the name before " confirmed",
+  // the consistent pattern Stage 2 always uses.
+  const extractPlayerName = (confirmedNameString) => {
+    if (!confirmedNameString) return '';
+    const idx = confirmedNameString.toLowerCase().indexOf(' confirmed');
+    if (idx === -1) return confirmedNameString.trim();
+    return confirmedNameString.slice(0, idx).trim();
+  };
+
   // ── Check 1: starting pitcher (automatic cancel, no judgment needed) ──
   const pitcherStillMatches = (postedName) => {
-    if (!postedName) return true;
-    if (confirmedNames.length === 0) return true;
-    return confirmedNames.some(cn => lastWord(cn) === lastWord(postedName));
+    if (!postedName) return true; // not posted for this side yet — can't say it changed
+    if (confirmedNames.length === 0) return true; // nothing to compare against
+    return confirmedNames.some(cn => lastWord(extractPlayerName(cn)) === lastWord(postedName));
   };
 
   const awayPitcherOk = pitcherStillMatches(awayStarter);
@@ -373,12 +386,12 @@ async function checkMLBLineupStructured(candidate) {
 
   // ── Check 2: other named participants still in the batting order ───
   const pitcherLastWords = [lastWord(awayStarter), lastWord(homeStarter)].filter(Boolean);
-  const battersToCheck = confirmedNames.filter(cn => !pitcherLastWords.includes(lastWord(cn)));
+  const battersToCheck = confirmedNames.filter(cn => !pitcherLastWords.includes(lastWord(extractPlayerName(cn))));
 
   const fullLineupNames = [...awayLineup, ...homeLineup];
   const missingBatters = [];
   for (const cn of battersToCheck) {
-    const found = fullLineupNames.some(name => lastWord(name) === lastWord(cn));
+    const found = fullLineupNames.some(name => lastWord(name) === lastWord(extractPlayerName(cn)));
     if (!found && fullLineupNames.length > 0) {
       missingBatters.push(cn);
     }
