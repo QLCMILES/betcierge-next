@@ -210,7 +210,7 @@ async function evaluateAllGames(slimGames, today_display, recentPicksMemory) {
 // defaults for now, to be revisited once Phase 3 is live and real timing
 // data exists to tune against.
 const SPORT_TIMING = {
-  mlb:    { researchMinutesBefore: 240, confirmationMinutesBefore: 90,  minLeadMinutes: 60 },
+  mlb:    { researchMinutesBefore: 300, confirmationMinutesBefore: 90,  minLeadMinutes: 60 },
   nhl:    { researchMinutesBefore: 120, confirmationMinutesBefore: 75,  minLeadMinutes: 45 },
   nba:    { researchMinutesBefore: 90,  confirmationMinutesBefore: 45,  minLeadMinutes: 30 },
   nfl:    { researchMinutesBefore: 180, confirmationMinutesBefore: 105, minLeadMinutes: 60 },
