@@ -13,7 +13,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const TIME_BUDGET_MS = 60000; // gates the Stage 1 candidate-pool retry only
+// TIME_BUDGET_MS removed — was only used by the old candidate-pool retry
+// logic, which no longer exists in this file.
 
 async function callClaude(body, retryCount = 0, timeoutMs = 60000) {
   const controller = new AbortController();
@@ -74,79 +75,6 @@ function cleanJson(text) {
   return JSON.parse(jsonMatch[0]);
 }
 
-const VERIFY_CONCURRENCY_CAP = 5;
-
-// Real, search-enabled sanity check on ONE raw Stage 1 proposal, before it
-// gets written as a real candidate. Deliberately lighter than Stage 2's
-// full research (a handful of searches, not 10+) — this is a fast check,
-// not the deep dive. Specifically targets the failure mode that produced
-// a real 0-6 day on totals: a pitching-only narrative that never actually
-// checked whether either team can genuinely hit.
-async function verifyCandidate(candidate, matchedGame, today_display) {
-  const system = `You are Hunter, an elite sports betting analyst. Today is ${today_display}.
-
-A colleague has proposed this candidate for deeper research later today:
-Game: ${candidate.game}
-Sport: ${candidate.sport}
-Proposed bet type: ${candidate.bet_type}
-Proposed pick: ${candidate.proposed_pick}
-One-sentence reason given: ${candidate.reason}
-
-Your job right now is a QUICK VERIFICATION PASS — not the full deep research that happens later. Run 3-5 targeted web searches to sanity-check this specific proposal before it gets a full research slot.
-
-FOR TOTALS SPECIFICALLY: this system has a real, measured problem — totals proposed on pitching/bullpen narratives alone, without weighing both team's actual offensive quality, have underperformed badly. If this proposal is a total, you MUST search and report on BOTH teams' real recent offensive output (runs per game, recent form), not just the pitching matchup. If either team is a genuinely strong offense, say so plainly — do not let a hot-pitcher story override that.
-
-Return ONLY this JSON, no other text:
-{
-  "holds_up": true or false,
-  "verified_bet_type": "moneyline|spread|total|f5|first_half|prop",
-  "verified_pick": "the pick to actually use — same as proposed if it holds up, or a better-supported alternative for this SAME game if it doesn't",
-  "verification_note": "one or two sentences on what you actually found, including both sides if this is a total"
-}`;
-
-  const response = await callClaude({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1000,
-    system,
-    messages: [{ role: 'user', content: `Verify this candidate now.` }],
-    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-  }, 0, 45000);
-
-  const text = extractText(response.content);
-  if (!text.trim()) return null;
-  try {
-    return cleanJson(text);
-  } catch (e) {
-    console.log(`VERIFY_PARSE_FAILED for "${candidate.game}": ${e.message}`);
-    return null;
-  }
-}
-
-// Runs verification across all raw candidates with a concurrency cap
-// (same pattern already used elsewhere in this codebase), so 8-10
-// candidates take roughly 2 batches worth of wall-clock time, not 8-10
-// sequential calls. Fails OPEN per-candidate — if a verification call
-// errors or times out, that candidate keeps its original, unverified
-// proposal rather than being dropped or blocking the whole run.
-async function verifyAllCandidates(candidates, slimGames, today_display) {
-  const results = new Array(candidates.length).fill(null);
-  for (let i = 0; i < candidates.length; i += VERIFY_CONCURRENCY_CAP) {
-    const batch = candidates.slice(i, i + VERIFY_CONCURRENCY_CAP);
-    const batchResults = await Promise.all(batch.map(async (c) => {
-      const matchedGame = slimGames.find(g => g.game === c.game);
-      if (!matchedGame) return null;
-      try {
-        return await verifyCandidate(c, matchedGame, today_display);
-      } catch (e) {
-        console.log(`VERIFY_ERROR for "${c.game}": ${e.message}`);
-        return null;
-      }
-    }));
-    batchResults.forEach((r, idx) => { results[i + idx] = r; });
-  }
-  return results;
-}
-
 // ── Recent Picks Memory (unchanged from generate-picks) ─────────────────
 async function buildRecentPicksMemory() {
   const sevenDaysAgo = new Date();
@@ -196,62 +124,84 @@ async function buildRecentPicksMemory() {
   return summary;
 }
 
-// ── Stage 1: Candidate Pool (unchanged from generate-picks) ─────────────
-async function buildCandidatePool(gamesContext, today_display, recentPicksMemory, sportsAvailable) {
-  const multiSportNote = sportsAvailable.length > 1
-    ? `\n\nMULTIPLE SPORTS ARE LIVE TODAY: ${sportsAvailable.join(', ')}. Your candidate pool MUST include games from at least 2 different sports if games from 2+ sports are available in the feed. Do not let one sport dominate the pool just because it has more games listed.`
-    : '';
+const EVALUATE_CONCURRENCY_CAP = 5;
+
+// Replaces the old two-step "guess a candidate, then verify it" pattern.
+// This runs a REAL, search-based evaluation on EVERY game in today's slate
+// directly — no game is excluded before getting a genuine look. Deliberately
+// lighter than Stage 2's full research (3-5 searches, not 10+) — this is a
+// fast, real check per game, not the deep dive that happens later only for
+// whatever comes back worth_pursuing.
+async function evaluateGameForEdge(game, today_display, recentPicksMemory) {
+  const linesSummary = [
+    game.moneyline ? `moneyline: ${game.moneyline}` : null,
+    game.spread ? `spread: ${game.spread}` : null,
+    game.total ? `total: ${game.total}` : null,
+    game.away_starter || null,
+    game.home_starter || null,
+  ].filter(Boolean).join(' | ');
 
   const system = `You are Hunter, an elite sports betting analyst. Today is ${today_display}.
 
-This is STAGE 1 of a two-stage process. Your ONLY job right now is to identify a diverse CANDIDATE POOL. Do NOT do deep research yet. Do NOT write insights yet. Just identify strong candidates worth researching further.
+You are looking at ONE game from today's full slate. Run a REAL, right-now evaluation — not verifying someone else's guess, deciding fresh from scratch whether this specific game has a genuine betting edge worth pursuing.
 
-REQUIREMENTS FOR THE CANDIDATE POOL:
-- Identify 8-10 candidates from the games feed below.
-- Candidates MUST span multiple bet types: moneyline, run line/spread, totals, AND at least one alternate market when available (first 5 innings for MLB, first half, player props). Do NOT return a pool that is all moneyline or all spread.
-- Do NOT propose a candidate on a team flagged in the repeat warning below unless you note specifically what is different this time.
-- Each candidate needs only a ONE-SENTENCE reason — save the deep research for stage 2.
-- Every game must come EXACTLY from the feed below. Never invent games.${multiSportNote}
+Game: ${game.game}
+Sport: ${game.sport}
+Current lines: ${linesSummary || 'not available'}
 
-IMPORTANT — what this diversity requirement is actually for: this pool is material to RESEARCH, not a preview of your final picks. You are being asked to make sure F5, props, and totals get genuinely looked at before you commit to anything, not to guarantee a mix of bet types in your final picks. If a real F5 or prop edge doesn't exist in today's slate, that's fine — the requirement is that you checked, not that you force one in.
+Run 3-5 targeted web searches covering whatever's most relevant to this specific game (confirmed starters/lineups, injuries, recent form, line movement, matchup history — as applicable). This is a fast, real check, not the full deep-dive research that happens later for whatever you flag here as worth pursuing.
+
+FOR TOTALS SPECIFICALLY: this system has a real, measured problem — totals proposed on pitching/bullpen narratives alone, without weighing both teams' actual offensive quality, have underperformed badly. If you land on a total here, you MUST have searched and weighed BOTH teams' real recent offensive output, not just the pitching matchup.
+
+Be honest and selective. Passing on this game is the correct, default outcome — do not manufacture an angle that isn't really there just to have something to report. Most individual games will NOT have a real edge today.
 
 ${recentPicksMemory}
 
 Return ONLY this JSON, no other text:
-{"candidates":[{"sport":"...","game":"EXACT game name from feed","bet_type":"moneyline|spread|total|f5|first_half|prop","proposed_pick":"...","reason":"one sentence"}]}`;
+{
+  "worth_pursuing": true or false,
+  "bet_type": "moneyline|spread|total|f5|first_half|prop" (only meaningful if worth_pursuing is true),
+  "pick": "the specific pick, e.g. 'Detroit Tigers -1.5'" (only meaningful if worth_pursuing is true),
+  "reason": "one or two sentences on what you actually found"
+}`;
 
   const response = await callClaude({
     model: 'claude-sonnet-4-6',
-    max_tokens: 2000,
+    max_tokens: 1000,
     system,
-    messages: [{
-      role: 'user',
-      content: `Today is ${today_display}. Available games with current lines:\n${gamesContext}\n\nReturn the candidate pool JSON now.`
-    }],
-  });
+    messages: [{ role: 'user', content: `Evaluate ${game.game} now.` }],
+    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+  }, 0, 45000);
 
   const text = extractText(response.content);
-  if (!text.trim()) throw new Error('Stage 1 returned no text');
-  return cleanJson(text);
+  if (!text.trim()) return null;
+  try {
+    return cleanJson(text);
+  } catch (e) {
+    console.log(`EVALUATE_PARSE_FAILED for "${game.game}": ${e.message}`);
+    return null;
+  }
 }
 
-function validateCandidatePool(pool) {
-  const problems = [];
-  const candidates = pool.candidates || [];
-
-  if (candidates.length < 5) {
-    problems.push(`Only ${candidates.length} candidates returned — need at least 5-8 for a real selection.`);
+// Runs the real evaluation across every game in today's slate, with a
+// concurrency cap so a big slate doesn't fire dozens of simultaneous calls.
+// Fails OPEN per-game — if a call errors or times out, that game is simply
+// skipped (treated as no edge found), never blocks the rest of the run.
+async function evaluateAllGames(slimGames, today_display, recentPicksMemory) {
+  const results = new Array(slimGames.length).fill(null);
+  for (let i = 0; i < slimGames.length; i += EVALUATE_CONCURRENCY_CAP) {
+    const batch = slimGames.slice(i, i + EVALUATE_CONCURRENCY_CAP);
+    const batchResults = await Promise.all(batch.map(async (g) => {
+      try {
+        return await evaluateGameForEdge(g, today_display, recentPicksMemory);
+      } catch (e) {
+        console.log(`EVALUATE_ERROR for "${g.game}": ${e.message}`);
+        return null;
+      }
+    }));
+    batchResults.forEach((r, idx) => { results[i + idx] = r; });
   }
-
-  const betTypes = new Set(candidates.map(c => c.bet_type));
-  if (betTypes.size <= 1) {
-    problems.push(`All candidates are the same bet type (${[...betTypes].join(', ')}). Need diversity across moneyline/spread/total/F5/prop.`);
-  }
-  if (!candidates.some(c => ['f5', 'first_half', 'prop'].includes(c.bet_type))) {
-    problems.push(`No alternate-market candidate (F5, first half, or prop) included. At least one is required when the sport supports it.`);
-  }
-
-  return problems;
+  return results;
 }
 
 // ── Per-sport timing ──────────────────────────────────────────────────────
@@ -379,7 +329,11 @@ async function generateMorningTrigger() {
 
   const slimGames = (oddsData.games || [])
     .filter(g => new Date(g.commence_time) > cutoff && new Date(g.commence_time) < upperBound)
-    .slice(0, 20)
+    // NOTE: no slice/cap here by design — every game in today's window gets
+    // a real, research-based look (see evaluateGameForEdge below). Revisit
+    // this once college football/basketball are back in season: at ~100+
+    // games in one day, this loop's wall-clock time could approach or
+    // exceed this function's 300s maxDuration. Fine for MLB-only days now.
     .map(g => {
       const bm = g.bookmakers?.[0];
       const h2h = bm?.markets?.find(m => m.key === 'h2h');
@@ -426,8 +380,6 @@ async function generateMorningTrigger() {
     console.error('Pitcher enrichment error:', e.message);
   }
 
-  const gamesContext = JSON.stringify(slimGames);
-  const sportsAvailable = [...new Set(slimGames.map(g => g.sport))];
   const today_display = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
     timeZone: 'America/New_York'
@@ -436,46 +388,26 @@ async function generateMorningTrigger() {
   const recentPicksMemory = await buildRecentPicksMemory();
   console.log('Recent picks memory built. Length:', recentPicksMemory.length);
 
-  // ── STAGE 1: Candidate Pool ──────────────────────────────────────────
-  let candidatePool = await buildCandidatePool(gamesContext, today_display, recentPicksMemory, sportsAvailable);
-  let poolProblems = validateCandidatePool(candidatePool);
+  console.log(`Evaluating all ${slimGames.length} games in today's slate — no pre-filter, every game gets a real research pass.`);
 
-  if (poolProblems.length > 0 && Date.now() - startTime < TIME_BUDGET_MS) {
-    console.log('Candidate pool validation failed, retrying once:', poolProblems);
-    const correctionNote = `\n\nYOUR PREVIOUS CANDIDATE POOL WAS REJECTED for these reasons:\n${poolProblems.map(p => `- ${p}`).join('\n')}\nFix these issues and return a corrected candidate pool.`;
-    const retryPool = await buildCandidatePool(gamesContext, today_display, recentPicksMemory + correctionNote, sportsAvailable);
-    const retryProblems = validateCandidatePool(retryPool);
-    if (retryProblems.length > 0) {
-      console.log('Candidate pool still imperfect after retry, proceeding anyway:', retryProblems);
-    }
-    candidatePool = retryPool;
-  } else if (poolProblems.length > 0) {
-    console.log('Candidate pool validation failed but time budget exceeded, proceeding anyway:', poolProblems);
-  }
+  // ── STAGE 1: Real, per-game research evaluation — no pre-filter ──────
+  // Replaces the old "guess 8-10 candidates, then verify them" pattern.
+  // Every game in today's slate gets a genuine, search-based look; nothing
+  // is excluded before being researched. See maxDuration note above this
+  // file's slimGames construction re: revisiting before college season.
+  const evaluations = await evaluateAllGames(slimGames, today_display, recentPicksMemory);
+  const candidates = slimGames
+    .map((g, i) => ({ game: g.game, sport: g.sport, evaluation: evaluations[i] }))
+    .filter(c => c.evaluation && c.evaluation.worth_pursuing === true)
+    .map(c => ({
+      game: c.game,
+      sport: c.sport,
+      bet_type: c.evaluation.bet_type || 'unknown',
+      proposed_pick: c.evaluation.pick || '',
+      reason: c.evaluation.reason || '',
+    }));
 
-  // ── STAGE 1B: Verification pass ──────────────────────────────────────
-  // Real, search-enabled sanity check on each raw proposal before writing
-  // it as a real candidate — specifically targets totals proposed on
-  // pitching alone without weighing real offensive strength on both sides
-  // (the exact failure mode behind a real 0-6 day on totals).
-  const rawCandidates = candidatePool.candidates || [];
-  const verifications = await verifyAllCandidates(rawCandidates, slimGames, today_display);
-  const candidates = rawCandidates.map((c, i) => {
-    const v = verifications[i];
-    if (!v) {
-      console.log(`VERIFY_SKIPPED for "${c.game}" — verification failed or timed out, keeping original unverified proposal.`);
-      return c;
-    }
-    if (v.holds_up === false) {
-      console.log(`VERIFY_REVISED: "${c.game}" — original proposal (${c.bet_type}: ${c.proposed_pick}) did not hold up — ${v.verification_note}`);
-    }
-    return {
-      ...c,
-      bet_type: v.verified_bet_type || c.bet_type,
-      proposed_pick: v.verified_pick || c.proposed_pick,
-      reason: v.verification_note || c.reason,
-    };
-  });
+  console.log(`${candidates.length} of ${slimGames.length} games came back worth pursuing.`);
 
   // ── Write game_candidates rows, one per candidate, with timing ───────
   const rows = [];
