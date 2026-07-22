@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { waitUntil } from '@vercel/functions';
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 const supabase = createClient(
@@ -137,38 +137,139 @@ Return ONLY this JSON, no other text:
 }`;
 }
 
-async function submitBatchForCandidate(candidate, today_display) {
-  const system = buildStage2SystemPrompt(candidate, today_display);
-  const body = {
-    custom_id: candidate.id,
-    params: {
-      model: 'claude-sonnet-4-6',
-      max_tokens: 16000,
-      system,
-      messages: [{
-        role: 'user',
-        content: `Research ${candidate.game} (${candidate.sport}) now and return the JSON pick.`
-      }],
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-    },
-  };
+const PER_CANDIDATE_TIMEOUT_MS = 120000; // hard cap per candidate's research call
 
-  const response = await fetch('https://api.anthropic.com/v1/messages/batches', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({ requests: [body] }),
-  });
-  const data = await response.json();
-  if (!data.id) {
-    throw new Error(`Batch submission failed for candidate ${candidate.id}: ${JSON.stringify(data)}`);
+async function callClaudeSync(body, retryCount = 0, timeoutMs = PER_CANDIDATE_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response;
+  try {
+    response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (fetchErr) {
+    clearTimeout(timeoutId);
+    if (fetchErr.name === 'AbortError') {
+      console.log(`ANTHROPIC_API_TIMEOUT (research-scheduler): call exceeded ${timeoutMs}ms`);
+      return { type: 'error', error: { type: 'timeout_error', message: `Call exceeded ${timeoutMs}ms` } };
+    }
+    throw fetchErr;
   }
-  return data.id;
+  clearTimeout(timeoutId);
+
+  const data = await response.json();
+
+  if (data.type === 'error') {
+    const errType = data.error?.type || 'unknown';
+    const errMsg = data.error?.message || 'no message';
+    console.log(`ANTHROPIC_API_ERROR (research-scheduler): http_status=${response.status} error_type=${errType} message="${errMsg}" retry_count=${retryCount}`);
+    const transientTypes = ['overloaded_error', 'rate_limit_error', 'api_error'];
+    if (transientTypes.includes(errType) && retryCount < 1) {
+      console.log('Retrying once after transient API error, waiting 3s...');
+      await new Promise(r => setTimeout(r, 3000));
+      return callClaudeSync(body, retryCount + 1, timeoutMs);
+    }
+  }
+
+  return data;
 }
 
+// SYNCHRONOUS Stage 2 research on ONE candidate — replaces the old
+// submit-to-Batches-API-and-poll-later pattern. Calling /v1/messages
+// directly means this either finishes within its own bounded timeout or
+// it doesn't — no dependency on Anthropic's batch queue, which has no
+// completion-time guarantee and was the actual cause of 4 of 10
+// candidates missing their confirmation deadline on July 22 (production
+// independently hit the same batch-queue slowness that same day).
+async function runStage2Research(candidate, today_display) {
+  const system = buildStage2SystemPrompt(candidate, today_display);
+  const response = await callClaudeSync({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 16000,
+    system,
+    messages: [{
+      role: 'user',
+      content: `Research ${candidate.game} (${candidate.sport}) now and return the JSON pick.`
+    }],
+    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+  }, 0, PER_CANDIDATE_TIMEOUT_MS);
+
+  const text = extractText(response.content);
+  if (!text.trim()) throw new Error('Stage 2 research returned no text');
+  return cleanJson(text);
+}
+
+// Shared gating logic — the three quality gates originally lived only
+// inside pollSubmittedResearch's batch-completion handler. Extracted here
+// so both the new synchronous path (submitNewResearch) and the legacy
+// batch-draining path (pollSubmittedResearch, kept only to resolve any
+// candidates already mid-flight from before this deploy) run the exact
+// same checks, instead of two copies that could quietly diverge over time.
+async function gateAndFinalizeResearch(candidate, pick, knownGamesToday) {
+  // ── Gate 1: game-verification ──────────────────────────────────
+  if (pick.game !== candidate.game) {
+    console.log(`GAME_MISMATCH: expected "${candidate.game}", got "${pick.game}" — rejecting.`);
+    await supabase.from('game_candidates').update({
+      status: 'rejected_no_edge',
+      notes: `Game verification failed: model returned "${pick.game}" instead of "${candidate.game}".`,
+    }).eq('id', candidate.id);
+    return;
+  }
+
+  // ── Gate 2: eligibility ───────────────────────────────────────
+  const elig = pick.eligibility || {};
+  const vaguePattern = /\b(TBD|tbd|likely starter|probable|unconfirmed|not yet announced)\b/i;
+  const stripKnownSafePhrases = (text) => (text || '').replace(/MLB\.com probable pitchers? page/gi, '');
+  const namesLookVague = (elig.confirmed_names || []).some(n => vaguePattern.test(stripKnownSafePhrases(n)));
+  if (elig.mandatory_participant_confirmed !== true || namesLookVague || !elig.confirmed_names || elig.confirmed_names.length === 0) {
+    console.log(`ELIGIBILITY_FAILED: "${candidate.game}" — mandatory_participant_confirmed=${elig.mandatory_participant_confirmed}, names=${JSON.stringify(elig.confirmed_names)}`);
+    await supabase.from('game_candidates').update({
+      status: 'rejected_no_edge',
+      notes: 'Eligibility gate failed: participant confirmation not genuinely established.',
+      eligibility: elig,
+    }).eq('id', candidate.id);
+    return;
+  }
+
+  // ── Gate 3: entity-consistency ───────────────────────────────────
+  const otherGames = knownGamesToday.filter(g => g !== candidate.game);
+  const otherTeamNames = otherGames.flatMap(g => g.split(' @ ').map(t => t.trim())).filter(Boolean);
+  const insightLower = (pick.insight || '').toLowerCase();
+  const bledInTeam = otherTeamNames.find(team => {
+    const lastWord = team.split(' ').pop();
+    return lastWord && lastWord.length > 3 && insightLower.includes(lastWord.toLowerCase());
+  });
+  if (bledInTeam) {
+    console.log(`ENTITY_BLEED: "${candidate.game}" insight appears to reference "${bledInTeam}" from a different game — rejecting.`);
+    await supabase.from('game_candidates').update({
+      status: 'rejected_no_edge',
+      notes: `Entity-consistency check failed: insight referenced "${bledInTeam}" from an unrelated game.`,
+    }).eq('id', candidate.id);
+    return;
+  }
+
+  // ── All gates passed — store the research, ready for final confirmation ──
+  await supabase.from('game_candidates').update({
+    research_status: 'researched',
+    status: 'awaiting_confirmation',
+    score: pick.score ?? null,
+    eligibility: elig,
+    insight: pick.insight,
+    odds: pick.odds,
+    units: pick.units,
+    research_log: pick,
+  }).eq('id', candidate.id);
+
+  console.log(`Research complete and gated successfully: "${candidate.game}" (score: ${pick.score})`);
+}
 async function fetchLiveOddsForGame(gameName, sportKey) {
   const oddsRes = await fetch('https://betcierge-next.vercel.app/api/odds', { method: 'POST' });
   const oddsData = await oddsRes.json();
@@ -186,6 +287,7 @@ async function fetchLiveOddsForGame(gameName, sportKey) {
 }
 
 // ── Submit phase: pick up newly-triggered candidates ────────────────────
+// ── Submit + synchronously research newly-triggered candidates ──────────
 async function submitNewResearch(today) {
   const now = new Date().toISOString();
 
@@ -204,36 +306,39 @@ async function submitNewResearch(today) {
     return;
   }
 
-  console.log(`${candidates.length} candidate(s) crossed their research trigger \u2014 processing (cap: ${CONCURRENCY_CAP}).`);
+  console.log(`${candidates.length} candidate(s) crossed their research trigger — researching synchronously now (cap: ${CONCURRENCY_CAP}).`);
 
   const today_display = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
     timeZone: 'America/New_York'
   });
 
+  // For the entity-consistency gate: real team names from every game in
+  // today's candidate pool, needed here now since gating happens
+  // immediately in this same pass rather than in a later poll phase.
+  const { data: todaysCandidates } = await supabase
+    .from('game_candidates')
+    .select('game')
+    .eq('date', today);
+  const knownGamesToday = (todaysCandidates || []).map(c => c.game);
+
   for (const candidate of candidates) {
     try {
-      // Deadline check FIRST, before spending anything \u2014 if the
-      // confirmation deadline has already passed, this candidate can
-      // never be confirmed and published in time regardless of how good
-      // the research turns out. Submitting anyway would be a wasted,
-      // real-money Anthropic API call on something already dead.
+      // Deadline check FIRST, before spending anything.
       if (candidate.confirmation_deadline_at && new Date(candidate.confirmation_deadline_at) < new Date()) {
-        console.log(`ALREADY_EXPIRED_AT_SUBMIT: "${candidate.game}" \u2014 confirmation deadline already passed before research was even submitted \u2014 skipping entirely, not spending a research call.`);
+        console.log(`ALREADY_EXPIRED_AT_SUBMIT: "${candidate.game}" — confirmation deadline already passed before research was even started — skipping entirely, not spending a research call.`);
         await supabase.from('game_candidates').update({
           research_status: 'discarded_stale',
           status: 'expired_unconfirmed',
-          notes: 'Confirmation deadline had already passed by the time the research scheduler reached this candidate \u2014 never submitted.',
+          notes: 'Confirmation deadline had already passed by the time the research scheduler reached this candidate — never researched.',
         }).eq('id', candidate.id);
         continue;
       }
 
-      // Pre-flight freshness check \u2014 cheap, no Claude call. Skip
-      // spending a Stage 2 research call on a candidate that's already
-      // gone stale since this morning (Stage 1 pool decay fix).
+      // Pre-flight freshness check — cheap, no Claude call.
       const freshOdds = await fetchLiveOddsForGame(candidate.game, candidate.sport_key);
       if (!freshOdds) {
-        console.log(`STALE_GAME_VANISHED: "${candidate.game}" no longer appears in the live odds feed \u2014 discarding.`);
+        console.log(`STALE_GAME_VANISHED: "${candidate.game}" no longer appears in the live odds feed — discarding.`);
         await supabase.from('game_candidates').update({
           research_status: 'discarded_stale',
           notes: 'Game no longer found in live odds feed at research-trigger time (likely postponed or pulled).',
@@ -246,7 +351,7 @@ async function submitNewResearch(today) {
         candidate.original_spread, freshOdds.spread
       );
       if (freshness.stale) {
-        console.log(`STALE_LINE_MOVE: "${candidate.game}" \u2014 ${freshness.reason} \u2014 discarding rather than researching a dead candidate.`);
+        console.log(`STALE_LINE_MOVE: "${candidate.game}" — ${freshness.reason} — discarding rather than researching a dead candidate.`);
         await supabase.from('game_candidates').update({
           research_status: 'discarded_stale',
           notes: `Discarded at pre-flight: ${freshness.reason}`,
@@ -254,12 +359,13 @@ async function submitNewResearch(today) {
         continue;
       }
 
-      // Fresh odds check passed \u2014 submit isolated Stage 2 research.
-      const batchId = await submitBatchForCandidate(candidate, today_display);
+      // Fresh odds check passed — run REAL research right now, synchronously.
+      // Bounded by PER_CANDIDATE_TIMEOUT_MS inside callClaudeSync — this
+      // either finishes within that window or fails now, with no
+      // dependency on a batch queue with no completion-time guarantee.
+      const pick = await runStage2Research(candidate, today_display);
 
       await supabase.from('game_candidates').update({
-        research_status: 'research_submitted',
-        anthropic_batch_id: batchId,
         research_triggered_actual_at: new Date().toISOString(),
         last_odds_snapshot_at: new Date().toISOString(),
         fresh_moneyline: freshOdds.moneyline,
@@ -267,11 +373,16 @@ async function submitNewResearch(today) {
         fresh_total: freshOdds.total,
       }).eq('id', candidate.id);
 
-      console.log(`Submitted research for "${candidate.game}" \u2014 batch ${batchId}`);
+      // Gate immediately — no more separate poll-later phase for new
+      // candidates. Real deadline re-check happens again in finalize-picks
+      // regardless, same as before.
+      await gateAndFinalizeResearch(candidate, pick, knownGamesToday);
+
+      console.log(`Synchronous research complete for "${candidate.game}".`);
     } catch (err) {
-      console.error(`Error submitting research for candidate ${candidate.id} (${candidate.game}):`, err.message);
-      // Leave as pending_research so it can be retried next run, rather
-      // than silently losing the candidate on a transient error.
+      console.error(`Error researching candidate ${candidate.id} (${candidate.game}):`, err.message);
+      // Leave as pending_research so it can be retried next run, unless
+      // the confirmation deadline check above has already expired it.
     }
   }
 }
