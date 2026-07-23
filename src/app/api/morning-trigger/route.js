@@ -211,7 +211,6 @@ Return ONLY this JSON, no other text:
     system,
     messages: [
       { role: 'user', content: 'Convert your findings to the JSON now.' },
-      { role: 'assistant', content: '{' },
     ],
   }, 0, 30000);
 
@@ -221,9 +220,9 @@ Return ONLY this JSON, no other text:
     return null;
   }
   try {
-    return cleanJson('{' + text);
+    return cleanJson(text);
   } catch (e) {
-    console.log(`NORMALIZE_FAILED for "${game.game}": ${e.message} — giving up on this game for today.`);
+    console.log(`NORMALIZE_FAILED for "${game.game}": ${e.message.slice(0, 200)} — giving up on this game for today.`);
     return null;
   }
 }
