@@ -178,7 +178,52 @@ Return ONLY this JSON, no other text:
   try {
     return cleanJson(text);
   } catch (e) {
-    console.log(`EVALUATE_PARSE_FAILED for "${game.game}": ${e.message}`);
+    console.log(`EVALUATE_PARSE_FAILED for "${game.game}": ${e.message.slice(0, 200)} — attempting JSON-normalization fallback rather than discarding real research.`);
+    return await normalizeToJson(text, game);
+  }
+}
+
+// Second-pass fallback — ONLY fires when the first call did real research
+// but wrote it up as prose instead of the required JSON (a real, observed
+// failure mode on July 23: the research itself was good, just the wrong
+// output format). Does NOT re-research anything — no web_search tool
+// here, purely reformats findings that already exist. Uses an
+// assistant-turn prefill ('{') to force valid JSON continuation — more
+// reliable than just re-asking, since re-prompting the SAME call that
+// just did tool use tends to repeat the same prose-first habit.
+async function normalizeToJson(freeText, game) {
+  const system = `You already completed real research on ${game.game} and wrote up your findings below, but did not format the answer as JSON as required. Do NOT do any new research or add new information — just convert your own findings below into the exact JSON structure requested. If no real, worth-pursuing edge emerged from your findings, that's a legitimate outcome — represent it honestly with worth_pursuing: false, don't invent a pick that isn't really there.
+
+YOUR ORIGINAL FINDINGS:
+${freeText.slice(0, 4000)}
+
+Return ONLY this JSON, no other text:
+{
+  "worth_pursuing": true or false,
+  "bet_type": "moneyline|spread|total|f5|first_half|prop",
+  "pick": "the specific pick, e.g. 'Detroit Tigers -1.5'",
+  "reason": "one or two sentences on what you actually found"
+}`;
+
+  const response = await callClaude({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 500,
+    system,
+    messages: [
+      { role: 'user', content: 'Convert your findings to the JSON now.' },
+      { role: 'assistant', content: '{' },
+    ],
+  }, 0, 30000);
+
+  const text = extractText(response.content);
+  if (!text.trim()) {
+    console.log(`NORMALIZE_EMPTY for "${game.game}" — fallback call returned nothing, giving up on this game for today.`);
+    return null;
+  }
+  try {
+    return cleanJson('{' + text);
+  } catch (e) {
+    console.log(`NORMALIZE_FAILED for "${game.game}": ${e.message} — giving up on this game for today.`);
     return null;
   }
 }
