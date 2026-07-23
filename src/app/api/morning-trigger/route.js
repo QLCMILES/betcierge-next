@@ -132,7 +132,12 @@ const EVALUATE_CONCURRENCY_CAP = 5;
 // lighter than Stage 2's full research (3-5 searches, not 10+) — this is a
 // fast, real check per game, not the deep dive that happens later only for
 // whatever comes back worth_pursuing.
-async function evaluateGameForEdge(game, today_display, recentPicksMemory) {
+// ── Layer 1: pure research, no format constraint ─────────────────────
+// This call's only job is real research. No JSON requirement here at all
+// — that's what was fighting itself in the old single-call design. This
+// removes the failure mode structurally rather than asking the model to
+// try harder at formatting.
+async function researchGameFindings(game, today_display, recentPicksMemory) {
   const linesSummary = [
     game.moneyline ? `moneyline: ${game.moneyline}` : null,
     game.spread ? `spread: ${game.spread}` : null,
@@ -143,7 +148,7 @@ async function evaluateGameForEdge(game, today_display, recentPicksMemory) {
 
   const system = `You are Hunter, an elite sports betting analyst. Today is ${today_display}.
 
-You are looking at ONE game from today's full slate. Run a REAL, right-now evaluation — not verifying someone else's guess, deciding fresh from scratch whether this specific game has a genuine betting edge worth pursuing.
+You are looking at ONE game from today's full slate. Run a REAL, right-now evaluation — deciding fresh from scratch whether this specific game has a genuine betting edge worth pursuing.
 
 Game: ${game.game}
 Sport: ${game.sport}
@@ -157,74 +162,85 @@ Be honest and selective. Passing on this game is the correct, default outcome �
 
 ${recentPicksMemory}
 
-Return ONLY this JSON, no other text:
-{
-  "worth_pursuing": true or false,
-  "bet_type": "moneyline|spread|total|f5|first_half|prop" (only meaningful if worth_pursuing is true),
-  "pick": "the specific pick, e.g. 'Detroit Tigers -1.5'" (only meaningful if worth_pursuing is true),
-  "reason": "one or two sentences on what you actually found"
-}`;
+Write up your honest findings and conclusion in plain language — be specific and back up your reasoning with what you actually found. A colleague will handle structuring your answer afterward, so just focus on giving a real, well-researched take.`;
 
   const response = await callClaude({
     model: 'claude-sonnet-4-6',
-    max_tokens: 1000,
+    max_tokens: 1500,
     system,
-    messages: [{ role: 'user', content: `Evaluate ${game.game} now.` }],
+    messages: [{ role: 'user', content: `Research ${game.game} now and give me your honest findings.` }],
     tools: [{ type: 'web_search_20250305', name: 'web_search' }],
   }, 0, 45000);
 
-  const text = extractText(response.content);
-  if (!text.trim()) return null;
-  try {
-    return cleanJson(text);
-  } catch (e) {
-    console.log(`EVALUATE_PARSE_FAILED for "${game.game}": ${e.message.slice(0, 200)} — attempting JSON-normalization fallback rather than discarding real research.`);
-    return await normalizeToJson(text, game);
-  }
+  return extractText(response.content);
 }
 
-// Second-pass fallback — ONLY fires when the first call did real research
-// but wrote it up as prose instead of the required JSON (a real, observed
-// failure mode on July 23: the research itself was good, just the wrong
-// output format). Does NOT re-research anything — no web_search tool
-// here, purely reformats findings that already exist. Uses an
-// assistant-turn prefill ('{') to force valid JSON continuation — more
-// reliable than just re-asking, since re-prompting the SAME call that
-// just did tool use tends to repeat the same prose-first habit.
-async function normalizeToJson(freeText, game) {
-  const system = `You already completed real research on ${game.game} and wrote up your findings below, but did not format the answer as JSON as required. Do NOT do any new research or add new information — just convert your own findings below into the exact JSON structure requested. If no real, worth-pursuing edge emerged from your findings, that's a legitimate outcome — represent it honestly with worth_pursuing: false, don't invent a pick that isn't really there.
+// ── Layer 2: forced structured extraction — the real fix ─────────────
+// tool_choice forces the model to respond ONLY via this tool's schema.
+// This is an API-level guarantee, not a prompt instruction the model can
+// choose to ignore — the model structurally cannot return prose here.
+const EVALUATION_TOOL = {
+  name: 'submit_game_evaluation',
+  description: 'Submit the final structured evaluation for this game, based on the research findings already gathered.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      worth_pursuing: { type: 'boolean', description: 'Whether this game has a genuine, real betting edge worth pursuing today.' },
+      bet_type: { type: 'string', enum: ['moneyline', 'spread', 'total', 'f5', 'first_half', 'prop', 'none'], description: "Use 'none' if worth_pursuing is false." },
+      pick: { type: 'string', description: "The specific pick, e.g. 'Detroit Tigers -1.5'. Empty string if worth_pursuing is false." },
+      reason: { type: 'string', description: 'One or two sentences on what was actually found.' },
+    },
+    required: ['worth_pursuing', 'bet_type', 'pick', 'reason'],
+  },
+};
 
-YOUR ORIGINAL FINDINGS:
-${freeText.slice(0, 4000)}
-
-Return ONLY this JSON, no other text:
-{
-  "worth_pursuing": true or false,
-  "bet_type": "moneyline|spread|total|f5|first_half|prop",
-  "pick": "the specific pick, e.g. 'Detroit Tigers -1.5'",
-  "reason": "one or two sentences on what you actually found"
-}`;
-
+async function extractStructuredEvaluation(findingsText, game) {
   const response = await callClaude({
     model: 'claude-sonnet-4-6',
     max_tokens: 500,
-    system,
-    messages: [
-      { role: 'user', content: 'Convert your findings to the JSON now.' },
-    ],
+    system: `You are structuring a colleague's research findings on ${game.game} into our required format. Do not add new information or re-research anything — just faithfully structure what's below.`,
+    messages: [{ role: 'user', content: `Findings:\n\n${findingsText.slice(0, 4000)}\n\nSubmit the structured evaluation now.` }],
+    tools: [EVALUATION_TOOL],
+    tool_choice: { type: 'tool', name: 'submit_game_evaluation' },
   }, 0, 30000);
 
-  const text = extractText(response.content);
-  if (!text.trim()) {
-    console.log(`NORMALIZE_EMPTY for "${game.game}" — fallback call returned nothing, giving up on this game for today.`);
+  const toolUse = (response.content || []).find(c => c.type === 'tool_use' && c.name === 'submit_game_evaluation');
+  if (!toolUse) {
+    console.log(`EXTRACT_NO_TOOL_USE for "${game.game}" — response had no matching tool_use block.`);
     return null;
   }
+  return toolUse.input; // already a real, schema-valid JS object — no JSON.parse, no regex, no guesswork
+}
+
+// ── Combined: research, then guaranteed-structure extraction ─────────
+async function evaluateGameForEdge(game, today_display, recentPicksMemory) {
+  let findings;
   try {
-    return cleanJson(text);
+    findings = await researchGameFindings(game, today_display, recentPicksMemory);
   } catch (e) {
-    console.log(`NORMALIZE_FAILED for "${game.game}": ${e.message.slice(0, 200)} — giving up on this game for today.`);
+    console.log(`RESEARCH_ERROR for "${game.game}": ${e.message}`);
     return null;
   }
+  if (!findings || !findings.trim()) return null;
+
+  try {
+    const result = await extractStructuredEvaluation(findings, game);
+    if (result) return result;
+  } catch (e) {
+    console.log(`EXTRACT_ERROR for "${game.game}": ${e.message}`);
+  }
+
+  // One genuine retry on the extraction step alone — cheap, since it
+  // reuses the same findings rather than re-researching from scratch.
+  try {
+    const retryResult = await extractStructuredEvaluation(findings, game);
+    if (retryResult) return retryResult;
+  } catch (e) {
+    console.log(`EXTRACT_RETRY_ERROR for "${game.game}": ${e.message}`);
+  }
+
+  console.log(`EVALUATE_GIVING_UP for "${game.game}" — research succeeded but structured extraction failed twice in a row.`);
+  return null;
 }
 
 // Runs the real evaluation across every game in today's slate, with a
