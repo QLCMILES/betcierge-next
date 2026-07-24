@@ -218,6 +218,7 @@ async function gateAndFinalizeResearch(candidate, pick, knownGamesToday) {
   if (pick.game !== candidate.game) {
     console.log(`GAME_MISMATCH: expected "${candidate.game}", got "${pick.game}" — rejecting.`);
     await supabase.from('game_candidates').update({
+      research_status: 'researched',
       status: 'rejected_no_edge',
       notes: `Game verification failed: model returned "${pick.game}" instead of "${candidate.game}".`,
     }).eq('id', candidate.id);
@@ -232,6 +233,7 @@ async function gateAndFinalizeResearch(candidate, pick, knownGamesToday) {
   if (elig.mandatory_participant_confirmed !== true || namesLookVague || !elig.confirmed_names || elig.confirmed_names.length === 0) {
     console.log(`ELIGIBILITY_FAILED: "${candidate.game}" — mandatory_participant_confirmed=${elig.mandatory_participant_confirmed}, names=${JSON.stringify(elig.confirmed_names)}`);
     await supabase.from('game_candidates').update({
+      research_status: 'researched',
       status: 'rejected_no_edge',
       notes: 'Eligibility gate failed: participant confirmation not genuinely established.',
       eligibility: elig,
@@ -250,6 +252,7 @@ async function gateAndFinalizeResearch(candidate, pick, knownGamesToday) {
   if (bledInTeam) {
     console.log(`ENTITY_BLEED: "${candidate.game}" insight appears to reference "${bledInTeam}" from a different game — rejecting.`);
     await supabase.from('game_candidates').update({
+      research_status: 'researched',
       status: 'rejected_no_edge',
       notes: `Entity-consistency check failed: insight referenced "${bledInTeam}" from an unrelated game.`,
     }).eq('id', candidate.id);
