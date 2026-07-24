@@ -237,7 +237,7 @@ async function runEvaluateScheduler() {
     .select('*')
     .eq('date', today)
     .eq('research_status', 'pending_evaluation')
-    .order('created_at', { ascending: true })
+    .order('research_trigger_at', { ascending: true }) // most urgent first, not insertion order — a game whose research window has already opened (or is about to) shouldn't wait behind games that aren't time-sensitive yet
     .limit(EVALUATE_CONCURRENCY_CAP);
 
   if (error) throw error;
