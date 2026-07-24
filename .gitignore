@@ -3,3 +3,4 @@
 .env.local
 node_modules/
 .next
+.env.production.local

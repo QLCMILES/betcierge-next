@@ -1,6 +1,13 @@
 "use client";
 import { useState, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
+import {
+  FOUNDING_TOTAL,
+  FOUNDING_SPOTS_LEFT,
+  FOUNDING_ACTIVE,
+  STRIPE_PRICE_CURRENT,
+  CURRENT_PRICE_DISPLAY,
+} from "../../lib/pricing";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -15,26 +22,6 @@ const GREEN = "#2ecc71";
 const GRAY = "#6b7280";
 const LIGHT = "#d1d5db";
 
-
-function useCountdown(target) {
-  const [time, setTime] = useState("");
-  useEffect(() => {
-    const tick = () => {
-      const diff = target - Date.now();
-      if (diff <= 0) { setTime("Expired"); return; }
-      const d = Math.floor(diff / 86400000);
-      const h = Math.floor((diff % 86400000) / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      const s = Math.floor((diff % 60000) / 1000);
-      setTime(`${d}d ${h}h ${m}m ${s}s`);
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [target]);
-  return time;
-}
-
 const features = [
   { icon: "🤖", name: "Hunter — your betting brain", desc: "Text it like a friend. Ask about any game and get a clear, honest answer in seconds — day or night." },
   { icon: "🎯", name: "The Morning 3", desc: "Three best plays, every day at 11 AM. You get them early — before the lines move and the crowd piles in." },
@@ -47,19 +34,21 @@ const features = [
 ];
 
 const faqs = [
+  { q: "What makes this different from a generic AI chatbot?", a: "A chatbot answers questions. Betcierge is a full system built around one goal — research, bankroll guardrails, bet tracking, and a real public record, all working together to help you bet well, not just get an answer." },
   { q: "Can I cancel anytime?", a: "Yes. Cancel from your account settings — no calls, no hoops. No fees, no questions asked." },
   { q: "Is this betting advice?", a: "Betcierge is an information and discipline tool. We help you research, size bets, and track your record. We do not take bets. Always bet responsibly." },
   { q: "Will it really stop me overspending?", a: "Hunter monitors your weekly P&L and flags when you're approaching your limits. It won't stop you — but it will make sure you see what you're doing before you do it." },
   { q: "What if I'm brand new to this?", a: "Perfect. Hunter explains everything in plain English. No jargon, no assumptions. Just honest, clear analysis built for real bettors at every level." },
-  { q: "Do you really show losses?", a: "Every single one. A record that hides losses is a lie. Ours does not. 15W-3L since June 11 — wins and losses both shown." },
+  { q: "What do free accounts get?", a: "Our record is fully public and transparent — anyone can see it, no account needed. Our premium research, including full daily picks and Lean Machine, is reserved for subscribers." },
 ];
 
 export default function Landing({ onGetStarted }) {
   const [openFaq, setOpenFaq] = useState(null);
-  const [picks, setPicks] = useState([]);  // ← add this on line 61
+  const [picks, setPicks] = useState([]);
+  const [record, setRecord] = useState({ wins: 0, losses: 0, units: 0, roi: 0, winRate: 0 });
   const go = () => { if (onGetStarted) onGetStarted(); };
 
-  useEffect(() => {   // ← add this block after line 61
+  useEffect(() => {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     supabase
       .from('daily_picks')
@@ -68,6 +57,35 @@ export default function Landing({ onGetStarted }) {
       .eq('status', 'active')
       .limit(3)
       .then(({ data }) => { if (data) setPicks(data); });
+
+    // Live record — same query captain/page.js uses, so the number is
+    // never allowed to drift from what's actually in the database again.
+    supabase
+      .from('daily_picks')
+      .select('result, units, odds')
+      .eq('status', 'active')
+      .gte('date', '2026-06-11')
+      .in('result', ['Win', 'Loss'])
+      .then(({ data }) => {
+        if (!data) return;
+        const wins = data.filter(p => p.result === 'Win').length;
+        const losses = data.filter(p => p.result === 'Loss').length;
+        const settled = wins + losses;
+        const winRate = settled > 0 ? Math.round((wins / settled) * 100) : 0;
+        const unitsPnl = data.reduce((acc, p) => {
+          const u = p.units || 1;
+          const odds = parseInt(p.odds) || -110;
+          if (p.result === 'Win') {
+            const profit = odds > 0 ? u * (odds / 100) : u * (100 / Math.abs(odds));
+            return acc + profit;
+          }
+          if (p.result === 'Loss') return acc - u;
+          return acc;
+        }, 0);
+        const totalRisked = data.reduce((acc, p) => acc + (p.units || 1), 0);
+        const roi = totalRisked > 0 ? (unitsPnl / totalRisked) * 100 : 0;
+        setRecord({ wins, losses, units: unitsPnl, roi, winRate });
+      });
   }, []);
 
   return (
@@ -76,10 +94,10 @@ export default function Landing({ onGetStarted }) {
 
       {/* Banner */}
       <div style={{ background: "#1a1200", borderBottom: "1px solid #f5a62333", padding: "10px 20px", textAlign: "center", fontSize: 13 }}>
-        <span style={{ color: GOLD }}>●</span>
+        <span style={{ color: GOLD, fontWeight: 700 }}>⚡ {FOUNDING_SPOTS_LEFT} of {FOUNDING_TOTAL} founding spots remaining</span>
         <span style={{ color: LIGHT, marginLeft: 8 }}>
-          3 days free on all plans ·{" "}
-          <span style={{ color: GOLD, cursor: "pointer", textDecoration: "underline" }} onClick={go}>start your trial today</span>
+          · Lock in {CURRENT_PRICE_DISPLAY} forever ·{" "}
+          <span style={{ color: GOLD, cursor: "pointer", textDecoration: "underline" }} onClick={go}>claim yours</span>
         </span>
       </div>
 
@@ -92,22 +110,24 @@ export default function Landing({ onGetStarted }) {
       {/* Hero */}
       <section style={{ maxWidth: 680, margin: "0 auto", padding: "60px 24px 40px", textAlign: "center" }}>
         <div style={{ display: "inline-block", background: "#1a1200", border: "1px solid #f5a62344", borderRadius: 20, padding: "4px 14px", fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 20 }}>
-          AI-Powered Sports Betting
+          It's not AI. It's EI.
         </div>
         <h1 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "clamp(36px, 8vw, 58px)", fontWeight: 700, lineHeight: 1.1, marginBottom: 16, color: "#fff" }}>
-          Never bet <em style={{ color: GOLD, fontStyle: "italic" }}>alone</em> again.
+          Your personal betting coach,<br /><em style={{ color: GOLD, fontStyle: "italic" }}>on call 24/7.</em>
         </h1>
-        <p style={{ fontSize: 17, color: GRAY, lineHeight: 1.7, maxWidth: 520, margin: "0 auto 16px" }}>
-          Your own betting team in your pocket. Picks, a real-time analyst, and guardrails that keep you in the game.
+        <div style={{ color: GOLD, fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Change the way you bet.</div>
+        <p style={{ fontSize: 17, color: LIGHT, lineHeight: 1.7, maxWidth: 520, margin: "0 auto 12px" }}>
+          Enhanced Intelligence — cloned from real sports betting habits, built to research every game the way the pros do, around the clock. Hunter gives you the picks with full reasoning, coaches you through every bet, and answers any question, any hour.
         </p>
         <p style={{ fontSize: 14, color: "#555", lineHeight: 1.7, maxWidth: 520, margin: "0 auto 32px", borderTop: "1px solid #1e1e2e", paddingTop: 16 }}>
-          Built from the brain of a sports bettor, powered by AI. The research depth, line movement analysis, and situational awareness Hunter brings to every game is unlike anything else on the market.
+          NFL · NBA · MLB · Soccer · NHL · UFC · Golf · Tennis — every sport, every day.
         </p>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-          <button onClick={go} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Start Free Trial — $29.99/mo</button>
-          <button onClick={go} style={{ background: "none", border: "1px solid #1e1e2e", color: LIGHT, borderRadius: 10, padding: "14px 24px", fontSize: 15, fontWeight: 500, cursor: "pointer" }}>Start free →</button>
+          <button onClick={() => go()} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+            Claim Founding Spot — {CURRENT_PRICE_DISPLAY}
+          </button>
         </div>
-        <p style={{ fontSize: 12, color: GRAY, marginTop: 12 }}>3-day free trial · No commitment · Cancel anytime</p>
+        <p style={{ fontSize: 12, color: GRAY, marginTop: 12 }}>3-day free trial · Price locked forever · Cancel anytime</p>
       </section>
 
       {/* Slate Preview */}
@@ -135,13 +155,13 @@ export default function Landing({ onGetStarted }) {
             </div>
           ))}
           <div style={{ padding: "12px 18px", background: "#0d0d18", textAlign: "center", fontSize: 12, color: GRAY }}>
-            You're seeing <strong style={{ color: "#fff" }}>1 of 3</strong> plays — shown 1 hour late.{" "}
-            <span style={{ color: GOLD, cursor: "pointer" }} onClick={go}>The Team</span> unlocks all 3, early.
+            You're seeing <strong style={{ color: "#fff" }}>1 of 3</strong> plays — plus Lean Machine.{" "}
+            <span style={{ color: GOLD, cursor: "pointer" }} onClick={go}>Subscribe</span> unlocks everything.
           </div>
         </div>
       </section>
 
-      {/* Credibility */}
+      {/* Credibility — now a single live-fetched record, matching captain/page.js exactly */}
       <section style={{ maxWidth: 600, margin: "0 auto 60px", padding: "0 24px", textAlign: "center" }}>
         <div style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 14, padding: "24px 28px" }}>
           <div style={{ fontSize: 17, fontWeight: 600, color: "#fff", marginBottom: 8 }}>
@@ -149,7 +169,12 @@ export default function Landing({ onGetStarted }) {
           </div>
           <div style={{ color: GRAY, fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>A record that hides losses is a lie. Ours does not. Built by bettors, tracked in public.</div>
           <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
-            {[["25W-10L", "Since Jun 11"], ["71%", "Win Rate"], ["+15.6u", "Units"], ["+28.9%", "ROI"]].map(([val, lbl]) => (
+            {[
+              [`${record.wins}W-${record.losses}L`, "Since Jun 11"],
+              [`${record.winRate}%`, "Win Rate"],
+              [`${record.units >= 0 ? '+' : ''}${record.units.toFixed(1)}u`, "Units"],
+              [`${record.roi >= 0 ? '+' : ''}${record.roi.toFixed(1)}%`, "ROI"],
+            ].map(([val, lbl]) => (
               <div key={lbl} style={{ textAlign: "center" }}>
                 <div style={{ fontSize: 22, fontWeight: 800, color: GREEN }}>{val}</div>
                 <div style={{ fontSize: 11, color: GRAY }}>{lbl}</div>
@@ -163,7 +188,8 @@ export default function Landing({ onGetStarted }) {
       <section style={{ maxWidth: 700, margin: "0 auto 60px", padding: "0 24px" }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>WHAT'S INSIDE</div>
-          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>Everything, in plain English</h2>
+          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>Research, tracking, discipline. One system.</h2>
+          <p style={{ color: GRAY, fontSize: 14, marginTop: 8, maxWidth: 500, margin: "8px auto 0" }}>Most betting products give you picks. Betcierge gives you the whole operation behind them.</p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {features.map((f, i) => (
@@ -178,59 +204,42 @@ export default function Landing({ onGetStarted }) {
         </div>
       </section>
 
-      {/* Pricing */}
+      {/* Pricing — single tier, replacing the old 4-tier Lookout/Team/Edge/Capital structure */}
       <section style={{ maxWidth: 700, margin: "0 auto 60px", padding: "0 24px" }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>PRICING</div>
-          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>Simple, honest pricing</h2>
+          <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>FOUNDING MEMBER PRICING</div>
+          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>Lock it in before it's gone</h2>
+          <p style={{ color: GRAY, fontSize: 14, marginTop: 8 }}>This price disappears when the {FOUNDING_TOTAL} founding spots are filled.</p>
         </div>
 
-        <div style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 16, padding: "24px", marginBottom: 12 }}>
-          <div style={{ fontSize: 11, color: GRAY, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>THE LOOKOUT</div>
-          <div style={{ fontSize: 13, color: GRAY, marginBottom: 12 }}>Get a taste. See if we're for real.</div>
-          <div style={{ fontSize: 36, fontWeight: 800, color: "#fff", marginBottom: 16 }}>Free <span style={{ fontSize: 14, color: GRAY, fontWeight: 400 }}>No card needed</span></div>
-          {["1 of today's 3 plays (shown 1 hour late)", "Ask Hunter 5 questions a day", "Log your bets and track your record"].map((f, i) => (
-            <div key={i} style={{ color: LIGHT, fontSize: 13, marginBottom: 8, display: "flex", gap: 8 }}><span style={{ color: GREEN }}>✓</span>{f}</div>
-          ))}
-          {["The other 2 plays and the early drop", "The guardrails that stop overspending"].map((f, i) => (
-            <div key={i} style={{ color: GRAY, fontSize: 13, marginBottom: 8, display: "flex", gap: 8 }}><span>🔒</span>{f}</div>
-          ))}
-          <button onClick={go} style={{ width: "100%", marginTop: 16, padding: "13px", borderRadius: 10, border: "1px solid #1e1e2e", background: "none", color: LIGHT, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Start free</button>
-        </div>
-
-        <div style={{ background: "#0d0a00", border: "2px solid #f5a623", borderRadius: 16, padding: "24px", marginBottom: 12, position: "relative" }}>
-          <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", background: GOLD, color: "#000", fontSize: 11, fontWeight: 700, padding: "3px 14px", borderRadius: 20, whiteSpace: "nowrap" }}>MOST PEOPLE PICK THIS</div>
-          <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>THE TEAM</div>
-          <div style={{ fontSize: 13, color: GRAY, marginBottom: 12 }}>Your whole crew, in your corner.</div>
-          <div style={{ fontSize: 36, fontWeight: 800, color: "#fff", marginBottom: 4 }}>$29.99<span style={{ fontSize: 14, color: GRAY, fontWeight: 400 }}> / month</span></div>
-          <div style={{ fontSize: 12, color: GRAY, marginBottom: 16 }}>3-day free trial · then $29.99/mo · <span style={{ color: GREEN }}>or $197/yr and save 45%</span></div>
-          {["All 3 plays early at 11 AM sharp", "Unlimited Hunter — ask anything, anytime", "Full guardrails: bet sizing, limits, loss stops", "Tilt protection on losing streaks", "Your full record and closing-line proof", "Live game tracking", "Snap and log bet slips automatically", "Auto-settlement for all sports"].map((f, i) => (
-            <div key={i} style={{ color: LIGHT, fontSize: 13, marginBottom: 8, display: "flex", gap: 8 }}><span style={{ color: GREEN }}>✓</span>{f}</div>
-          ))}
-          <button onClick={go} style={{ width: "100%", marginTop: 16, padding: "14px", borderRadius: 10, border: "none", background: GOLD, color: "#000", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>Start Free Trial — $29.99/mo</button>
-        </div>
-
-        <div style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 16, padding: "24px", marginBottom: 12 }}>
-          <div style={{ fontSize: 11, color: GREEN, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>THE EDGE</div>
-          <div style={{ fontSize: 13, color: GRAY, marginBottom: 12 }}>For serious bettors who want every advantage.</div>
-          <div style={{ fontSize: 36, fontWeight: 800, color: "#fff", marginBottom: 4 }}>$79.99<span style={{ fontSize: 14, color: GRAY, fontWeight: 400 }}> / month</span></div>
-          <div style={{ fontSize: 12, color: GRAY, marginBottom: 16 }}>or <span style={{ color: GREEN }}>$499/yr and save 48%</span></div>
-          {["Everything in The Team plus:", "Extra plays and player props throughout the day", "Pro tools to find the best price on every bet", "Advanced bankroll planning", "Priority Hunter and the sharp channel"].map((f, i) => (
-            <div key={i} style={{ color: i === 0 ? GRAY : LIGHT, fontSize: 13, marginBottom: 8, display: "flex", gap: 8 }}>
-              {i > 0 && <span style={{ color: GREEN }}>✓</span>}{f}
+        <div style={{ background: "#0d0a00", border: "2px solid #f5a623", borderRadius: 16, padding: "24px", marginBottom: 16, position: "relative" }}>
+          <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", background: GOLD, color: "#000", fontSize: 11, fontWeight: 700, padding: "3px 14px", borderRadius: 20, whiteSpace: "nowrap" }}>
+            FOUNDING PRICE
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>FOUNDING MEMBER</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                <div style={{ fontSize: 36, fontWeight: 800, color: "#fff" }}>$24.99<span style={{ fontSize: 14, color: GRAY, fontWeight: 400 }}>/mo</span></div>
+                <div style={{ fontSize: 16, color: GRAY, textDecoration: "line-through" }}>$29.99</div>
+              </div>
+              <div style={{ color: GREEN, fontSize: 13, marginTop: 4 }}>🔒 Price locked for life</div>
+              <div style={{ color: GRAY, fontSize: 12, marginTop: 2 }}>3-day free trial · Cancel anytime</div>
+            </div>
+            <div style={{ fontSize: 32 }}>🎯</div>
+          </div>
+          {["Daily picks + full Hunter chat", "Lean Machine — extra plays beyond the daily picks", "Snap to Log bet slips", "Live Gamecast", "Full bet tracking & auto-settlement", "Bankroll guardrails & tilt protection"].map((f, i) => (
+            <div key={i} style={{ color: LIGHT, fontSize: 13, marginBottom: 8, display: "flex", gap: 8 }}>
+              <span style={{ color: GREEN }}>✓</span>{f}
             </div>
           ))}
-          <button onClick={go} style={{ width: "100%", marginTop: 16, padding: "13px", borderRadius: 10, border: "1px solid #2ecc71", background: "none", color: GREEN, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Go Pro</button>
+          <button onClick={go} style={{ width: "100%", marginTop: 16, padding: "14px", borderRadius: 10, border: "none", background: GOLD, color: "#000", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+            Claim Founding Price — $24.99/mo
+          </button>
         </div>
 
-        <div style={{ background: CARD, border: "1px solid #7C3AED44", borderRadius: 16, padding: "24px" }}>
-          <div style={{ fontSize: 11, color: "#a78bfa", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>CAPITAL</div>
-          <div style={{ fontSize: 13, color: GRAY, marginBottom: 12 }}>By invitation. Run it like a business.</div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: "#fff", marginBottom: 16 }}>Invite only</div>
-          {["Everything in The Edge", "One-on-one access", "Staking and backing", "Custom limits built around you"].map((f, i) => (
-            <div key={i} style={{ color: LIGHT, fontSize: 13, marginBottom: 8, display: "flex", gap: 8 }}><span style={{ color: "#a78bfa" }}>✓</span>{f}</div>
-          ))}
-          <button style={{ width: "100%", marginTop: 16, padding: "13px", borderRadius: 10, border: "1px solid #7C3AED", background: "none", color: "#a78bfa", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Request an invite</button>
+        <div style={{ textAlign: "center", color: GRAY, fontSize: 13, marginTop: 4 }}>
+          <span style={{ color: GOLD, fontWeight: 700 }}>{FOUNDING_SPOTS_LEFT} spots remaining</span> at founding pricing · After {FOUNDING_TOTAL} members, price goes to $29.99
         </div>
       </section>
 
@@ -257,7 +266,7 @@ export default function Landing({ onGetStarted }) {
           <p style={{ color: GRAY, fontSize: 14, marginBottom: 8 }}>3 days free. Full access. No commitment.</p>
           <p style={{ color: GRAY, fontSize: 13, marginBottom: 24 }}>Cancel anytime from your account settings — <strong style={{ color: GOLD }}>no hoops, no calls.</strong></p>
           <button onClick={go} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 40px", fontSize: 15, fontWeight: 700, cursor: "pointer", width: "100%" }}>
-            Join The Team — Start Free Trial
+            Claim Founding Spot — {CURRENT_PRICE_DISPLAY}
           </button>
         </div>
       </section>
