@@ -124,146 +124,6 @@ async function buildRecentPicksMemory() {
   return summary;
 }
 
-const EVALUATE_CONCURRENCY_CAP = 5;
-
-// Replaces the old two-step "guess a candidate, then verify it" pattern.
-// This runs a REAL, search-based evaluation on EVERY game in today's slate
-// directly — no game is excluded before getting a genuine look. Deliberately
-// lighter than Stage 2's full research (3-5 searches, not 10+) — this is a
-// fast, real check per game, not the deep dive that happens later only for
-// whatever comes back worth_pursuing.
-// ── Layer 1: pure research, no format constraint ─────────────────────
-// This call's only job is real research. No JSON requirement here at all
-// — that's what was fighting itself in the old single-call design. This
-// removes the failure mode structurally rather than asking the model to
-// try harder at formatting.
-async function researchGameFindings(game, today_display, recentPicksMemory) {
-  const linesSummary = [
-    game.moneyline ? `moneyline: ${game.moneyline}` : null,
-    game.spread ? `spread: ${game.spread}` : null,
-    game.total ? `total: ${game.total}` : null,
-    game.away_starter || null,
-    game.home_starter || null,
-  ].filter(Boolean).join(' | ');
-
-  const system = `You are Hunter, an elite sports betting analyst. Today is ${today_display}.
-
-You are looking at ONE game from today's full slate. Run a REAL, right-now evaluation — deciding fresh from scratch whether this specific game has a genuine betting edge worth pursuing.
-
-Game: ${game.game}
-Sport: ${game.sport}
-Current lines: ${linesSummary || 'not available'}
-
-Run 3-5 targeted web searches covering whatever's most relevant to this specific game (confirmed starters/lineups, injuries, recent form, line movement, matchup history — as applicable). This is a fast, real check, not the full deep-dive research that happens later for whatever you flag here as worth pursuing.
-
-FOR TOTALS SPECIFICALLY: this system has a real, measured problem — totals proposed on pitching/bullpen narratives alone, without weighing both teams' actual offensive quality, have underperformed badly. If you land on a total here, you MUST have searched and weighed BOTH teams' real recent offensive output, not just the pitching matchup.
-
-Be honest and selective. Passing on this game is the correct, default outcome — do not manufacture an angle that isn't really there just to have something to report. Most individual games will NOT have a real edge today.
-
-${recentPicksMemory}
-
-Write up your honest findings and conclusion in plain language — be specific and back up your reasoning with what you actually found. A colleague will handle structuring your answer afterward, so just focus on giving a real, well-researched take.`;
-
-  const response = await callClaude({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1500,
-    system,
-    messages: [{ role: 'user', content: `Research ${game.game} now and give me your honest findings.` }],
-    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-  }, 0, 45000);
-
-  return extractText(response.content);
-}
-
-// ── Layer 2: forced structured extraction — the real fix ─────────────
-// tool_choice forces the model to respond ONLY via this tool's schema.
-// This is an API-level guarantee, not a prompt instruction the model can
-// choose to ignore — the model structurally cannot return prose here.
-const EVALUATION_TOOL = {
-  name: 'submit_game_evaluation',
-  description: 'Submit the final structured evaluation for this game, based on the research findings already gathered.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      worth_pursuing: { type: 'boolean', description: 'Whether this game has a genuine, real betting edge worth pursuing today.' },
-      bet_type: { type: 'string', enum: ['moneyline', 'spread', 'total', 'f5', 'first_half', 'prop', 'none'], description: "Use 'none' if worth_pursuing is false." },
-      pick: { type: 'string', description: "The specific pick, e.g. 'Detroit Tigers -1.5'. Empty string if worth_pursuing is false." },
-      reason: { type: 'string', description: 'One or two sentences on what was actually found.' },
-    },
-    required: ['worth_pursuing', 'bet_type', 'pick', 'reason'],
-  },
-};
-
-async function extractStructuredEvaluation(findingsText, game) {
-  const response = await callClaude({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 500,
-    system: `You are structuring a colleague's research findings on ${game.game} into our required format. Do not add new information or re-research anything — just faithfully structure what's below.`,
-    messages: [{ role: 'user', content: `Findings:\n\n${findingsText.slice(0, 4000)}\n\nSubmit the structured evaluation now.` }],
-    tools: [EVALUATION_TOOL],
-    tool_choice: { type: 'tool', name: 'submit_game_evaluation' },
-  }, 0, 30000);
-
-  const toolUse = (response.content || []).find(c => c.type === 'tool_use' && c.name === 'submit_game_evaluation');
-  if (!toolUse) {
-    console.log(`EXTRACT_NO_TOOL_USE for "${game.game}" — response had no matching tool_use block.`);
-    return null;
-  }
-  return toolUse.input; // already a real, schema-valid JS object — no JSON.parse, no regex, no guesswork
-}
-
-// ── Combined: research, then guaranteed-structure extraction ─────────
-async function evaluateGameForEdge(game, today_display, recentPicksMemory) {
-  let findings;
-  try {
-    findings = await researchGameFindings(game, today_display, recentPicksMemory);
-  } catch (e) {
-    console.log(`RESEARCH_ERROR for "${game.game}": ${e.message}`);
-    return null;
-  }
-  if (!findings || !findings.trim()) return null;
-
-  try {
-    const result = await extractStructuredEvaluation(findings, game);
-    if (result) return result;
-  } catch (e) {
-    console.log(`EXTRACT_ERROR for "${game.game}": ${e.message}`);
-  }
-
-  // One genuine retry on the extraction step alone — cheap, since it
-  // reuses the same findings rather than re-researching from scratch.
-  try {
-    const retryResult = await extractStructuredEvaluation(findings, game);
-    if (retryResult) return retryResult;
-  } catch (e) {
-    console.log(`EXTRACT_RETRY_ERROR for "${game.game}": ${e.message}`);
-  }
-
-  console.log(`EVALUATE_GIVING_UP for "${game.game}" — research succeeded but structured extraction failed twice in a row.`);
-  return null;
-}
-
-// Runs the real evaluation across every game in today's slate, with a
-// concurrency cap so a big slate doesn't fire dozens of simultaneous calls.
-// Fails OPEN per-game — if a call errors or times out, that game is simply
-// skipped (treated as no edge found), never blocks the rest of the run.
-async function evaluateAllGames(slimGames, today_display, recentPicksMemory) {
-  const results = new Array(slimGames.length).fill(null);
-  for (let i = 0; i < slimGames.length; i += EVALUATE_CONCURRENCY_CAP) {
-    const batch = slimGames.slice(i, i + EVALUATE_CONCURRENCY_CAP);
-    const batchResults = await Promise.all(batch.map(async (g) => {
-      try {
-        return await evaluateGameForEdge(g, today_display, recentPicksMemory);
-      } catch (e) {
-        console.log(`EVALUATE_ERROR for "${g.game}": ${e.message}`);
-        return null;
-      }
-    }));
-    batchResults.forEach((r, idx) => { results[i + idx] = r; });
-  }
-  return results;
-}
-
 // ── Per-sport timing ──────────────────────────────────────────────────────
 // From Miles's refined timing table. UFC and Tennis are explicitly flagged
 // as not fitting the T-minus model — using conservative placeholder
@@ -390,7 +250,7 @@ async function generateMorningTrigger() {
   const slimGames = (oddsData.games || [])
     .filter(g => new Date(g.commence_time) > cutoff && new Date(g.commence_time) < upperBound)
     // NOTE: no slice/cap here by design — every game in today's window gets
-    // a real, research-based look (see evaluateGameForEdge below). Revisit
+    // a real, research-based look (see evaluate-scheduler's evaluateGameForEdge). Revisit
     // this once college football/basketball are back in season: at ~100+
     // games in one day, this loop's wall-clock time could approach or
     // exceed this function's 300s maxDuration. Fine for MLB-only days now.
@@ -445,29 +305,15 @@ async function generateMorningTrigger() {
     timeZone: 'America/New_York'
   });
 
-  const recentPicksMemory = await buildRecentPicksMemory();
-  console.log('Recent picks memory built. Length:', recentPicksMemory.length);
+  console.log(`Queuing all ${slimGames.length} games in today's slate for evaluation — no research happens in this step, evaluate-scheduler picks these up next.`);
 
-  console.log(`Evaluating all ${slimGames.length} games in today's slate — no pre-filter, every game gets a real research pass.`);
-
-  // ── STAGE 1: Real, per-game research evaluation — no pre-filter ──────
-  // Replaces the old "guess 8-10 candidates, then verify them" pattern.
-  // Every game in today's slate gets a genuine, search-based look; nothing
-  // is excluded before being researched. See maxDuration note above this
-  // file's slimGames construction re: revisiting before college season.
-  const evaluations = await evaluateAllGames(slimGames, today_display, recentPicksMemory);
-  const candidates = slimGames
-    .map((g, i) => ({ game: g.game, sport: g.sport, evaluation: evaluations[i] }))
-    .filter(c => c.evaluation && c.evaluation.worth_pursuing === true)
-    .map(c => ({
-      game: c.game,
-      sport: c.sport,
-      bet_type: c.evaluation.bet_type || 'unknown',
-      proposed_pick: c.evaluation.pick || '',
-      reason: c.evaluation.reason || '',
-    }));
-
-  console.log(`${candidates.length} of ${slimGames.length} games came back worth pursuing.`);
+  // ── Every game becomes a candidate row immediately, unresearched ─────
+  // Real research (the two-call research+extract design) now happens in
+  // evaluate-scheduler, a few games at a time, on its own repeating cron —
+  // same pattern already proven with research-scheduler. This is what
+  // keeps morning-trigger itself fast and safe at any slate size (15
+  // games or 150), since it no longer does any LLM work at all.
+  const candidates = slimGames.map(g => ({ game: g.game, sport: g.sport }));
 
   // ── Write game_candidates rows, one per candidate, with timing ───────
   const rows = [];
@@ -496,7 +342,7 @@ async function generateMorningTrigger() {
       date: today,
       sport: c.sport,
       game: c.game,
-      bet_type: c.bet_type || null,
+      bet_type: null, // filled in later by evaluate-scheduler once this game is actually evaluated
       game_time: gameTime.toISOString(),
       sport_key: matchedGame.sport_key || null,
       original_moneyline: matchedGame.moneyline || null,
@@ -507,8 +353,8 @@ async function generateMorningTrigger() {
       publish_deadline_at: timing.publish_deadline_at.toISOString(),
       min_lead_time_minutes: timing.min_lead_time_minutes,
       bench_rank: benchRank,
-      research_status: 'pending_research',
-      status: 'pending_research',
+      research_status: 'pending_evaluation',
+      status: 'pending_evaluation',
       notes: timing.timing_note,
     });
   }
