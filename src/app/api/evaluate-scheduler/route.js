@@ -231,31 +231,57 @@ async function runEvaluateScheduler() {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
     timeZone: 'America/New_York'
   });
+  const now = new Date().toISOString();
 
-  const { data: pending, error } = await supabase
+  // ── First-look queue: brand-new games, never evaluated ───────────────
+  const { data: firstLookRows, error: firstLookError } = await supabase
     .from('game_candidates')
     .select('*')
     .eq('date', today)
     .eq('research_status', 'pending_evaluation')
-    .order('research_trigger_at', { ascending: true }) // most urgent first, not insertion order — a game whose research window has already opened (or is about to) shouldn't wait behind games that aren't time-sensitive yet
+    .order('research_trigger_at', { ascending: true })
     .limit(EVALUATE_CONCURRENCY_CAP);
 
-  if (error) throw error;
-  if (!pending || pending.length === 0) {
-    console.log('No games pending evaluation this run.');
+  if (firstLookError) throw firstLookError;
+
+  // ── Second-look queue: games rejected on their first look, now that
+  // this sport's own tuned research_trigger_at has arrived — giving
+  // fresh information (confirmed lineups, late injury news, line
+  // movement) a genuine chance to flip an early "no edge" verdict.
+  // Only fills whatever capacity first-look games didn't already use, so
+  // a single tick's wall-clock time stays bounded exactly the same way
+  // as before — never more than EVALUATE_CONCURRENCY_CAP games total,
+  // regardless of the mix.
+  const remainingSlots = EVALUATE_CONCURRENCY_CAP - (firstLookRows?.length || 0);
+  let secondLookRows = [];
+  if (remainingSlots > 0) {
+    const { data: slRows, error: secondLookError } = await supabase
+      .from('game_candidates')
+      .select('*')
+      .eq('date', today)
+      .eq('research_status', 'awaiting_second_look')
+      .lte('research_trigger_at', now)
+      .order('research_trigger_at', { ascending: true })
+      .limit(remainingSlots);
+    if (secondLookError) throw secondLookError;
+    secondLookRows = slRows || [];
+  }
+
+  const pending = [
+    ...(firstLookRows || []).map(row => ({ row, isSecondLook: false })),
+    ...secondLookRows.map(row => ({ row, isSecondLook: true })),
+  ];
+
+  if (pending.length === 0) {
+    console.log('No games pending evaluation (first or second look) this run.');
     return;
   }
 
-  console.log(`${pending.length} game(s) pending evaluation — processing this batch now (cap: ${EVALUATE_CONCURRENCY_CAP}).`);
+  console.log(`${firstLookRows?.length || 0} first-look + ${secondLookRows.length} second-look game(s) this tick (combined cap: ${EVALUATE_CONCURRENCY_CAP}).`);
 
   const recentPicksMemory = await buildRecentPicksMemory();
 
-  const results = await Promise.all(pending.map(async (row) => {
-    // NOTE: away_starter/home_starter aren't persisted on game_candidates
-    // rows (morning-trigger's MLB pitcher enrichment was only ever used
-    // in-memory, never saved to the DB) — a small, pre-existing context
-    // loss, not something this change introduces. The live web searches
-    // inside researchGameFindings still find real starters regardless.
+  const results = await Promise.all(pending.map(async ({ row, isSecondLook }) => {
     const game = {
       game: row.game,
       sport: row.sport,
@@ -265,20 +291,20 @@ async function runEvaluateScheduler() {
     };
     try {
       const evaluation = await evaluateGameForEdge(game, today_display, recentPicksMemory);
-      return { row, evaluation };
+      return { row, isSecondLook, evaluation };
     } catch (e) {
       console.log(`EVALUATE_ERROR for "${row.game}": ${e.message}`);
-      return { row, evaluation: null };
+      return { row, isSecondLook, evaluation: null };
     }
   }));
 
   let worthPursuingCount = 0;
-  for (const { row, evaluation } of results) {
+  let awaitingSecondLookCount = 0;
+  let terminalNoEdgeCount = 0;
+
+  for (const { row, isSecondLook, evaluation } of results) {
     if (evaluation && evaluation.worth_pursuing === true) {
       worthPursuingCount += 1;
-      // Handing off to research-scheduler: setting research_status back to
-      // 'pending_research' is exactly what its existing query already
-      // looks for — no changes needed on that side at all.
       await supabase.from('game_candidates').update({
         research_status: 'pending_research',
         status: 'pending_research',
@@ -286,18 +312,32 @@ async function runEvaluateScheduler() {
         proposed_pick: evaluation.pick || null,
         stage1_reason: evaluation.reason || null,
       }).eq('id', row.id);
-      console.log(`EVALUATED_WORTH_PURSUING: "${row.game}" — ${evaluation.bet_type}: ${evaluation.pick}`);
+      console.log(`EVALUATED_WORTH_PURSUING${isSecondLook ? ' (second look)' : ''}: "${row.game}" — ${evaluation.bet_type}: ${evaluation.pick}`);
+      continue;
+    }
+
+    const triggerStillAhead = row.research_trigger_at && new Date(row.research_trigger_at) > new Date();
+
+    if (!isSecondLook && triggerStillAhead) {
+      awaitingSecondLookCount += 1;
+      await supabase.from('game_candidates').update({
+        research_status: 'awaiting_second_look',
+        status: 'awaiting_second_look',
+        stage1_reason: evaluation ? (evaluation.reason || null) : 'First-look evaluation failed (research or extraction error) after retry.',
+      }).eq('id', row.id);
+      console.log(`AWAITING_SECOND_LOOK: "${row.game}" — no edge on first look, will re-check once research_trigger_at arrives.`);
     } else {
+      terminalNoEdgeCount += 1;
       await supabase.from('game_candidates').update({
         research_status: 'evaluated_no_edge',
         status: 'rejected_no_edge',
         stage1_reason: evaluation ? (evaluation.reason || null) : 'Evaluation failed (research or extraction error) after retry.',
       }).eq('id', row.id);
-      console.log(`EVALUATED_NO_EDGE: "${row.game}"`);
+      console.log(`EVALUATED_NO_EDGE${isSecondLook ? ' (final, after second look)' : ' (final, research_trigger_at already passed)'}: "${row.game}"`);
     }
   }
 
-  console.log(`Evaluate-scheduler tick complete: ${worthPursuingCount} of ${pending.length} games in this batch came back worth pursuing.`);
+  console.log(`Evaluate-scheduler tick complete: ${worthPursuingCount} worth pursuing, ${awaitingSecondLookCount} awaiting a second look, ${terminalNoEdgeCount} final no-edge, out of ${pending.length} processed this tick.`);
 }
 
 export async function GET(request) {
