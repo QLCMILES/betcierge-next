@@ -14,6 +14,7 @@ const supabase = createClient(
 // games all cross their trigger in the same 15-min window, we don't want
 // to fire 12 Anthropic calls simultaneously. The rest wait for next run.
 const CONCURRENCY_CAP = 5;
+const MAX_RESEARCH_ATTEMPTS = 3; // after this many failures, stop retrying and mark the candidate done — prevents an indefinite retry loop against a persistently-failing game for the rest of its confirmation window
 
 // Pre-flight freshness thresholds \u2014 mirrors the same "material move"
 // definition used elsewhere in this codebase for the publish-time check.
@@ -383,9 +384,22 @@ async function submitNewResearch(today) {
 
       console.log(`Synchronous research complete for "${candidate.game}".`);
     } catch (err) {
-      console.error(`Error researching candidate ${candidate.id} (${candidate.game}):`, err.message);
-      // Leave as pending_research so it can be retried next run, unless
-      // the confirmation deadline check above has already expired it.
+      const attempts = (candidate.research_attempts || 0) + 1;
+      console.error(`Error researching candidate ${candidate.id} (${candidate.game}), attempt ${attempts}/${MAX_RESEARCH_ATTEMPTS}:`, err.message);
+
+      if (attempts >= MAX_RESEARCH_ATTEMPTS) {
+        console.log(`RESEARCH_ATTEMPTS_EXHAUSTED: "${candidate.game}" failed ${attempts} times — giving up for today rather than retrying until its deadline passes.`);
+        await supabase.from('game_candidates').update({
+          research_status: 'evaluated_no_edge',
+          status: 'rejected_no_edge',
+          research_attempts: attempts,
+          notes: `Gave up after ${attempts} failed research attempts: ${err.message}`,
+        }).eq('id', candidate.id);
+      } else {
+        await supabase.from('game_candidates').update({
+          research_attempts: attempts,
+        }).eq('id', candidate.id);
+      }
     }
   }
 }
