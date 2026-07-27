@@ -16,18 +16,73 @@ const supabase = createClient(
 const CONCURRENCY_CAP = 5;
 const MAX_RESEARCH_ATTEMPTS = 3; // after this many failures, stop retrying and mark the candidate done — prevents an indefinite retry loop against a persistently-failing game for the rest of its confirmation window
 
-// Pre-flight freshness thresholds \u2014 mirrors the same "material move"
+// Pre-flight freshness thresholds — mirrors the same "material move"
 // definition used elsewhere in this codebase for the publish-time check.
 // This is a coarse filter: catch a candidate that's gone genuinely stale
 // (huge line move, likely real news) before spending a Stage 2 call on
-// it \u2014 not nitpick normal drift.
+// it — not nitpick normal drift.
 const MONEYLINE_REJECT_CENTS = 50;
 const POINT_REJECT = 3.0;
 
-// Single-game isolated research still needs real depth \u2014 this mirrors
+// Single-game isolated research still needs real depth — this mirrors
 // the spirit of the old "15 searches minimum across the whole pool" rule,
 // scaled down since this call now covers exactly one game, not 8-10.
 const MIN_SEARCHES_PER_GAME = 10;
+
+// ── Entity-consistency matching ─────────────────────────────────────────
+// FIRST-PASS DRAFT — Miles's call, edit freely. These are team-name tokens
+// across our covered leagues (MLB/NBA/NFL/NHL/soccer/MMA-style "Team A @
+// Team B" formatting) that are also ordinary English words or extremely
+// common team-name suffixes. On their own they're too weak a signal to
+// prove cross-game bleed — a soccer insight mentioning "capacity crowd"
+// or "the offense caught fire" is not evidence of contamination just
+// because "City"/"Fire" happens to be another team's name that day.
+// Real fix #22 (Jul 25-27): this exact gap caused ~5 of 8 entity-bleed
+// rejections that weekend — likely all false positives, not real bleed.
+const GENERIC_TEAM_WORDS = new Set([
+  'city', 'united', 'real', 'fc', 'sc', 'town', 'county', 'albion',
+  'rovers', 'wanderers', 'athletic', 'rangers', 'dynamo', 'sporting',
+  'academy', 'olympic', 'fire', 'revolution', 'union', 'crew', 'galaxy',
+  'heat', 'magic', 'jazz', 'thunder', 'lightning', 'wild', 'storm',
+  'wings', 'kings', 'fortune', 'force',
+]);
+
+function escapeRegExp(str) {
+  return (str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Scoped to games in the SAME sport as the candidate — an MLB insight has
+// no legitimate reason to be checked against an MMA fighter's surname or
+// an MLS club's name, and widening the pool only widens the false-positive
+// surface without adding real detection power (a real cross-game mixup
+// would almost always also trip Gate 1's game-verification check).
+//
+// Uses word-boundary matching instead of a raw substring check — the old
+// `insightLower.includes(lastWord)` matched "city" inside "capacity",
+// which is how "Sporting Kansas City" bled false-positive rejections into
+// three unrelated MLB games that were simply describing their own city
+// name (the Royals ARE Kansas City).
+function findEntityBleed(insightText, candidate, knownGamesToday) {
+  const otherGames = knownGamesToday.filter(
+    g => g.game !== candidate.game && g.sport === candidate.sport
+  );
+  const otherTeamNames = otherGames
+    .flatMap(g => g.game.split(' @ ').map(t => t.trim()))
+    .filter(Boolean);
+
+  const insightLower = (insightText || '').toLowerCase();
+
+  for (const team of otherTeamNames) {
+    const lastWord = team.split(' ').pop();
+    if (!lastWord || lastWord.length <= 3) continue;
+    if (GENERIC_TEAM_WORDS.has(lastWord.toLowerCase())) continue; // too common alone to be reliable signal
+    const pattern = new RegExp(`\\b${escapeRegExp(lastWord.toLowerCase())}\\b`, 'i');
+    if (pattern.test(insightLower)) {
+      return team;
+    }
+  }
+  return null;
+}
 
 function extractText(content) {
   return (content || []).filter(c => c.type === 'text').map(c => c.text).join('');
@@ -76,7 +131,7 @@ function checkFreshness(originalMoneyline, freshMoneyline, originalSpread, fresh
     if (freshML[team] === undefined) continue;
     const diff = Math.abs(freshML[team] - origML[team]);
     if (diff >= MONEYLINE_REJECT_CENTS) {
-      return { stale: true, reason: `Moneyline moved ${diff} cents on ${team} (${origML[team]} \u2192 ${freshML[team]})` };
+      return { stale: true, reason: `Moneyline moved ${diff} cents on ${team} (${origML[team]} → ${freshML[team]})` };
     }
   }
   const origPts = parsePointsString(originalSpread);
@@ -85,7 +140,7 @@ function checkFreshness(originalMoneyline, freshMoneyline, originalSpread, fresh
     if (freshPts[team] === undefined) continue;
     const diff = Math.abs(freshPts[team] - origPts[team]);
     if (diff >= POINT_REJECT) {
-      return { stale: true, reason: `Spread moved ${diff} points on ${team} (${origPts[team]} \u2192 ${freshPts[team]})` };
+      return { stale: true, reason: `Spread moved ${diff} points on ${team} (${origPts[team]} → ${freshPts[team]})` };
     }
   }
   return { stale: false, reason: null };
@@ -95,29 +150,29 @@ function checkFreshness(originalMoneyline, freshMoneyline, originalSpread, fresh
 function buildStage2SystemPrompt(candidate, today_display) {
   return `You are Hunter, an elite sports betting analyst. Today is ${today_display}.
 
-This is STAGE 2 \u2014 deep research on exactly ONE game. You have already identified this candidate as worth researching:
+This is STAGE 2 — deep research on exactly ONE game. You have already identified this candidate as worth researching:
 Game: ${candidate.game}
 Sport: ${candidate.sport}
 Proposed angle: ${candidate.proposed_pick} (${candidate.reason})
 
-You are researching THIS GAME ONLY. Do not discuss or reference any other game, any other sport, or any other matchup anywhere in your search queries, your reasoning, or your written insight. This isolation is deliberate \u2014 mixing in other games' context is exactly the failure mode we are protecting against.
+You are researching THIS GAME ONLY. Do not discuss or reference any other game, any other sport, or any other matchup anywhere in your search queries, your reasoning, or your written insight. This isolation is deliberate — mixing in other games' context is exactly the failure mode we are protecting against.
 
 CRITICAL DATA INTEGRITY RULES:
 1. Every stat, injury note, or lineup detail you cite must be about a team or player who is actually IN this specific game (${candidate.game}). Never let a stat about an unrelated team bleed into this analysis.
 2. Never invent a game, player, or stat. If you cannot verify something, say so or omit it.
-3. For starting pitchers/lineups/goalies: only state a name as confirmed if you found it in a live search result from today. If not confirmed, say so plainly \u2014 do not guess or use memory.
+3. For starting pitchers/lineups/goalies: only state a name as confirmed if you found it in a live search result from today. If not confirmed, say so plainly — do not guess or use memory.
 4. Perform at least ${MIN_SEARCHES_PER_GAME} distinct web searches before finalizing your analysis. Cover: confirmed participants/starters, recent form, injury reports, matchup history, and any line movement or sharp money signals you can find.
 5. Never recommend ANY pick — moneyline, run line/spread, or total — at odds of -200 or worse. This applies equally across every bet type: a poor risk/reward price is a poor risk/reward price regardless of which market it's on. Take the alternate line/side or pass entirely.
-6. Your insight must directly support your pick \u2014 no contradictions between your analysis and your conclusion.
+6. Your insight must directly support your pick — no contradictions between your analysis and your conclusion.
 
 SELF-VALIDATION (do this before finalizing):
 - Would a sharp bettor agree this edge is real, or does it collapse under scrutiny?
 - Does every fact in your insight actually belong to ${candidate.game} specifically?
 - Is your pick's direction (favorite/underdog, over/under, spread sign) internally consistent with your own reasoning?
-- Weigh the genuine case against your own pick, not just for it \u2014 but do not add a separate visible "Steelman" or "Risk" section calling this out; fold that scrutiny into how you write the insight itself.
+- Weigh the genuine case against your own pick, not just for it — but do not add a separate visible "Steelman" or "Risk" section calling this out; fold that scrutiny into how you write the insight itself.
 
-ELIGIBILITY (report honestly \u2014 do not inflate to force a pick through):
-Report your confidence in whether the necessary participants for this specific bet (starting pitcher, starting lineup, goalie, etc., as applicable to ${candidate.sport}) are genuinely confirmed as of your searches, not assumed. Use plain, specific language for confirmed_names (e.g. "Zack Wheeler confirmed starting for PHI per today's MLB.com page") \u2014 never vague placeholders like "TBD" or "likely starter" reported as if confirmed.
+ELIGIBILITY (report honestly — do not inflate to force a pick through):
+Report your confidence in whether the necessary participants for this specific bet (starting pitcher, starting lineup, goalie, etc., as applicable to ${candidate.sport}) are genuinely confirmed as of your searches, not assumed. Use plain, specific language for confirmed_names (e.g. "Zack Wheeler confirmed starting for PHI per today's MLB.com page") — never vague placeholders like "TBD" or "likely starter" reported as if confirmed.
 
 Return ONLY this JSON, no other text:
 {
@@ -222,6 +277,7 @@ async function gateAndFinalizeResearch(candidate, pick, knownGamesToday) {
       research_status: 'researched',
       status: 'rejected_no_edge',
       notes: `Game verification failed: model returned "${pick.game}" instead of "${candidate.game}".`,
+      research_log: pick, // preserve the actual output even on rejection — needed to verify real vs. false-positive gate failures after the fact
     }).eq('id', candidate.id);
     return;
   }
@@ -238,24 +294,20 @@ async function gateAndFinalizeResearch(candidate, pick, knownGamesToday) {
       status: 'rejected_no_edge',
       notes: 'Eligibility gate failed: participant confirmation not genuinely established.',
       eligibility: elig,
+      research_log: pick, // preserve the actual output even on rejection — needed to verify real vs. false-positive gate failures after the fact
     }).eq('id', candidate.id);
     return;
   }
 
   // ── Gate 3: entity-consistency ───────────────────────────────────
-  const otherGames = knownGamesToday.filter(g => g !== candidate.game);
-  const otherTeamNames = otherGames.flatMap(g => g.split(' @ ').map(t => t.trim())).filter(Boolean);
-  const insightLower = (pick.insight || '').toLowerCase();
-  const bledInTeam = otherTeamNames.find(team => {
-    const lastWord = team.split(' ').pop();
-    return lastWord && lastWord.length > 3 && insightLower.includes(lastWord.toLowerCase());
-  });
+  const bledInTeam = findEntityBleed(pick.insight, candidate, knownGamesToday);
   if (bledInTeam) {
     console.log(`ENTITY_BLEED: "${candidate.game}" insight appears to reference "${bledInTeam}" from a different game — rejecting.`);
     await supabase.from('game_candidates').update({
       research_status: 'researched',
       status: 'rejected_no_edge',
       notes: `Entity-consistency check failed: insight referenced "${bledInTeam}" from an unrelated game.`,
+      research_log: pick, // preserve the actual output even on rejection — needed to verify real vs. false-positive gate failures after the fact
     }).eq('id', candidate.id);
     return;
   }
@@ -317,14 +369,15 @@ async function submitNewResearch(today) {
     timeZone: 'America/New_York'
   });
 
-  // For the entity-consistency gate: real team names from every game in
-  // today's candidate pool, needed here now since gating happens
-  // immediately in this same pass rather than in a later poll phase.
+  // For the entity-consistency gate: game+sport pairs from every candidate
+  // in today's pool, needed here now since gating happens immediately in
+  // this same pass rather than in a later poll phase. Sport is included
+  // so findEntityBleed() can scope its comparison to same-sport games only.
   const { data: todaysCandidates } = await supabase
     .from('game_candidates')
-    .select('game')
+    .select('game, sport')
     .eq('date', today);
-  const knownGamesToday = (todaysCandidates || []).map(c => c.game);
+  const knownGamesToday = (todaysCandidates || []).map(c => ({ game: c.game, sport: c.sport }));
 
   for (const candidate of candidates) {
     try {
@@ -419,21 +472,23 @@ async function pollSubmittedResearch(today) {
     return;
   }
 
-  // For the entity-consistency check: real team names from every game in
+  // For the entity-consistency check: game+sport pairs from every game in
   // today's candidate pool, so we can catch a stat/team bleeding in from
-  // an unrelated game even though each Stage 2 call is isolated.
+  // an unrelated game even though each Stage 2 call is isolated. Sport is
+  // included so findEntityBleed() can scope its comparison to same-sport
+  // games only.
   const { data: todaysCandidates } = await supabase
     .from('game_candidates')
-    .select('game')
+    .select('game, sport')
     .eq('date', today);
-  const knownGamesToday = (todaysCandidates || []).map(c => c.game);
+  const knownGamesToday = (todaysCandidates || []).map(c => ({ game: c.game, sport: c.sport }));
 
   for (const candidate of submitted) {
     try {
       // If we've blown past the confirmation deadline, this can never be
       // confirmed and published in time regardless of research outcome.
       if (candidate.confirmation_deadline_at && new Date(candidate.confirmation_deadline_at) < now) {
-        console.log(`EXPIRED: "${candidate.game}" batch still in flight past its own confirmation deadline \u2014 marking expired.`);
+        console.log(`EXPIRED: "${candidate.game}" batch still in flight past its own confirmation deadline — marking expired.`);
         await supabase.from('game_candidates').update({
           status: 'expired_unconfirmed',
           notes: 'Research batch did not complete before this candidate\'s confirmation deadline.',
@@ -482,67 +537,11 @@ async function pollSubmittedResearch(today) {
       const text = extractText(resultJson.result.message.content);
       const pick = cleanJson(text);
 
-      // ── Gate 1: game-verification ──────────────────────────────────
-      if (pick.game !== candidate.game) {
-        console.log(`GAME_MISMATCH: expected "${candidate.game}", got "${pick.game}" \u2014 rejecting.`);
-        await supabase.from('game_candidates').update({
-          status: 'rejected_no_edge',
-          notes: `Game verification failed: model returned "${pick.game}" instead of "${candidate.game}".`,
-        }).eq('id', candidate.id);
-        continue;
-      }
-
-      // ── Gate 2: eligibility ───────────────────────────────────────
-      const elig = pick.eligibility || {};
-      const vaguePattern = /\b(TBD|tbd|likely starter|probable|unconfirmed|not yet announced)\b/i;
-      // "MLB.com probable pitchers page" is the literal, official name of
-      // MLB's own pitcher-confirmation source (same terminology as the
-      // hydrate=probablePitcher API parameter used elsewhere in this
-      // codebase) — citing it is a legitimate confirmation, not uncertainty.
-      // Strip that known-safe phrase before checking for actual vague
-      // language, so citing the correct source doesn't get punished.
-      const stripKnownSafePhrases = (text) => (text || '').replace(/MLB\.com probable pitchers? page/gi, '');
-      const namesLookVague = (elig.confirmed_names || []).some(n => vaguePattern.test(stripKnownSafePhrases(n)));
-      if (elig.mandatory_participant_confirmed !== true || namesLookVague || !elig.confirmed_names || elig.confirmed_names.length === 0) {
-        console.log(`ELIGIBILITY_FAILED: "${candidate.game}" \u2014 mandatory_participant_confirmed=${elig.mandatory_participant_confirmed}, names=${JSON.stringify(elig.confirmed_names)}`);
-        await supabase.from('game_candidates').update({
-          status: 'rejected_no_edge',
-          notes: 'Eligibility gate failed: participant confirmation not genuinely established.',
-          eligibility: elig,
-        }).eq('id', candidate.id);
-        continue;
-      }
-
-      // ── Gate 3: entity-consistency ───────────────────────────────────
-      const otherGames = knownGamesToday.filter(g => g !== candidate.game);
-      const otherTeamNames = otherGames.flatMap(g => g.split(' @ ').map(t => t.trim())).filter(Boolean);
-      const insightLower = (pick.insight || '').toLowerCase();
-      const bledInTeam = otherTeamNames.find(team => {
-        const lastWord = team.split(' ').pop();
-        return lastWord && lastWord.length > 3 && insightLower.includes(lastWord.toLowerCase());
-      });
-      if (bledInTeam) {
-        console.log(`ENTITY_BLEED: "${candidate.game}" insight appears to reference "${bledInTeam}" from a different game \u2014 rejecting.`);
-        await supabase.from('game_candidates').update({
-          status: 'rejected_no_edge',
-          notes: `Entity-consistency check failed: insight referenced "${bledInTeam}" from an unrelated game.`,
-        }).eq('id', candidate.id);
-        continue;
-      }
-
-      // All gates passed \u2014 store the research, ready for final confirmation.
-      await supabase.from('game_candidates').update({
-        research_status: 'researched',
-        status: 'awaiting_confirmation',
-        score: pick.score ?? null,
-        eligibility: elig,
-        insight: pick.insight,
-        odds: pick.odds,
-        units: pick.units,
-        research_log: pick,
-      }).eq('id', candidate.id);
-
-      console.log(`Research complete and gated successfully: "${candidate.game}" (score: ${pick.score})`);
+      // Gating now genuinely shared with the synchronous path — this used
+      // to be a full duplicate copy of all three gates, which is exactly
+      // how the entity-consistency bug ended up needing a fix in two
+      // places instead of one. One shared function, one place to fix.
+      await gateAndFinalizeResearch(candidate, pick, knownGamesToday);
     } catch (err) {
       console.error(`Error polling/gating candidate ${candidate.id} (${candidate.game}):`, err.message);
       // Leave as research_submitted so it gets retried next run, unless
