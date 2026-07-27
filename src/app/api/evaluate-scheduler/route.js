@@ -147,13 +147,22 @@ ${recentPicksMemory}
 
 Write up your honest findings and conclusion in plain language — be specific and back up your reasoning with what you actually found. A colleague will handle structuring your answer afterward, so just focus on giving a real, well-researched take.`;
 
+  // Timeout raised 45s -> 120s (matching Stage 2's research-scheduler
+  // budget) after logged evidence (Jul 24-26) showed evaluate-scheduler
+  // invocation durations clustering at 45-77s even on ordinary runs, and
+  // every single tick in that window containing at least one timeout at
+  // exactly 45000ms. This wasn't catching rare flukes — a normal 3-5
+  // search research pass was routinely getting cut off mid-work. Safe to
+  // raise: Promise.all bounds the whole tick's wall-clock time by its
+  // SLOWEST concurrent call (not the sum), and the function's own 300s
+  // ceiling has ample headroom even at 120s + extraction's 30s on top.
   const response = await callClaude({
     model: 'claude-sonnet-4-6',
     max_tokens: 1500,
     system,
     messages: [{ role: 'user', content: `Research ${game.game} now and give me your honest findings.` }],
     tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-  }, 0, 45000);
+  }, 0, 120000);
 
   return extractText(response.content);
 }
@@ -200,9 +209,33 @@ async function evaluateGameForEdge(game, today_display, recentPicksMemory) {
     findings = await researchGameFindings(game, today_display, recentPicksMemory);
   } catch (e) {
     console.log(`RESEARCH_ERROR for "${game.game}": ${e.message}`);
-    return null;
+    findings = null;
   }
-  if (!findings || !findings.trim()) return null;
+
+  // Previously this branch (empty/whitespace findings — the shape a
+  // silent timeout takes, since callClaude catches the abort internally
+  // and returns no text rather than throwing) had NO log line at all.
+  // That's the exact gap that made this failure invisible until we
+  // counted raw DB rows by hand — over half of July 25-27's "no edge"
+  // verdicts turned out to be this, not real analysis. One explicit
+  // local retry here mirrors the pattern extraction already uses below,
+  // rather than touching callClaude's shared transient-retry list (which
+  // deliberately excludes timeout_error and is reused by other call
+  // sites like Stage 2 and the lineup checks — not something to change
+  // globally for this specific fix).
+  if (!findings || !findings.trim()) {
+    console.log(`RESEARCH_EMPTY_OR_TIMEOUT for "${game.game}" — Layer 1 research returned no usable text (a silent timeout, or the RESEARCH_ERROR logged just above) — retrying once.`);
+    try {
+      findings = await researchGameFindings(game, today_display, recentPicksMemory);
+    } catch (e) {
+      console.log(`RESEARCH_RETRY_ERROR for "${game.game}": ${e.message}`);
+      findings = null;
+    }
+    if (!findings || !findings.trim()) {
+      console.log(`RESEARCH_EMPTY_OR_TIMEOUT for "${game.game}" — retry also returned no usable text, giving up on this look.`);
+      return null;
+    }
+  }
 
   try {
     const result = await extractStructuredEvaluation(findings, game);
