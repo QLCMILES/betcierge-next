@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 // Synchronous by design (not Batches API) — this step needs a guaranteed
 // timely response right up against each candidate's own publish deadline.
 // Intended cron cadence: every 2-3 minutes.
-export const maxDuration = 30;
+export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
 const supabase = createClient(
