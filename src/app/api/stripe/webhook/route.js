@@ -9,8 +9,10 @@ const supabase = createClient(
 );
 
 const PRICE_TO_TIER = {
+  [process.env.STRIPE_PRICE_FOUNDING_TEAM_MONTHLY]: 'team',
   [process.env.STRIPE_PRICE_TEAM_MONTHLY]: 'team',
   [process.env.STRIPE_PRICE_TEAM_ANNUAL]: 'team',
+  [process.env.STRIPE_PRICE_FOUNDING_EDGE_MONTHLY]: 'edge',
   [process.env.STRIPE_PRICE_EDGE_MONTHLY]: 'edge',
   [process.env.STRIPE_PRICE_EDGE_ANNUAL]: 'edge',
 };
@@ -41,7 +43,8 @@ export async function POST(req) {
         const trialEnd = subscription.trial_end
           ? new Date(subscription.trial_end * 1000).toISOString()
           : null;
-        const currentPeriodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+        const periodEndRaw = subscription.items.data[0]?.current_period_end;
+        const currentPeriodEnd = periodEndRaw ? new Date(periodEndRaw * 1000).toISOString() : null;
 
         await supabase.from('user_profiles').update({
           subscription_tier: tier,
@@ -70,7 +73,8 @@ export async function POST(req) {
 
         const priceId = subscription.items.data[0]?.price?.id;
         const tier = PRICE_TO_TIER[priceId] || 'team';
-        const currentPeriodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+        const periodEndRaw = subscription.items.data[0]?.current_period_end;
+        const currentPeriodEnd = periodEndRaw ? new Date(periodEndRaw * 1000).toISOString() : null;
 
         await supabase.from('user_profiles').update({
           subscription_tier: tier,

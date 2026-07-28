@@ -48,8 +48,8 @@ export async function POST(req) {
         trial_period_days: 3,
         metadata: { userId },
       },
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}`,
+      success_url: `${req.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL}`,
       metadata: { userId },
     });
 
