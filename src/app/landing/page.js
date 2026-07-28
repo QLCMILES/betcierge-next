@@ -47,6 +47,11 @@ export default function Landing({ onGetStarted }) {
   const [picks, setPicks] = useState([]);
   const [record, setRecord] = useState({ wins: 0, losses: 0, units: 0, roi: 0, winRate: 0 });
   const go = () => { if (onGetStarted) onGetStarted(); };
+  const claimFounding = () => {
+    localStorage.setItem('founding_price_id', STRIPE_PRICE_CURRENT);
+    localStorage.setItem('founding_plan_name', 'Founding Member');
+    go();
+  };
 
   useEffect(() => {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
@@ -97,7 +102,7 @@ export default function Landing({ onGetStarted }) {
         <span style={{ color: GOLD, fontWeight: 700 }}>⚡ {FOUNDING_SPOTS_LEFT} of {FOUNDING_TOTAL} founding spots remaining</span>
         <span style={{ color: LIGHT, marginLeft: 8 }}>
           · Lock in {CURRENT_PRICE_DISPLAY} forever ·{" "}
-          <span style={{ color: GOLD, cursor: "pointer", textDecoration: "underline" }} onClick={go}>claim yours</span>
+          <span style={{ color: GOLD, cursor: "pointer", textDecoration: "underline" }} onClick={claimFounding}>claim yours</span>
         </span>
       </div>
 
@@ -123,7 +128,7 @@ export default function Landing({ onGetStarted }) {
           NFL · NBA · MLB · Soccer · NHL · UFC · Golf · Tennis — every sport, every day.
         </p>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-          <button onClick={() => go()} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+          <button onClick={claimFounding} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
             Claim Founding Spot — {CURRENT_PRICE_DISPLAY}
           </button>
         </div>
@@ -233,7 +238,7 @@ export default function Landing({ onGetStarted }) {
               <span style={{ color: GREEN }}>✓</span>{f}
             </div>
           ))}
-          <button onClick={go} style={{ width: "100%", marginTop: 16, padding: "14px", borderRadius: 10, border: "none", background: GOLD, color: "#000", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+          <button onClick={claimFounding} style={{ width: "100%", marginTop: 16, padding: "14px", borderRadius: 10, border: "none", background: GOLD, color: "#000", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
             Claim Founding Price — $24.99/mo
           </button>
         </div>
@@ -265,7 +270,7 @@ export default function Landing({ onGetStarted }) {
           <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 28, fontWeight: 700, color: "#fff", marginBottom: 12 }}>Start your free trial today</h2>
           <p style={{ color: GRAY, fontSize: 14, marginBottom: 8 }}>3 days free. Full access. No commitment.</p>
           <p style={{ color: GRAY, fontSize: 13, marginBottom: 24 }}>Cancel anytime from your account settings — <strong style={{ color: GOLD }}>no hoops, no calls.</strong></p>
-          <button onClick={go} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 40px", fontSize: 15, fontWeight: 700, cursor: "pointer", width: "100%" }}>
+          <button onClick={claimFounding} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 40px", fontSize: 15, fontWeight: 700, cursor: "pointer", width: "100%" }}>
             Claim Founding Spot — {CURRENT_PRICE_DISPLAY}
           </button>
         </div>

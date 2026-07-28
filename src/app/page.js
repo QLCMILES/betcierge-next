@@ -144,7 +144,7 @@ function Onboarding({ onComplete }) {
         <button style={{ ...S.ob.nextBtn, ...(canNext[step]() ? {} : { opacity: 0.3, cursor: "not-allowed" }) }}
           onClick={() => canNext[step]() && (step < 4 ? setStep(step + 1) : onComplete({ ...form, bankroll: parseFloat(form.bankroll), goal: parseFloat(form.goal) }))}
           disabled={!canNext[step]()}>
-          {step === 4 ? "Start My Free Month →" : step < 3 ? "Continue →" : "Meet Hunter →"}
+          {step === 4 ? "Start My Free Trial →" : step < 3 ? "Continue →" : "Meet Hunter →"}
         </button>
       </div>
     </div>
