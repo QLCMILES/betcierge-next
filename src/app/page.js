@@ -21,6 +21,14 @@ const SPORT_OPTIONS = ["MLB", "NBA", "NFL", "NHL", "Soccer", "UFC/MMA", "NCAAB",
 import { supabase } from "../lib/supabase";
 import LoginScreen from "../lib/LoginScreen";
 import Landing from "./landing/page";
+import {
+  isEntitled,
+  CURRENT_PRICE_DISPLAY,
+  FOUNDING_TOTAL,
+  FOUNDING_SPOTS_LEFT,
+  FOUNDING_ACTIVE,
+  STRIPE_PRICE_CURRENT,
+} from "../lib/pricing";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const calcProfit = (amount, odds) => {
@@ -124,8 +132,8 @@ function Onboarding({ onComplete }) {
             <div style={{ fontSize: 52, marginBottom: 12 }}>🎉</div>
             <h2 style={S.ob.title}>You're all set, {form.name.split(" ")[0]}!</h2>
             <div style={S.ob.trialBox}>
-              <div style={{ color: "#f5a623", fontSize: 20, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginBottom: 4 }}>First Month FREE</div>
-              <div style={{ color: "#888", fontSize: 13, marginBottom: 16 }}>Then $9.99/month. Cancel anytime.</div>
+              <div style={{ color: "#f5a623", fontSize: 20, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginBottom: 4 }}>3 Days Free</div>
+              <div style={{ color: "#888", fontSize: 13, marginBottom: 16 }}>Then {CURRENT_PRICE_DISPLAY}, locked for life as a founding member. Cancel anytime.</div>
               {["Daily AI picks at 11 AM", "📸 Snap to Log", "Persistent AI memory", "Bankroll tracking", "Full history & analytics"].map((f, i) => (
                 <div key={i} style={{ color: "#ccc", fontSize: 14, marginBottom: 8, textAlign: "left" }}>✅ {f}</div>
               ))}
@@ -136,7 +144,7 @@ function Onboarding({ onComplete }) {
         <button style={{ ...S.ob.nextBtn, ...(canNext[step]() ? {} : { opacity: 0.3, cursor: "not-allowed" }) }}
           onClick={() => canNext[step]() && (step < 4 ? setStep(step + 1) : onComplete({ ...form, bankroll: parseFloat(form.bankroll), goal: parseFloat(form.goal) }))}
           disabled={!canNext[step]()}>
-          {step === 4 ? "Start My Free Month →" : step < 3 ? "Continue →" : "Meet Hunter →"}
+          {step === 4 ? "Start My Free Trial →" : step < 3 ? "Continue →" : "Meet Hunter →"}
         </button>
       </div>
     </div>
@@ -1331,27 +1339,11 @@ function PicksTab({ userKey, user, session, onNav }) {
   );
 }
 // ── Access Control ────────────────────────────────────────────────────────
-function getAccessLevel(user) {
-  if (!user) return 'free';
-  const tier = user.subscription_tier?.toLowerCase();
-  const status = user.subscription_status?.toLowerCase();
-  
-  // Check active trial
-  if (user.trial_ends_at) {
-    const trialEnd = new Date(user.trial_ends_at);
-    if (trialEnd > new Date()) return 'team'; // Trial = full team access
-  }
-  
-  // Check active paid subscription
-  if ((tier === 'team' || tier === 'edge') && 
-      (status === 'active' || status === 'trialing')) return tier;
-  
-  // Everyone else is free
-  return 'free';
-}
-
+// Tier-agnostic — delegates to isEntitled() in lib/pricing.js, which only
+// asks "is this user a paying subscriber," never compares against a
+// specific tier name string.
 function isPaid(user) {
-  return getAccessLevel(user) !== 'free';
+  return isEntitled(user);
 }
 
 function isOnTrial(user) {
@@ -1417,7 +1409,7 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
       {alerts.map((a, i) => <Alert key={i} {...a} />)}
 
       {/* Upgrade Banner — show for free users */}
-      {(!user.subscription_tier || user.subscription_tier === 'free' || user.subscription_tier === 'lookout') && (
+      {!isPaid(user) && (
         <div onClick={() => onNav('upgrade')} style={{ background: 'linear-gradient(135deg, #1a1020, #0f0f18)', border: '1px solid #f5a623', borderRadius: 14, padding: '14px 16px', marginBottom: 16, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ color: '#f5a623', fontSize: 13, fontWeight: 700, marginBottom: 3 }}>🎯 Start Your Free Trial</div>
@@ -1515,7 +1507,7 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
   );
 }
 
-// ── Upgrade Screen ────────────────────────────────────────────────────────
+// ── Upgrade Screen (single tier) ───────────────────────────────────────────
 function UpgradeScreen({ user, userKey, onNav }) {
   const [loading, setLoading] = useState(null);
 
@@ -1542,20 +1534,6 @@ function UpgradeScreen({ user, userKey, onNav }) {
     }
   };
 
-  const PRICES = {
-    TEAM_MONTHLY: process.env.NEXT_PUBLIC_STRIPE_PRICE_TEAM_MONTHLY,
-    TEAM_ANNUAL: process.env.NEXT_PUBLIC_STRIPE_PRICE_TEAM_ANNUAL,
-    EDGE_MONTHLY: process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_MONTHLY,
-    EDGE_ANNUAL: process.env.NEXT_PUBLIC_STRIPE_PRICE_EDGE_ANNUAL,
-    FOUNDING_TEAM: process.env.NEXT_PUBLIC_STRIPE_PRICE_FOUNDING_TEAM_MONTHLY,
-    FOUNDING_EDGE: process.env.NEXT_PUBLIC_STRIPE_PRICE_FOUNDING_EDGE_MONTHLY,
-  };
-
-  const FOUNDING_SPOTS_TOTAL = 500;
-  const FOUNDING_SPOTS_TAKEN = 6;
-  const FOUNDING_SPOTS_LEFT = FOUNDING_SPOTS_TOTAL - FOUNDING_SPOTS_TAKEN;
-  const foundingActive = FOUNDING_SPOTS_LEFT > 0;
-
   return (
     <div style={S.screen}>
       <div style={S.backRow}>
@@ -1566,35 +1544,37 @@ function UpgradeScreen({ user, userKey, onNav }) {
       {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: 28 }}>
         <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 30, fontWeight: 700, color: '#fff', marginBottom: 8 }}>
-          {foundingActive ? 'Founding Member Pricing' : 'Upgrade Your Edge'}
+          {FOUNDING_ACTIVE ? 'Founding Member Pricing' : 'Start Your Free Trial'}
         </div>
-        {foundingActive ? (
+        {FOUNDING_ACTIVE ? (
           <>
             <div style={{ background: '#f5a62320', border: '1px solid #f5a623', borderRadius: 8, padding: '8px 16px', display: 'inline-block', marginBottom: 8 }}>
-              <span style={{ color: '#f5a623', fontWeight: 700, fontSize: 14 }}>⚡ {FOUNDING_SPOTS_LEFT} of {FOUNDING_SPOTS_TOTAL} founding spots remaining</span>
+              <span style={{ color: '#f5a623', fontWeight: 700, fontSize: 14 }}>⚡ {FOUNDING_SPOTS_LEFT} of {FOUNDING_TOTAL} founding spots remaining</span>
             </div>
             <div style={{ color: '#aaa', fontSize: 13, marginBottom: 4 }}>Lock in this price forever — it never goes up</div>
             <div style={{ color: '#555', fontSize: 12 }}>3-day free trial · Cancel anytime</div>
           </>
         ) : (
           <>
-            <div style={{ color: '#f5a623', fontSize: 14, marginBottom: 4 }}>3-day free trial on all plans</div>
+            <div style={{ color: '#f5a623', fontSize: 14, marginBottom: 4 }}>3-day free trial</div>
             <div style={{ color: '#555', fontSize: 13 }}>Cancel anytime. No commitment.</div>
           </>
         )}
       </div>
 
-      {/* Founding Team / Team Plan */}
-      <div style={{ background: '#0f0f18', border: '1px solid #f5a623', borderRadius: 16, padding: 20, marginBottom: 16, position: 'relative' }}>
-        {foundingActive && (
+      {/* Single price card — everything, one price. Lean Machine is included
+          here, not an upsell — it's part of the same pipeline as Official
+          picks (see July 22/24 handoffs). */}
+      <div style={{ background: '#0f0f18', border: '1px solid #f5a623', borderRadius: 16, padding: 20, marginBottom: 24, position: 'relative' }}>
+        {FOUNDING_ACTIVE && (
           <div style={{ position: 'absolute', top: -10, right: 16, background: '#f5a623', color: '#000', fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, letterSpacing: 1 }}>
             FOUNDING PRICE
           </div>
         )}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div>
-            <div style={{ color: '#f5a623', fontSize: 12, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>THE TEAM</div>
-            {foundingActive ? (
+            <div style={{ color: '#f5a623', fontSize: 12, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>BETCIERGE</div>
+            {FOUNDING_ACTIVE ? (
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                 <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$24.99<span style={{ fontSize: 13, color: '#555', fontWeight: 400 }}>/mo</span></div>
                 <div style={{ color: '#555', fontSize: 13, textDecoration: 'line-through' }}>$29.99</div>
@@ -1602,84 +1582,27 @@ function UpgradeScreen({ user, userKey, onNav }) {
             ) : (
               <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$29.99<span style={{ fontSize: 13, color: '#555', fontWeight: 400 }}>/mo</span></div>
             )}
-            {foundingActive ? (
+            {FOUNDING_ACTIVE ? (
               <div style={{ color: '#2ecc71', fontSize: 12, marginTop: 2 }}>🔒 Locked for life</div>
             ) : (
-              <div style={{ color: '#555', fontSize: 12, marginTop: 2 }}>or $197/yr — save 45%</div>
+              <div style={{ color: '#555', fontSize: 12, marginTop: 2 }}>Cancel anytime</div>
             )}
           </div>
           <div style={{ fontSize: 32 }}>🎯</div>
         </div>
-        {['Daily picks from Hunter', 'Full Hunter AI chat', 'Snap to Log', 'Live Gamecast', 'Bet history & analytics'].map((f, i) => (
+        <div style={{ color: '#777', fontSize: 12, marginBottom: 10 }}>Everything, one price. No tiers to choose between.</div>
+        {['Daily picks from Hunter', 'Lean Machine — extra plays beyond the daily picks', 'Full Hunter AI chat', 'Snap to Log', 'Live Gamecast', 'Bet history & analytics', 'Bankroll guardrails & tilt protection'].map((f, i) => (
           <div key={i} style={{ color: '#aaa', fontSize: 13, marginBottom: 6 }}>✓ {f}</div>
         ))}
         <div style={{ marginTop: 16 }}>
-          {foundingActive ? (
-            <button onClick={() => checkout(PRICES.FOUNDING_TEAM)} disabled={!!loading} style={{ width: '100%', background: '#f5a623', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
-              {loading === PRICES.FOUNDING_TEAM ? 'Loading...' : `Claim Founding Price — $24.99/mo`}
-            </button>
-          ) : (
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => checkout(PRICES.TEAM_MONTHLY)} disabled={!!loading} style={{ flex: 1, background: '#f5a623', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
-                {loading === PRICES.TEAM_MONTHLY ? 'Loading...' : 'Monthly'}
-              </button>
-              <button onClick={() => checkout(PRICES.TEAM_ANNUAL)} disabled={!!loading} style={{ flex: 1, background: '#f5a623', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
-                {loading === PRICES.TEAM_ANNUAL ? 'Loading...' : 'Annual — Best Value'}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Founding Edge / Edge Plan */}
-      <div style={{ background: '#0f0f18', border: '1px solid #2a1f4e', borderRadius: 16, padding: 20, marginBottom: 32, position: 'relative' }}>
-        {foundingActive && (
-          <div style={{ position: 'absolute', top: -10, right: 16, background: '#a78bfa', color: '#000', fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, letterSpacing: 1 }}>
-            FOUNDING PRICE
-          </div>
-        )}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <div>
-            <div style={{ color: '#a78bfa', fontSize: 12, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>THE EDGE</div>
-            {foundingActive ? (
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$59.99<span style={{ fontSize: 13, color: '#555', fontWeight: 400 }}>/mo</span></div>
-                <div style={{ color: '#555', fontSize: 13, textDecoration: 'line-through' }}>$79.99</div>
-              </div>
-            ) : (
-              <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$79.99<span style={{ fontSize: 13, color: '#555', fontWeight: 400 }}>/mo</span></div>
-            )}
-            {foundingActive ? (
-              <div style={{ color: '#2ecc71', fontSize: 12, marginTop: 2 }}>🔒 Locked for life</div>
-            ) : (
-              <div style={{ color: '#555', fontSize: 12, marginTop: 2 }}>or $499/yr — save 48%</div>
-            )}
-          </div>
-          <div style={{ fontSize: 32 }}>⚡</div>
-        </div>
-        {['Everything in The Team', 'Exclusive edge plays', 'Deeper analytics', 'Priority access to premium picks', 'Early access to new features'].map((f, i) => (
-          <div key={i} style={{ color: '#aaa', fontSize: 13, marginBottom: 6 }}>✓ {f}</div>
-        ))}
-        <div style={{ marginTop: 16 }}>
-          {foundingActive ? (
-            <button onClick={() => checkout(PRICES.FOUNDING_EDGE)} disabled={!!loading} style={{ width: '100%', background: '#a78bfa', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
-              {loading === PRICES.FOUNDING_EDGE ? 'Loading...' : `Claim Founding Price — $59.99/mo`}
-            </button>
-          ) : (
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => checkout(PRICES.EDGE_MONTHLY)} disabled={!!loading} style={{ flex: 1, background: '#a78bfa', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
-                {loading === PRICES.EDGE_MONTHLY ? 'Loading...' : 'Monthly'}
-              </button>
-              <button onClick={() => checkout(PRICES.EDGE_ANNUAL)} disabled={!!loading} style={{ flex: 1, background: '#a78bfa', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
-                {loading === PRICES.EDGE_ANNUAL ? 'Loading...' : 'Annual — Best Value'}
-              </button>
-            </div>
-          )}
+          <button onClick={() => checkout(STRIPE_PRICE_CURRENT)} disabled={!!loading} style={{ width: '100%', background: '#f5a623', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
+            {loading === STRIPE_PRICE_CURRENT ? 'Loading...' : FOUNDING_ACTIVE ? 'Claim Founding Price — $24.99/mo' : 'Start Free Trial — $29.99/mo'}
+          </button>
         </div>
       </div>
 
       {/* Price comparison note */}
-      {foundingActive && (
+      {FOUNDING_ACTIVE && (
         <div style={{ textAlign: 'center', color: '#555', fontSize: 12, marginBottom: 32 }}>
           CaptainPicks Discord is $600/mo. Betcierge gives you everything that has plus AI + tracking for {FOUNDING_SPOTS_LEFT} more founding members at $24.99/mo.
         </div>
@@ -2435,33 +2358,17 @@ useEffect(() => {
         .eq('user_id', session.user.id)
         .single();
       if (data) setUser(data);
-// Keep email in sync
-if (session.user.email) {
-  await supabase.from('user_profiles')
-    .update({ email: session.user.email })
-    .eq('user_id', session.user.id);
-}
-// Check for founding price — fires after email confirmation redirect
-const foundingPriceId = localStorage.getItem('founding_price_id');
-if (foundingPriceId && session.user.email) {
-  localStorage.removeItem('founding_price_id');
-  localStorage.removeItem('founding_plan_name');
-  try {
-    const res = await fetch('/api/stripe/create-checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        priceId: foundingPriceId,
-        userId: session.user.id,
-        email: session.user.email,
-      }),
-    });
-    const data2 = await res.json();
-    if (data2.url) window.location.href = data2.url;
-  } catch(e) {
-    console.error('Founding checkout error:', e);
-  }
-}
+      // Keep email in sync
+      if (session.user.email) {
+        await supabase.from('user_profiles')
+          .update({ email: session.user.email })
+          .eq('user_id', session.user.id);
+      }
+      // Founding-price checkout used to fire from here too, immediately on
+      // ANY auth state change — before onboarding ever ran. That was the
+      // "Stripe fires before onboarding" bug. Checkout now ONLY fires from
+      // handleComplete(), after bankroll/goals/sports are collected. Do not
+      // re-add a checkout trigger here without checking with Miles first.
     }
     setAuthLoading(false);
   });
