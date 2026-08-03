@@ -16,23 +16,20 @@ const supabase = createClient(
 const MONEYLINE_REJECT_CENTS = 50;
 const POINT_REJECT = 3.0;
 
-const OFFICIAL_SCORE_THRESHOLD = 7.0;
-// Totals get their own, deliberately higher bar than sides (moneyline, run
-// line/spread) — real July 20 data showed totals going 0-6 across both
-// tiers that day while every side won. This isn't "totals never hit," it's
-// "the same threshold that works for sides doesn't reliably work for
-// totals" — so totals now need a genuinely higher score to appear at all,
-// and are capped at 2 per day regardless of sport, on top of the existing
-// per-sport correlation cap. Stage 1 also now runs a real verification
-// pass on totals before they even reach this stage — these two layers
-// work together, not as alternatives to each other.
-const TOTAL_LEAN_FLOOR = 7.0;
-const TOTAL_OFFICIAL_THRESHOLD = 8.5;
+// SINGLE-LIST REBUILD (Aug 3, 2026) — Official/Lean tier split removed.
+// PUBLISH_SCORE_THRESHOLD is set to the OLD Lean floor, not the old
+// Official bar, deliberately — this preserves today's actual publish
+// volume while settlement data is still being trusted again. This is a
+// placeholder, not a final decision — Miles: revisit once a few clean
+// days of corrected data exist.
+const PUBLISH_SCORE_THRESHOLD = 6.0;
+// Totals keep their own higher bar — real July 20 data showed totals
+// going 0-6 while every side won that day. Same placeholder status.
+const TOTAL_PUBLISH_THRESHOLD = 7.0;
 const MAX_TOTALS_PER_DAY = 2;
-const LEAN_SCORE_FLOOR = 6.0;
-const DAILY_OFFICIAL_CAP = 3;
+const DAILY_PICK_CAP = 3;
 const CORRELATION_CAP_PER_SPORT_BETTYPE = 2;
-const ELITE_OVERRIDE_THRESHOLD = 8.5; // a pick this strong publishes even if the daily cap is already full — "too good not to put out." Does NOT override the correlation cap, which is a risk-concentration guard, not a quality gate.
+const ELITE_OVERRIDE_THRESHOLD = 8.5; // a pick this strong publishes as a genuine 4th+ pick even when the daily cap is full — never bumps an existing pick (Miles, Aug 3). Does NOT override the correlation cap, which is a risk-concentration guard, not a quality gate.
 
 // Same logic as settle-bets.js's inferBetType() — deriving from the ACTUAL
 // final pick text, not the Stage 1 label. Stage 1's bet_type is a guess
@@ -524,8 +521,7 @@ async function finalizePicks() {
       const betType = inferBetTypeFromPickText(pick.pick, pick.odds) || candidate.bet_type || 'unknown';
 
       const isTotal = betType === 'total';
-      const effectiveLeanFloor = isTotal ? TOTAL_LEAN_FLOOR : LEAN_SCORE_FLOOR;
-      const effectiveOfficialThreshold = isTotal ? TOTAL_OFFICIAL_THRESHOLD : OFFICIAL_SCORE_THRESHOLD;
+      const effectiveThreshold = isTotal ? TOTAL_PUBLISH_THRESHOLD : PUBLISH_SCORE_THRESHOLD;
 
       if (isTotal) {
         const { data: totalsToday } = await supabase
@@ -534,7 +530,7 @@ async function finalizePicks() {
           .eq('date', today)
           .eq('bet_type', 'total');
         if ((totalsToday || []).length >= MAX_TOTALS_PER_DAY) {
-          console.log(`FINAL_TOTALS_DAILY_CAP: "${candidate.game}" is a total but today's slate already has ${MAX_TOTALS_PER_DAY} totals published (any tier) — discarding rather than adding another, regardless of this candidate's own score.`);
+          console.log(`FINAL_TOTALS_DAILY_CAP: "${candidate.game}" is a total but today's slate already has ${MAX_TOTALS_PER_DAY} totals published — discarding rather than adding another, regardless of this candidate's own score.`);
           await supabase.from('game_candidates').update({
             status: 'discarded_totals_daily_cap',
           }).eq('id', candidate.id);
@@ -542,62 +538,50 @@ async function finalizePicks() {
         }
       }
 
-      if (score < effectiveLeanFloor) {
-        console.log(`FINAL_BELOW_LEAN_FLOOR: "${candidate.game}" (${betType}) scored ${score}, below ${effectiveLeanFloor} — not shown anywhere.`);
+      if (score < effectiveThreshold) {
+        console.log(`FINAL_BELOW_THRESHOLD: "${candidate.game}" (${betType}) scored ${score}, below ${effectiveThreshold} — not published.`);
         await supabase.from('game_candidates').update({
           status: 'discarded_low_score',
         }).eq('id', candidate.id);
         continue;
       }
 
-      // Correlation cap now checks BOTH tiers combined for this sport+bet_type
-      // today — a Lean pick of a given type occupies a real "slot" in the
-      // day's slate just as much as an Official one does, so it must count
-      // against new candidates of either tier, not just against would-be-
-      // Official ones. Previously, anything scoring 6.0-6.9 skipped this
-      // check entirely and went straight to Lean with no concentration
-      // limit at all — this is the fix for that gap.
-      const { data: sameTypeAnyTierToday } = await supabase
+      // Correlation cap — hard gate, checked before the daily cap/elite
+      // override. The elite override never bypasses this: correlation
+      // risk is a concentration guard, not a quality gate, so a strong
+      // score doesn't earn an exception here the way it does below.
+      const { data: sameTypeToday } = await supabase
         .from('daily_picks')
         .select('id', { count: 'exact' })
         .eq('date', today)
         .eq('sport', candidate.sport)
         .eq('bet_type', betType);
 
-      const correlationCapHit = (sameTypeAnyTierToday || []).length >= CORRELATION_CAP_PER_SPORT_BETTYPE;
-
-      let tier = 'lean';
-      let missReason = 'score';
-
-      if (correlationCapHit && score >= effectiveOfficialThreshold) {
-        tier = 'lean';
-        missReason = 'correlation_cap';
-        console.log(`FINAL_CORRELATION_CAP: "${candidate.game}" scored ${score} (would be official) but ${candidate.sport}/${betType} already has ${CORRELATION_CAP_PER_SPORT_BETTYPE} picks (any tier) today \u2014 publishing as Lean Machine instead. The elite override does NOT apply here \u2014 correlation risk is a separate concern from pick quality.`);
-      } else if (correlationCapHit) {
-        missReason = 'lean_correlation_cap';
-        console.log(`FINAL_LEAN_CORRELATION_CAP: "${candidate.game}" scored ${score} but ${candidate.sport}/${betType} already has ${CORRELATION_CAP_PER_SPORT_BETTYPE} picks (any tier) today \u2014 discarding rather than adding a third same-type pick to an already-concentrated slate.`);
+      if ((sameTypeToday || []).length >= CORRELATION_CAP_PER_SPORT_BETTYPE) {
+        console.log(`FINAL_CORRELATION_CAP: "${candidate.game}" scored ${score} but ${candidate.sport}/${betType} already has ${CORRELATION_CAP_PER_SPORT_BETTYPE} picks published today — discarding rather than adding another same-type pick to an already-concentrated slate.`);
         await supabase.from('game_candidates').update({
-          status: 'discarded_lean_correlation_cap',
+          status: 'discarded_correlation_cap',
         }).eq('id', candidate.id);
         continue;
-      } else if (score >= effectiveOfficialThreshold) {
-        const { data: officialToday } = await supabase
-          .from('daily_picks')
-          .select('id', { count: 'exact' })
-          .eq('date', today)
-          .eq('tier', 'official');
+      }
 
-        if ((officialToday || []).length >= DAILY_OFFICIAL_CAP && score < ELITE_OVERRIDE_THRESHOLD) {
-          tier = 'lean';
-          missReason = 'daily_cap';
-          console.log(`FINAL_DAILY_CAP: "${candidate.game}" scored ${score} (would be official) but today's slate already has ${DAILY_OFFICIAL_CAP} official picks \u2014 publishing as Lean Machine instead. Did not qualify for the ${ELITE_OVERRIDE_THRESHOLD}+ elite override.`);
-        } else if ((officialToday || []).length >= DAILY_OFFICIAL_CAP && score >= ELITE_OVERRIDE_THRESHOLD) {
-          tier = 'official';
-          missReason = null;
-          console.log(`FINAL_ELITE_OVERRIDE: "${candidate.game}" scored ${score} \u2014 today's daily cap of ${DAILY_OFFICIAL_CAP} was already full, but this score cleared the ${ELITE_OVERRIDE_THRESHOLD} elite bar, so it publishes as official anyway \u2014 too good to hold back.`);
+      const { data: picksToday } = await supabase
+        .from('daily_picks')
+        .select('id', { count: 'exact' })
+        .eq('date', today);
+
+      let publishNote = null;
+
+      if ((picksToday || []).length >= DAILY_PICK_CAP) {
+        if (score >= ELITE_OVERRIDE_THRESHOLD) {
+          publishNote = 'elite_override';
+          console.log(`FINAL_ELITE_OVERRIDE: "${candidate.game}" scored ${score} — today's cap of ${DAILY_PICK_CAP} was already full, but this cleared the ${ELITE_OVERRIDE_THRESHOLD} elite bar, so it publishes as an additional pick — too good to hold back.`);
         } else {
-          tier = 'official';
-          missReason = null;
+          console.log(`FINAL_DAILY_CAP: "${candidate.game}" scored ${score} but today's slate already has ${DAILY_PICK_CAP} picks and didn't clear the ${ELITE_OVERRIDE_THRESHOLD} elite override bar — discarding.`);
+          await supabase.from('game_candidates').update({
+            status: 'discarded_daily_cap',
+          }).eq('id', candidate.id);
+          continue;
         }
       }
 
@@ -614,8 +598,8 @@ async function finalizePicks() {
         result: 'Pending',
         status: 'active',
         game_time: candidate.game_time,
-        tier,
-        miss_reason: missReason,
+        tier: null, // deprecated with the single-list rebuild — column stays in schema, cleaned up during the production migration, not written to going forward
+        miss_reason: publishNote, // repurposed: null normally, 'elite_override' when this pick only got in via the 4th-pick rule — internal auditability, never shown to users
         game_candidate_id: candidate.id,
         score,
         original_score: originalScore,
@@ -626,14 +610,12 @@ async function finalizePicks() {
       if (insertErr) throw insertErr;
 
       await supabase.from('game_candidates').update({
-        status: tier === 'official' ? 'published_official' : 'published_lean',
+        status: 'published',
       }).eq('id', candidate.id);
 
-      console.log(`FINAL_PUBLISHED: "${candidate.game}" \u2014 tier=${tier}${missReason ? ` (miss_reason=${missReason})` : ''}, score=${score}`);
+      console.log(`FINAL_PUBLISHED: "${candidate.game}" — score=${score}${publishNote ? ` (${publishNote})` : ''}`);
 
-      if (tier === 'official') {
-        await sendPickSMS(inserted);
-      }
+      await sendPickSMS(inserted);
     } catch (err) {
       console.error(`Error finalizing candidate ${candidate.id} (${candidate.game}):`, err.message);
       // Left as awaiting_confirmation \u2014 will be retried next run. If this
