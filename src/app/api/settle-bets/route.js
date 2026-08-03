@@ -988,13 +988,15 @@ async function settleDailyPicks() {
 else {
   const match = findMatchingGame(betLike, allScores);
   if (match) {
+    console.log(`[SETTLE_DEBUG] ${pick.id} "${pick.pick}" matched game:`, JSON.stringify({ home: match.home_team, away: match.away_team, commence_time: match.commence_time, scores: match.scores }));
     result = determineResult(betLike, match);
     log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'odds_api', result });
   } else if (sport.includes('mlb') || sport.includes('baseball')) {
-    // Fallback: use MLB Stats API directly for MLB games not found in Odds API
+    console.log(`[SETTLE_DEBUG] ${pick.id} "${pick.pick}" NO_MATCH in odds_api, trying MLB Stats fallback`);
     result = await settleMLBViaStatsAPI(betLike);
     log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'mlb_stats_fallback', result });
   } else {
+    console.log(`[SETTLE_DEBUG] ${pick.id} "${pick.pick}" NO_MATCH, no fallback for this sport`);
     log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'odds_api', result: 'NO_MATCH' });
   }
 }
