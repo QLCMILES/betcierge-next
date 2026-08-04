@@ -251,6 +251,101 @@ function determineResult(bet, game) {
   return (pickedHome && homeWon) || (pickedAway && !homeWon) ? 'Win' : 'Loss';
 }
 
+// ─── SYNC RESULT INTO FIRST-CLASS `games` TABLE ──────────────
+// Step one of the games-table settlement migration. Pure additive side
+// effect: fires only after determineResult() has already run, never
+// influences the result actually written to daily_picks. Mirrors the
+// same identity-resolution pattern as morning-trigger's
+// resolveOrCreateGame() — fast path by provider id, repair path by
+// sport+teams+wide time window — so a game created by the picks pipeline
+// gets its result healed onto the same row, not duplicated.
+//
+// Once this has run for a few real days and the data looks clean, the
+// next step is having settleDailyPicks() check games (via
+// game_candidates.game_ref_id) BEFORE falling back to fuzzy matching —
+// deliberately held back from this pass so it doesn't touch the same
+// code path as the settlement bug currently under investigation.
+async function syncGameResult(game, sportKey) {
+  if (!sportKey) return;
+  try {
+    const homeScore = findScoreForTeam(game, game.home_team);
+    const awayScore = findScoreForTeam(game, game.away_team);
+    if (homeScore === null || awayScore === null || isNaN(homeScore) || isNaN(awayScore)) {
+      return; // never write partial/bad data into games
+    }
+
+    const commenceTimeIso = new Date(game.commence_time).toISOString();
+    const payload = {
+      status: 'final',
+      home_score: homeScore,
+      away_score: awayScore,
+      final_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // Fast path: this game's Odds API id already has a games row.
+    const { data: existing, error: lookupError } = await supabase
+      .from('games')
+      .select('id')
+      .eq('odds_api_game_id', game.id)
+      .maybeSingle();
+    if (lookupError) {
+      console.log(`GAME_SYNC_LOOKUP_ERROR: ${lookupError.message} for odds_api_game_id=${game.id}`);
+      return;
+    }
+    if (existing) {
+      await supabase.from('games').update(payload).eq('id', existing.id);
+      return;
+    }
+
+    // Repair path: provider id missed — this game's id may have drifted
+    // since morning-trigger created it (e.g. a postponement). Re-resolve
+    // by sport + teams + a wide same-day window, heal in place.
+    const windowStart = new Date(new Date(game.commence_time).getTime() - 18 * 60 * 60 * 1000).toISOString();
+    const windowEnd = new Date(new Date(game.commence_time).getTime() + 18 * 60 * 60 * 1000).toISOString();
+    const { data: byTeamsAndDate, error: repairLookupError } = await supabase
+      .from('games')
+      .select('id')
+      .eq('sport', sportKey)
+      .eq('home_team', game.home_team)
+      .eq('away_team', game.away_team)
+      .gte('commence_time', windowStart)
+      .lte('commence_time', windowEnd)
+      .maybeSingle();
+    if (repairLookupError) {
+      console.log(`GAME_SYNC_LOOKUP_ERROR (repair path): ${repairLookupError.message}`);
+      return;
+    }
+    if (byTeamsAndDate) {
+      console.log(`GAME_SYNC_REPAIRED: ${game.away_team} @ ${game.home_team} matched by teams+date, healing odds_api_game_id -> ${game.id}`);
+      await supabase.from('games').update({
+        ...payload,
+        odds_api_game_id: game.id,
+        odds_api_id_synced_at: new Date().toISOString(),
+      }).eq('id', byTeamsAndDate.id);
+      return;
+    }
+
+    // No existing row at all — settlement found a game the picks pipeline
+    // never created a candidate for (e.g. a sport outside today's slate).
+    // Create it so games stays a complete record rather than a partial one.
+    const { error: insertError } = await supabase.from('games').insert({
+      sport: sportKey,
+      home_team: game.home_team,
+      away_team: game.away_team,
+      commence_time: commenceTimeIso,
+      odds_api_game_id: game.id,
+      odds_api_id_synced_at: new Date().toISOString(),
+      ...payload,
+    });
+    if (insertError) {
+      console.log(`GAME_SYNC_CREATE_ERROR: ${insertError.message} for ${game.away_team} @ ${game.home_team}`);
+    }
+  } catch (e) {
+    console.log(`GAME_SYNC_UNEXPECTED_ERROR: ${e.message} for odds_api_game_id=${game?.id}`);
+  }
+}
+
 // ─── COMBO PICK SETTLEMENT ───────────────────────────────────
 // FIX 4: Handles "France to Win & Over 2.5 Goals" style picks
 // All legs must win for the combo to win. One loss = Loss.
@@ -991,6 +1086,13 @@ else {
     console.log(`[SETTLE_DEBUG] ${pick.id} "${pick.pick}" matched game:`, JSON.stringify({ home: match.home_team, away: match.away_team, commence_time: match.commence_time, scores: match.scores }));
     result = determineResult(betLike, match);
     log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'odds_api', result });
+    // Additive only — backfills the first-class `games` table with this
+    // settlement run's real, verified result. Never affects `result`
+    // above, and any failure inside is caught and logged there, not here.
+    // This is step one of the games-table settlement migration: build up
+    // real synced data first, before switching any matching logic over
+    // to read from it.
+    await syncGameResult(match, normalizeSport(pick.sport));
   } else if (sport.includes('mlb') || sport.includes('baseball')) {
     console.log(`[SETTLE_DEBUG] ${pick.id} "${pick.pick}" NO_MATCH in odds_api, trying MLB Stats fallback`);
     result = await settleMLBViaStatsAPI(betLike);
