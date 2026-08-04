@@ -284,9 +284,19 @@ async function gateAndFinalizeResearch(candidate, pick, knownGamesToday) {
 
   // ── Gate 2: eligibility ───────────────────────────────────────
   const elig = pick.eligibility || {};
-  const vaguePattern = /\b(TBD|tbd|likely starter|probable|unconfirmed|not yet announced)\b/i;
-  const stripKnownSafePhrases = (text) => (text || '').replace(/MLB\.com probable pitchers? page/gi, '');
-  const namesLookVague = (elig.confirmed_names || []).some(n => vaguePattern.test(stripKnownSafePhrases(n)));
+  // "probable" deliberately excluded from this pattern — MLB.com's own
+  // "Probable Pitchers" page is the sport's standard confirmed-starter
+  // designation before final lineup cards post, not hedging language.
+  // Root-caused Aug 4 via live logs: every real ELIGIBILITY_FAILED case
+  // in a 24h sample (Twins/Royals, White Sox/Red Sox, Mets/Guardians) had
+  // mandatory_participant_confirmed=true and solid sourced confirmed_names
+  // — the ONLY thing tripping the gate was this one word. The previous
+  // stripKnownSafePhrases workaround only matched the exact phrase
+  // "MLB.com probable pitchers page" and missed the equally common
+  // "MLB.com official probable pitchers page" phrasing — removed as dead
+  // code now that the root word is no longer flagged.
+  const vaguePattern = /\b(TBD|tbd|likely starter|unconfirmed|not yet announced)\b/i;
+  const namesLookVague = (elig.confirmed_names || []).some(n => vaguePattern.test(n));
   if (elig.mandatory_participant_confirmed !== true || namesLookVague || !elig.confirmed_names || elig.confirmed_names.length === 0) {
     console.log(`ELIGIBILITY_FAILED: "${candidate.game}" — mandatory_participant_confirmed=${elig.mandatory_participant_confirmed}, names=${JSON.stringify(elig.confirmed_names)}`);
     await supabase.from('game_candidates').update({
