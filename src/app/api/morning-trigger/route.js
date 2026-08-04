@@ -85,90 +85,146 @@ function cleanJson(text) {
 // Non-fatal by design: this is additive infrastructure sitting alongside
 // game_candidates creation, not gating it. Any failure here logs and
 // returns null — the candidate row still gets written either way.
-async function resolveOrCreateGame({ sportKey, homeTeam, awayTeam, commenceTime, oddsApiGameId }) {
-  if (!sportKey || !homeTeam || !awayTeam) {
-    console.log(`GAME_IDENTITY_SKIPPED: missing sportKey/homeTeam/awayTeam for "${awayTeam} @ ${homeTeam}" — leaving game_ref_id null.`);
-    return null;
-  }
+//
+// BATCHED — takes every candidate for this run at once and resolves them
+// in a small, fixed number of DB round trips instead of one (or two) per
+// candidate. This is the fix for a flagged scaling risk: the original
+// per-candidate version was fine at MLB volume (10-15 games) but added
+// up to 100-200 sequential round trips at real college-football volume
+// (40-100+ games), stacking onto a function that already has a 300s
+// ceiling. Common case (brand-new game, or an exact repeat match with no
+// drift) now costs exactly 2 round trips total regardless of slate size:
+// one bulk fetch, one bulk insert. Only the rare case — a provider id
+// that drifted since we last saw this game (e.g. a postponement) — still
+// does individual work, and even those run concurrently via
+// Promise.all(), not sequentially.
+//
+// candidates: array of { _index, sportKey, homeTeam, awayTeam, commenceTime (Date), oddsApiGameId }
+// returns: Map of _index -> games.id (missing entries mean resolution
+// failed for that candidate — non-fatal, caller leaves game_ref_id null)
+async function resolveOrCreateGamesBatch(candidates) {
+  const results = new Map();
+
+  const validCandidates = candidates.filter(c => {
+    if (!c.sportKey || !c.homeTeam || !c.awayTeam) {
+      console.log(`GAME_IDENTITY_SKIPPED: missing sportKey/homeTeam/awayTeam for "${c.awayTeam} @ ${c.homeTeam}" — leaving game_ref_id null.`);
+      return false;
+    }
+    return true;
+  });
+  if (validCandidates.length === 0) return results;
 
   try {
-    const commenceTimeIso = commenceTime.toISOString();
+    // One bulk fetch covering every candidate's fast-path AND repair-path
+    // window at once — the same 18h buffer used per-candidate before,
+    // just applied to the whole batch's time span in a single query.
+    const allTimesMs = validCandidates.map(c => c.commenceTime.getTime());
+    const windowStart = new Date(Math.min(...allTimesMs) - 18 * 60 * 60 * 1000).toISOString();
+    const windowEnd = new Date(Math.max(...allTimesMs) + 18 * 60 * 60 * 1000).toISOString();
 
-    // Fast path: direct provider-id lookup.
-    if (oddsApiGameId) {
-      const { data: byProviderId, error: providerLookupError } = await supabase
-        .from('games')
-        .select('id, commence_time')
-        .eq('odds_api_game_id', oddsApiGameId)
-        .maybeSingle();
-      if (providerLookupError) {
-        console.log(`GAME_IDENTITY_LOOKUP_ERROR (provider id): ${providerLookupError.message}`);
-      } else if (byProviderId) {
-        if (byProviderId.commence_time !== commenceTimeIso) {
-          await supabase
-            .from('games')
-            .update({ commence_time: commenceTimeIso, updated_at: new Date().toISOString() })
-            .eq('id', byProviderId.id);
-        }
-        return byProviderId.id;
-      }
-    }
-
-    // Repair path: provider id missed — either a new game, or this game's
-    // provider id drifted since we last saw it (e.g. a postponement shifted
-    // commence_time enough to change the Odds API's hash). Re-resolve by
-    // sport + teams + a wide same-day window, and if found, heal the
-    // stored provider id in place rather than creating a duplicate row.
-    const windowStart = new Date(commenceTime.getTime() - 18 * 60 * 60 * 1000).toISOString();
-    const windowEnd = new Date(commenceTime.getTime() + 18 * 60 * 60 * 1000).toISOString();
-    const { data: byTeamsAndDate, error: repairLookupError } = await supabase
+    const { data: existingGames, error: fetchError } = await supabase
       .from('games')
-      .select('id')
-      .eq('sport', sportKey)
-      .eq('home_team', homeTeam)
-      .eq('away_team', awayTeam)
+      .select('id, sport, home_team, away_team, commence_time, odds_api_game_id')
       .gte('commence_time', windowStart)
-      .lte('commence_time', windowEnd)
-      .maybeSingle();
-    if (repairLookupError) {
-      console.log(`GAME_IDENTITY_LOOKUP_ERROR (repair path): ${repairLookupError.message}`);
-    } else if (byTeamsAndDate) {
-      console.log(`GAME_IDENTITY_REPAIRED: ${awayTeam} @ ${homeTeam} matched by teams+date, healing odds_api_game_id -> ${oddsApiGameId || 'null'}`);
-      await supabase
-        .from('games')
-        .update({
-          odds_api_game_id: oddsApiGameId || null,
-          odds_api_id_synced_at: new Date().toISOString(),
-          commence_time: commenceTimeIso,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', byTeamsAndDate.id);
-      return byTeamsAndDate.id;
+      .lte('commence_time', windowEnd);
+
+    if (fetchError) {
+      console.log(`GAME_IDENTITY_BATCH_FETCH_ERROR: ${fetchError.message} — all candidates in this batch fall back to game_ref_id=null.`);
+      return results;
     }
 
-    // Genuinely new game — create the one true row for it.
-    const { data: created, error: insertError } = await supabase
-      .from('games')
-      .insert({
-        sport: sportKey,
-        home_team: homeTeam,
-        away_team: awayTeam,
+    const byProviderId = new Map();
+    for (const g of existingGames || []) {
+      if (g.odds_api_game_id) byProviderId.set(g.odds_api_game_id, g);
+    }
+
+    const toInsert = [];
+    const insertKeyToIndex = new Map(); // keyed by home|away|epoch-ms, not raw ISO string, to avoid any Postgres round-trip formatting mismatch
+    const updatePromises = [];
+
+    for (const c of validCandidates) {
+      const commenceTimeIso = c.commenceTime.toISOString();
+
+      // Fast path: direct provider-id match.
+      if (c.oddsApiGameId && byProviderId.has(c.oddsApiGameId)) {
+        const existing = byProviderId.get(c.oddsApiGameId);
+        results.set(c._index, existing.id);
+        if (existing.commence_time !== commenceTimeIso) {
+          updatePromises.push(
+            supabase.from('games')
+              .update({ commence_time: commenceTimeIso, updated_at: new Date().toISOString() })
+              .eq('id', existing.id)
+              .then(({ error }) => { if (error) console.log(`GAME_IDENTITY_UPDATE_ERROR: ${error.message}`); })
+          );
+        }
+        continue;
+      }
+
+      // Repair path: provider id missed — either a new game, or this
+      // game's provider id drifted since we last saw it. In-memory match
+      // against the already-fetched batch instead of a DB round trip.
+      const repaired = (existingGames || []).find(g =>
+        g.sport === c.sportKey &&
+        g.home_team === c.homeTeam &&
+        g.away_team === c.awayTeam &&
+        Math.abs(new Date(g.commence_time).getTime() - c.commenceTime.getTime()) <= 18 * 60 * 60 * 1000
+      );
+      if (repaired) {
+        results.set(c._index, repaired.id);
+        console.log(`GAME_IDENTITY_REPAIRED: ${c.awayTeam} @ ${c.homeTeam} matched by teams+date, healing odds_api_game_id -> ${c.oddsApiGameId || 'null'}`);
+        updatePromises.push(
+          supabase.from('games')
+            .update({
+              odds_api_game_id: c.oddsApiGameId || null,
+              odds_api_id_synced_at: new Date().toISOString(),
+              commence_time: commenceTimeIso,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', repaired.id)
+            .then(({ error }) => { if (error) console.log(`GAME_IDENTITY_UPDATE_ERROR: ${error.message}`); })
+        );
+        continue;
+      }
+
+      // Genuinely new game — queue for the single bulk insert below.
+      insertKeyToIndex.set(`${c.homeTeam}|${c.awayTeam}|${c.commenceTime.getTime()}`, c._index);
+      toInsert.push({
+        sport: c.sportKey,
+        home_team: c.homeTeam,
+        away_team: c.awayTeam,
         commence_time: commenceTimeIso,
-        odds_api_game_id: oddsApiGameId || null,
-        odds_api_id_synced_at: oddsApiGameId ? new Date().toISOString() : null,
-      })
-      .select('id')
-      .single();
-    if (insertError) {
-      console.log(`GAME_IDENTITY_CREATE_ERROR: ${insertError.message} for ${awayTeam} @ ${homeTeam}`);
-      return null;
+        odds_api_game_id: c.oddsApiGameId || null,
+        odds_api_id_synced_at: c.oddsApiGameId ? new Date().toISOString() : null,
+      });
     }
 
-    console.log(`GAME_IDENTITY_CREATED: ${awayTeam} @ ${homeTeam} -> games.id=${created.id}`);
-    return created.id;
+    const work = [...updatePromises];
+
+    if (toInsert.length > 0) {
+      work.push(
+        supabase.from('games')
+          .insert(toInsert)
+          .select('id, home_team, away_team, commence_time')
+          .then(({ data: created, error: insertError }) => {
+            if (insertError) {
+              console.log(`GAME_IDENTITY_BATCH_INSERT_ERROR: ${insertError.message}`);
+              return;
+            }
+            console.log(`GAME_IDENTITY_CREATED: ${created.length} new games rows in one batch insert.`);
+            for (const row of created) {
+              const key = `${row.home_team}|${row.away_team}|${new Date(row.commence_time).getTime()}`;
+              const idx = insertKeyToIndex.get(key);
+              if (idx !== undefined) results.set(idx, row.id);
+            }
+          })
+      );
+    }
+
+    await Promise.all(work);
+    return results;
   } catch (e) {
-    console.log(`GAME_IDENTITY_UNEXPECTED_ERROR: ${e.message} for ${awayTeam} @ ${homeTeam}`);
-    return null;
+    console.log(`GAME_IDENTITY_BATCH_UNEXPECTED_ERROR: ${e.message}`);
+    return results;
   }
 }
 
@@ -417,7 +473,12 @@ async function generateMorningTrigger() {
   const candidates = slimGames.map(g => ({ game: g.game, sport: g.sport }));
 
   // ── Write game_candidates rows, one per candidate, with timing ───────
+  // Games-table resolution is deliberately decoupled from this loop —
+  // collect the inputs here, resolve everything in one batch afterward.
+  // See resolveOrCreateGamesBatch for why (this is the fix for the
+  // flagged college-football scaling risk).
   const rows = [];
+  const gameRefInputs = [];
   let benchRank = 0;
 
   for (const c of candidates) {
@@ -438,25 +499,13 @@ async function generateMorningTrigger() {
       continue; // already logged inside computeTiming
     }
 
-    // Resolve (or create) this game's one true row in the `games` table.
-    // Sequential per-candidate — same scaling note as the rest of this
-    // file: fine at MLB-day volume (10-15 games), worth revisiting
-    // (batch/parallelize) before college football's 40-100+ game days,
-    // same as the maxDuration risk already flagged above.
-    const gameRefId = await resolveOrCreateGame({
-      sportKey: matchedGame.sport_key,
-      homeTeam: matchedGame.home_team,
-      awayTeam: matchedGame.away_team,
-      commenceTime: gameTime,
-      oddsApiGameId: matchedGame.odds_api_game_id,
-    });
-
     benchRank += 1;
+    const rowIndex = rows.length;
     rows.push({
       date: today,
       sport: c.sport,
       game: c.game,
-      game_ref_id: gameRefId,
+      game_ref_id: null, // filled in below, after batch resolution
       bet_type: null, // filled in later by evaluate-scheduler once this game is actually evaluated
       game_time: gameTime.toISOString(),
       sport_key: matchedGame.sport_key || null,
@@ -472,11 +521,26 @@ async function generateMorningTrigger() {
       status: 'pending_evaluation',
       notes: timing.timing_note,
     });
+    gameRefInputs.push({
+      _index: rowIndex,
+      sportKey: matchedGame.sport_key,
+      homeTeam: matchedGame.home_team,
+      awayTeam: matchedGame.away_team,
+      commenceTime: gameTime,
+      oddsApiGameId: matchedGame.odds_api_game_id,
+    });
   }
 
   if (rows.length === 0) {
     console.log('No viable candidates survived game-matching and timing checks. Nothing written for today.');
     return;
+  }
+
+  // One batch resolution for every candidate in this run — 2-3 total DB
+  // round trips instead of one (or two) per candidate.
+  const gameRefResults = await resolveOrCreateGamesBatch(gameRefInputs);
+  for (const [idx, gameRefId] of gameRefResults) {
+    rows[idx].game_ref_id = gameRefId;
   }
 
   const { error: insertError } = await supabase.from('game_candidates').insert(rows);
