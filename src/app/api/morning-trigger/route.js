@@ -75,6 +75,103 @@ function cleanJson(text) {
   return JSON.parse(jsonMatch[0]);
 }
 
+// ── Game identity resolution (first-class `games` table) ─────────────────
+// Looks up (or creates) the one true row for a real-world game, so
+// downstream tables can point at a stable internal id instead of a
+// free-text string or a provider id that can silently change (the Odds
+// API's own id is a hash of sport+teams+commence_time, and shifts if
+// commence_time moves 8+ hours — e.g. a rain postponement).
+//
+// Non-fatal by design: this is additive infrastructure sitting alongside
+// game_candidates creation, not gating it. Any failure here logs and
+// returns null — the candidate row still gets written either way.
+async function resolveOrCreateGame({ sportKey, homeTeam, awayTeam, commenceTime, oddsApiGameId }) {
+  if (!sportKey || !homeTeam || !awayTeam) {
+    console.log(`GAME_IDENTITY_SKIPPED: missing sportKey/homeTeam/awayTeam for "${awayTeam} @ ${homeTeam}" — leaving game_ref_id null.`);
+    return null;
+  }
+
+  try {
+    const commenceTimeIso = commenceTime.toISOString();
+
+    // Fast path: direct provider-id lookup.
+    if (oddsApiGameId) {
+      const { data: byProviderId, error: providerLookupError } = await supabase
+        .from('games')
+        .select('id, commence_time')
+        .eq('odds_api_game_id', oddsApiGameId)
+        .maybeSingle();
+      if (providerLookupError) {
+        console.log(`GAME_IDENTITY_LOOKUP_ERROR (provider id): ${providerLookupError.message}`);
+      } else if (byProviderId) {
+        if (byProviderId.commence_time !== commenceTimeIso) {
+          await supabase
+            .from('games')
+            .update({ commence_time: commenceTimeIso, updated_at: new Date().toISOString() })
+            .eq('id', byProviderId.id);
+        }
+        return byProviderId.id;
+      }
+    }
+
+    // Repair path: provider id missed — either a new game, or this game's
+    // provider id drifted since we last saw it (e.g. a postponement shifted
+    // commence_time enough to change the Odds API's hash). Re-resolve by
+    // sport + teams + a wide same-day window, and if found, heal the
+    // stored provider id in place rather than creating a duplicate row.
+    const windowStart = new Date(commenceTime.getTime() - 18 * 60 * 60 * 1000).toISOString();
+    const windowEnd = new Date(commenceTime.getTime() + 18 * 60 * 60 * 1000).toISOString();
+    const { data: byTeamsAndDate, error: repairLookupError } = await supabase
+      .from('games')
+      .select('id')
+      .eq('sport', sportKey)
+      .eq('home_team', homeTeam)
+      .eq('away_team', awayTeam)
+      .gte('commence_time', windowStart)
+      .lte('commence_time', windowEnd)
+      .maybeSingle();
+    if (repairLookupError) {
+      console.log(`GAME_IDENTITY_LOOKUP_ERROR (repair path): ${repairLookupError.message}`);
+    } else if (byTeamsAndDate) {
+      console.log(`GAME_IDENTITY_REPAIRED: ${awayTeam} @ ${homeTeam} matched by teams+date, healing odds_api_game_id -> ${oddsApiGameId || 'null'}`);
+      await supabase
+        .from('games')
+        .update({
+          odds_api_game_id: oddsApiGameId || null,
+          odds_api_id_synced_at: new Date().toISOString(),
+          commence_time: commenceTimeIso,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', byTeamsAndDate.id);
+      return byTeamsAndDate.id;
+    }
+
+    // Genuinely new game — create the one true row for it.
+    const { data: created, error: insertError } = await supabase
+      .from('games')
+      .insert({
+        sport: sportKey,
+        home_team: homeTeam,
+        away_team: awayTeam,
+        commence_time: commenceTimeIso,
+        odds_api_game_id: oddsApiGameId || null,
+        odds_api_id_synced_at: oddsApiGameId ? new Date().toISOString() : null,
+      })
+      .select('id')
+      .single();
+    if (insertError) {
+      console.log(`GAME_IDENTITY_CREATE_ERROR: ${insertError.message} for ${awayTeam} @ ${homeTeam}`);
+      return null;
+    }
+
+    console.log(`GAME_IDENTITY_CREATED: ${awayTeam} @ ${homeTeam} -> games.id=${created.id}`);
+    return created.id;
+  } catch (e) {
+    console.log(`GAME_IDENTITY_UNEXPECTED_ERROR: ${e.message} for ${awayTeam} @ ${homeTeam}`);
+    return null;
+  }
+}
+
 // ── Recent Picks Memory (unchanged from generate-picks) ─────────────────
 async function buildRecentPicksMemory() {
   const sevenDaysAgo = new Date();
@@ -239,11 +336,11 @@ async function generateMorningTrigger() {
   const oddsData = await oddsRes.json();
   const now = new Date();
   // Lookahead window widened to 24 hours (was 14). Stage 1 has no
-  // staleness downside \u2014 it doesn't need fresh confirmed lineups the
+  // staleness downside — it doesn't need fresh confirmed lineups the
   // way Stage 2 does, just current lines to pick candidates from. This
   // lets a single early run (see intended 3 AM ET cron) still catch the
-  // WHOLE day's slate \u2014 early Wednesday MLB matinees AND evening
-  // primetime games alike \u2014 without needing a second run per day.
+  // WHOLE day's slate — early Wednesday MLB matinees AND evening
+  // primetime games alike — without needing a second run per day.
   const cutoff = new Date(now.getTime() + 15 * 60 * 1000);
   const upperBound = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
@@ -267,6 +364,10 @@ async function generateMorningTrigger() {
         spread: spread?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', '),
         total: total?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', '),
         sport_key: g.sport_key,
+        // NEW — needed for games-table identity resolution below
+        home_team: g.home_team,
+        away_team: g.away_team,
+        odds_api_game_id: g.id,
       };
     });
 
@@ -337,11 +438,25 @@ async function generateMorningTrigger() {
       continue; // already logged inside computeTiming
     }
 
+    // Resolve (or create) this game's one true row in the `games` table.
+    // Sequential per-candidate — same scaling note as the rest of this
+    // file: fine at MLB-day volume (10-15 games), worth revisiting
+    // (batch/parallelize) before college football's 40-100+ game days,
+    // same as the maxDuration risk already flagged above.
+    const gameRefId = await resolveOrCreateGame({
+      sportKey: matchedGame.sport_key,
+      homeTeam: matchedGame.home_team,
+      awayTeam: matchedGame.away_team,
+      commenceTime: gameTime,
+      oddsApiGameId: matchedGame.odds_api_game_id,
+    });
+
     benchRank += 1;
     rows.push({
       date: today,
       sport: c.sport,
       game: c.game,
+      game_ref_id: gameRefId,
       bet_type: null, // filled in later by evaluate-scheduler once this game is actually evaluated
       game_time: gameTime.toISOString(),
       sport_key: matchedGame.sport_key || null,
