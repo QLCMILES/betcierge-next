@@ -309,17 +309,24 @@ async function gateAndFinalizeResearch(candidate, pick, knownGamesToday) {
     return;
   }
 
-  // ── Gate 3: entity-consistency ───────────────────────────────────
+  // ── Gate 3: entity-consistency — DOWNGRADED to non-blocking Aug 4 ──
+  // Retired as a hard-reject gate after a live audit found 19 of 19
+  // recoverable real rejections were false positives — the model
+  // correctly citing a team's recent-opponent history (routine, required
+  // analysis) that happened to also be playing elsewhere that same day.
+  // Zero genuine cross-game bleed found in the sample. Three-way review
+  // confirmed the underlying signal ("another team's name appeared
+  // somewhere in the text") doesn't reliably distinguish real confusion
+  // from legitimate context, and that Gate 1's structural pick.game
+  // check already provides the real guarantee against actually writing
+  // up the wrong matchup. Kept as a logged, non-blocking flag rather
+  // than deleted outright — worth tracking until a proper
+  // reasoning-consistency audit (checking whether the prose actually
+  // supports the structured pick, not scanning for team names) replaces
+  // it as a real fast-follow, not bundled into this same-day fix.
   const bledInTeam = findEntityBleed(pick.insight, candidate, knownGamesToday);
   if (bledInTeam) {
-    console.log(`ENTITY_BLEED: "${candidate.game}" insight appears to reference "${bledInTeam}" from a different game — rejecting.`);
-    await supabase.from('game_candidates').update({
-      research_status: 'researched',
-      status: 'rejected_no_edge',
-      notes: `Entity-consistency check failed: insight referenced "${bledInTeam}" from an unrelated game.`,
-      research_log: pick, // preserve the actual output even on rejection — needed to verify real vs. false-positive gate failures after the fact
-    }).eq('id', candidate.id);
-    return;
+    console.log(`ENTITY_MENTION_NONBLOCKING: "${candidate.game}" insight references "${bledInTeam}" from a different game — logging only, no longer rejecting.`);
   }
 
   // ── All gates passed — store the research, ready for final confirmation ──
@@ -331,10 +338,10 @@ async function gateAndFinalizeResearch(candidate, pick, knownGamesToday) {
     insight: pick.insight,
     odds: pick.odds,
     units: pick.units,
-    research_log: pick,
+    research_log: { ...pick, entity_mention_flag: bledInTeam || null },
   }).eq('id', candidate.id);
 
-  console.log(`Research complete and gated successfully: "${candidate.game}" (score: ${pick.score})`);
+  console.log(`Research complete and gated successfully: "${candidate.game}" (score: ${pick.score})${bledInTeam ? ' [entity mention flagged, non-blocking]' : ''}`);
 }
 async function fetchLiveOddsForGame(gameName, sportKey) {
   const oddsRes = await fetch('https://betcierge-next.vercel.app/api/odds', { method: 'POST' });

@@ -102,6 +102,14 @@ function cleanJson(text) {
 // candidates: array of { _index, sportKey, homeTeam, awayTeam, commenceTime (Date), oddsApiGameId }
 // returns: Map of _index -> games.id (missing entries mean resolution
 // failed for that candidate — non-fatal, caller leaves game_ref_id null)
+// Football postponements can shift a game by days, not hours — flex
+// scheduling, weather, extreme cases (real historical precedent: the
+// 2022 Bills/Bengals postponement, multi-day COVID-era reschedules).
+// Time is not a safe identity signal for football the way it is for
+// daily sports with real doubleheaders (MLB/NBA/NHL) — see
+// resolveOrCreateGamesBatch's repair path below for how this is used.
+const FOOTBALL_SPORT_KEYS = new Set(['americanfootball_nfl', 'americanfootball_ncaaf']);
+
 async function resolveOrCreateGamesBatch(candidates) {
   const results = new Map();
 
@@ -118,6 +126,8 @@ async function resolveOrCreateGamesBatch(candidates) {
     // One bulk fetch covering every candidate's fast-path AND repair-path
     // window at once — the same 18h buffer used per-candidate before,
     // just applied to the whole batch's time span in a single query.
+    // Correct for MLB/NBA/NHL/MLS/MMA, where real doubleheaders/rematches
+    // within a day make a narrow window necessary to avoid false matches.
     const allTimesMs = validCandidates.map(c => c.commenceTime.getTime());
     const windowStart = new Date(Math.min(...allTimesMs) - 18 * 60 * 60 * 1000).toISOString();
     const windowEnd = new Date(Math.max(...allTimesMs) + 18 * 60 * 60 * 1000).toISOString();
@@ -133,9 +143,34 @@ async function resolveOrCreateGamesBatch(candidates) {
       return results;
     }
 
+    // Football gets a second, time-unrestricted fetch — see
+    // FOOTBALL_SPORT_KEYS comment above for why time isn't a safe
+    // identity signal there. One extra bulk fetch, only when the batch
+    // actually contains a football candidate — not per-candidate, so
+    // this doesn't reintroduce the scaling problem fixed earlier today.
+    const hasFootball = validCandidates.some(c => FOOTBALL_SPORT_KEYS.has(c.sportKey));
+    let footballGames = [];
+    if (hasFootball) {
+      const { data: fbGames, error: fbFetchError } = await supabase
+        .from('games')
+        .select('id, sport, home_team, away_team, commence_time, odds_api_game_id')
+        .in('sport', [...FOOTBALL_SPORT_KEYS]);
+      if (fbFetchError) {
+        console.log(`GAME_IDENTITY_FOOTBALL_FETCH_ERROR: ${fbFetchError.message}`);
+      } else {
+        footballGames = fbGames || [];
+      }
+    }
+
     const byProviderId = new Map();
     for (const g of existingGames || []) {
       if (g.odds_api_game_id) byProviderId.set(g.odds_api_game_id, g);
+    }
+    // A football game postponed outside the normal time window might not
+    // be in existingGames at all — make sure the fast path can still
+    // find it by provider id via the unrestricted football set too.
+    for (const g of footballGames) {
+      if (g.odds_api_game_id && !byProviderId.has(g.odds_api_game_id)) byProviderId.set(g.odds_api_game_id, g);
     }
 
     const toInsert = [];
@@ -144,6 +179,7 @@ async function resolveOrCreateGamesBatch(candidates) {
 
     for (const c of validCandidates) {
       const commenceTimeIso = c.commenceTime.toISOString();
+      const isFootball = FOOTBALL_SPORT_KEYS.has(c.sportKey);
 
       // Fast path: direct provider-id match.
       if (c.oddsApiGameId && byProviderId.has(c.oddsApiGameId)) {
@@ -163,15 +199,31 @@ async function resolveOrCreateGamesBatch(candidates) {
       // Repair path: provider id missed — either a new game, or this
       // game's provider id drifted since we last saw it. In-memory match
       // against the already-fetched batch instead of a DB round trip.
-      const repaired = (existingGames || []).find(g =>
-        g.sport === c.sportKey &&
-        g.home_team === c.homeTeam &&
-        g.away_team === c.awayTeam &&
-        Math.abs(new Date(g.commence_time).getTime() - c.commenceTime.getTime()) <= 18 * 60 * 60 * 1000
-      );
+      //
+      // Two things changed here (Aug 4, three-way review):
+      // 1. Football searches the unrestricted footballGames pool with NO
+      //    time constraint at all — two football teams essentially never
+      //    play each other twice in a season except a scheduled rematch
+      //    months apart, so identity alone (sport+teams) is safe. Every
+      //    other sport keeps the existing ±18h window, still needed to
+      //    correctly disambiguate same-day doubleheaders/rematches.
+      // 2. Swap-safe matching for every sport — neutral-site/
+      //    international games (NFL London/Germany, neutral-site NCAAF
+      //    openers) can have home/away swapped between provider updates,
+      //    so a real match must accept either orientation.
+      const searchPool = isFootball ? footballGames : (existingGames || []);
+      const repaired = searchPool.find(g => {
+        if (g.sport !== c.sportKey) return false;
+        const namesMatch =
+          (g.home_team === c.homeTeam && g.away_team === c.awayTeam) ||
+          (g.home_team === c.awayTeam && g.away_team === c.homeTeam);
+        if (!namesMatch) return false;
+        if (isFootball) return true;
+        return Math.abs(new Date(g.commence_time).getTime() - c.commenceTime.getTime()) <= 18 * 60 * 60 * 1000;
+      });
       if (repaired) {
         results.set(c._index, repaired.id);
-        console.log(`GAME_IDENTITY_REPAIRED: ${c.awayTeam} @ ${c.homeTeam} matched by teams+date, healing odds_api_game_id -> ${c.oddsApiGameId || 'null'}`);
+        console.log(`GAME_IDENTITY_REPAIRED: ${c.awayTeam} @ ${c.homeTeam} matched by ${isFootball ? 'teams only, no time constraint (football)' : 'teams+date (swap-safe)'}, healing odds_api_game_id -> ${c.oddsApiGameId || 'null'}`);
         updatePromises.push(
           supabase.from('games')
             .update({

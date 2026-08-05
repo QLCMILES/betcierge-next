@@ -265,6 +265,14 @@ function determineResult(bet, game) {
 // game_candidates.game_ref_id) BEFORE falling back to fuzzy matching —
 // deliberately held back from this pass so it doesn't touch the same
 // code path as the settlement bug currently under investigation.
+// Football postponements can shift a game by days, not hours — flex
+// scheduling, weather, extreme cases (real historical precedent: the
+// 2022 Bills/Bengals postponement, multi-day COVID-era reschedules).
+// Time is not a safe identity signal for football the way it is for
+// daily sports with real doubleheaders (MLB/NBA/NHL) — see
+// syncGameResult's repair path below for how this is used.
+const FOOTBALL_SPORT_KEYS = new Set(['americanfootball_nfl', 'americanfootball_ncaaf']);
+
 async function syncGameResult(game, sportKey) {
   if (!sportKey) return;
   try {
@@ -300,24 +308,40 @@ async function syncGameResult(game, sportKey) {
 
     // Repair path: provider id missed — this game's id may have drifted
     // since morning-trigger created it (e.g. a postponement). Re-resolve
-    // by sport + teams + a wide same-day window, heal in place.
-    const windowStart = new Date(new Date(game.commence_time).getTime() - 18 * 60 * 60 * 1000).toISOString();
-    const windowEnd = new Date(new Date(game.commence_time).getTime() + 18 * 60 * 60 * 1000).toISOString();
-    const { data: byTeamsAndDate, error: repairLookupError } = await supabase
-      .from('games')
-      .select('id')
-      .eq('sport', sportKey)
-      .eq('home_team', game.home_team)
-      .eq('away_team', game.away_team)
-      .gte('commence_time', windowStart)
-      .lte('commence_time', windowEnd)
-      .maybeSingle();
+    // by sport + teams, heal in place.
+    //
+    // Two things changed here (Aug 4, three-way review):
+    // 1. Football searches with NO time constraint at all — two football
+    //    teams essentially never play each other twice in a season
+    //    except a scheduled rematch months apart, so identity alone
+    //    (sport+teams) is safe, and a real postponement can shift a game
+    //    by days, not hours (2022 Bills/Bengals precedent). Every other
+    //    sport keeps the existing ±18h window, still needed to correctly
+    //    disambiguate same-day doubleheaders/rematches.
+    // 2. Swap-safe matching for every sport — neutral-site/international
+    //    games (NFL London/Germany, neutral-site NCAAF openers) can have
+    //    home/away swapped between provider updates, so a real match
+    //    must accept either orientation. Matched in-memory rather than
+    //    via a raw filter string, to avoid any escaping risk from team
+    //    names containing parentheses/commas (e.g. "Miami (FL)").
+    const isFootball = FOOTBALL_SPORT_KEYS.has(sportKey);
+    let repairQuery = supabase.from('games').select('id, home_team, away_team').eq('sport', sportKey);
+    if (!isFootball) {
+      const windowStart = new Date(new Date(game.commence_time).getTime() - 18 * 60 * 60 * 1000).toISOString();
+      const windowEnd = new Date(new Date(game.commence_time).getTime() + 18 * 60 * 60 * 1000).toISOString();
+      repairQuery = repairQuery.gte('commence_time', windowStart).lte('commence_time', windowEnd);
+    }
+    const { data: sameSportRows, error: repairLookupError } = await repairQuery;
     if (repairLookupError) {
       console.log(`GAME_SYNC_LOOKUP_ERROR (repair path): ${repairLookupError.message}`);
       return;
     }
+    const byTeamsAndDate = (sameSportRows || []).find(g =>
+      (g.home_team === game.home_team && g.away_team === game.away_team) ||
+      (g.home_team === game.away_team && g.away_team === game.home_team)
+    );
     if (byTeamsAndDate) {
-      console.log(`GAME_SYNC_REPAIRED: ${game.away_team} @ ${game.home_team} matched by teams+date, healing odds_api_game_id -> ${game.id}`);
+      console.log(`GAME_SYNC_REPAIRED: ${game.away_team} @ ${game.home_team} matched by ${isFootball ? 'teams only, no time constraint (football)' : 'teams+date (swap-safe)'}, healing odds_api_game_id -> ${game.id}`);
       await supabase.from('games').update({
         ...payload,
         odds_api_game_id: game.id,
