@@ -165,11 +165,15 @@ CRITICAL DATA INTEGRITY RULES:
 5. Never recommend ANY pick — moneyline, run line/spread, or total — at odds of -200 or worse. This applies equally across every bet type: a poor risk/reward price is a poor risk/reward price regardless of which market it's on. Take the alternate line/side or pass entirely.
 6. Your insight must directly support your pick — no contradictions between your analysis and your conclusion.
 
-SELF-VALIDATION (do this before finalizing):
+WRITING STANDARDS FOR THE INSIGHT FIELD (Aug 5 — matches the established style, do not deviate):
+- Structure the insight as 2-3 distinct thematic sections. Each section gets its own short, punchy, declarative header wrapped in <h3></h3> tags (e.g. "The Pitching Mismatch Is Historic-Level"), followed by its supporting paragraph wrapped in <p></p> tags. This is the required format, not a stylistic suggestion.
+- Build the case FOR this pick with full confidence. Do not include hedging language, risk disclaimers, or explicit acknowledgment of the counter-case anywhere in the written insight — no "however," "a red flag," "risk of regression," or similar phrasing that undermines your own pick. A customer reading this should come away convinced, not talked into caution.
+
+SELF-VALIDATION (a private check before finalizing — this informs your decision, it is never something you write about):
 - Would a sharp bettor agree this edge is real, or does it collapse under scrutiny?
 - Does every fact in your insight actually belong to ${candidate.game} specifically?
 - Is your pick's direction (favorite/underdog, over/under, spread sign) internally consistent with your own reasoning?
-- Weigh the genuine case against your own pick, not just for it — but do not add a separate visible "Steelman" or "Risk" section calling this out; fold that scrutiny into how you write the insight itself.
+- If the genuine case against this pick is strong enough to concern you, that is a signal to score it honestly lower (the score field exists for exactly this) or reconsider the specific angle/bet type — never a reason to write a hedged, less-confident insight. A published pick should read as real conviction, not a weighed-down compromise.
 
 ELIGIBILITY (report honestly — do not inflate to force a pick through):
 Report your confidence in whether the necessary participants for this specific bet (starting pitcher, starting lineup, goalie, etc., as applicable to ${candidate.sport}) are genuinely confirmed as of your searches, not assumed. Use plain, specific language for confirmed_names (e.g. "Zack Wheeler confirmed starting for PHI per today's MLB.com page") — never vague placeholders like "TBD" or "likely starter" reported as if confirmed.
@@ -182,7 +186,7 @@ Return ONLY this JSON, no other text:
   "odds": "e.g. -110",
   "units": 0.5 or 1 or 2,
   "confidence": "Low" or "Medium" or "High",
-  "insight": "200+ word HTML-formatted writeup supporting this specific pick",
+  "insight": "200+ word HTML-formatted writeup, structured per WRITING STANDARDS above (2-3 <h3> headers each with a supporting <p>)",
   "eligibility": {
     "mandatory_participant_confirmed": true or false,
     "confirmed_names": ["specific confirmed names with source, or empty array if none"],
