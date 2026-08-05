@@ -506,7 +506,19 @@ async function pollSubmittedResearch(today) {
       // confirmed and published in time regardless of research outcome.
       if (candidate.confirmation_deadline_at && new Date(candidate.confirmation_deadline_at) < now) {
         console.log(`EXPIRED: "${candidate.game}" batch still in flight past its own confirmation deadline — marking expired.`);
+        // Fix (Aug 5): this branch previously only wrote `status`, never
+        // `research_status`. Since the query that picks up work here
+        // filters on research_status = 'research_submitted', a row that
+        // expired without this field also being updated got silently
+        // re-selected and re-"expired" on every single tick forever —
+        // confirmed via 18 real rows still stuck from before the July 22
+        // synchronous rewrite, all correctly showing status=
+        // expired_unconfirmed but research_status still stuck at
+        // research_submitted weeks later. Same class of bug as the July
+        // 24 fix (commit 58e5414) for the main gating path — that fix
+        // never covered this older, separate poll branch.
         await supabase.from('game_candidates').update({
+          research_status: 'researched',
           status: 'expired_unconfirmed',
           notes: 'Research batch did not complete before this candidate\'s confirmation deadline.',
         }).eq('id', candidate.id);
@@ -544,7 +556,12 @@ async function pollSubmittedResearch(today) {
 
       if (resultJson.result?.type !== 'succeeded') {
         console.log(`Batch result not successful for "${candidate.game}": ${resultJson.result?.type}`);
+        // Same fix as the deadline-expiration branch above — this must
+        // also set research_status, or this row gets stuck re-fetching
+        // the same already-failed batch result from Anthropic on every
+        // tick forever.
         await supabase.from('game_candidates').update({
+          research_status: 'researched',
           status: 'rejected_no_edge',
           notes: `Batch result type: ${resultJson.result?.type || 'unknown'}`,
         }).eq('id', candidate.id);
