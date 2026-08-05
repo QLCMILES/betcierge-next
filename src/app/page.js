@@ -34,6 +34,27 @@ const calcProfit = (amount, odds) => {
 };
 const fmt = (n) => `$${Math.abs(n || 0).toFixed(2)}`;
 const todayDisplay = () => new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+// Locked copy for the genuine first-ever Hunter Chat session (see
+// hunter_intro_shown_at). Real bankroll/goal substituted in from the
+// user's own onboarding numbers. Do not edit this copy without Miles's
+// sign-off — went through several review rounds to land on the
+// "secret weapon" register rather than an accountability/coach framing.
+const buildIntroMessage = (user) => {
+  const firstName = user.name.split(' ')[0];
+  const bankroll = Number(user.bankroll).toFixed(0);
+  const goal = Number(user.goal).toFixed(0);
+  return `Hey ${firstName}. I'm Hunter.
+
+Before anything else, let's talk about how we're actually going to do this. It's not how most people bet.
+
+You already set the number: $${bankroll}/week, aiming to walk away +$${goal}. That's the whole philosophy here. Hit your goal, lock it in by Sunday night, reset clean Monday morning. Most bettors give back their best weeks by never knowing when to stop. That's not you anymore.
+
+Every pick you get, I've already run the research behind it: every game, every line, any hour, digging deeper than anything a one-man handicapper is going to hand you. This is the part of your game nobody else gets to see.
+
+Beyond that: ask me about any game, any line, any hour. Real research, not recycled takes. Every bet tracked honestly, wins and losses both.
+
+Where do you want to start?`;
+};
 const currentTimeDisplay = () => {
   const etTime = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone: "America/New_York" });
   const ptTime = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone: "America/Los_Angeles" });
@@ -729,10 +750,19 @@ const { data } = await supabase
   .order('created_at', { ascending: true })
   .limit(40);
       if (data && data.length > 0) {
+        // Already chatted today — just load it, regardless of intro status
         setMessages(data.map(m => ({ role: m.role, text: m.content })));
+      } else if (!user.hunter_intro_shown_at) {
+        // Genuinely first-ever session (hunter_intro_shown_at is null) —
+        // this is distinct from "no messages today," which resets daily.
+        // Fires exactly once per user, ever.
+        const welcome = { role: 'assistant', text: buildIntroMessage(user) };
+        setMessages([welcome]);
+        await supabase.from('user_conversations').insert({ user_id: userKey, role: 'assistant', content: welcome.text });
+        await supabase.from('user_profiles').update({ hunter_intro_shown_at: new Date().toISOString() }).eq('user_id', userKey);
       } else {
-        // First time — set a welcome message
-        const welcome = { role: 'assistant', text: `Hey ${user.name.split(' ')[0]} 👋 I'm Hunter, your personal betting concierge. I'm here to help you find edges, stay disciplined, and build your bankroll. What's on your mind today?` };
+        // Returning user, fresh day, intro already seen before
+        const welcome = { role: 'assistant', text: `Hey ${user.name.split(' ')[0]} 👋 What's on your mind today?` };
         setMessages([welcome]);
         await supabase.from('user_conversations').insert({ user_id: userKey, role: 'assistant', content: welcome.text });
       }
