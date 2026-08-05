@@ -1140,16 +1140,16 @@ function PicksTab({ userKey, user, session, onNav }) {
     setLoading(false);
   };
 
-  // Best-effort — powers the rigor framing line. Fails silently if
-  // game_candidates isn't client-readable; the line just omits that clause.
+  // Calls a server-side route (service-role key) instead of querying
+  // game_candidates directly from the browser. The Aug 5 RLS lockdown
+  // correctly blocks that direct client read — RLS doesn't throw, it
+  // silently returns 0 matching rows, so the old query "succeeded" with
+  // a valid-looking but wrong 0.
   const loadEvaluatedCount = async () => {
     try {
-      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-      const { count } = await supabase
-        .from('game_candidates')
-        .select('id', { count: 'exact', head: true })
-        .eq('date', today);
-      if (typeof count === 'number') setEvaluatedCount(count);
+      const res = await fetch('/api/opportunities-count');
+      const data = await res.json();
+      if (typeof data.count === 'number') setEvaluatedCount(data.count);
     } catch (e) {}
   };
 
@@ -1308,8 +1308,15 @@ function PicksTab({ userKey, user, session, onNav }) {
  <div style={{ borderTop: '1px solid #1a1a28', marginBottom: 20 }} />
 
       {evaluatedCount !== null && (
-        <div style={{ color: '#ccc', fontSize: 13, fontWeight: 500, lineHeight: 1.5, marginBottom: 14 }}>
-          Hunter evaluated {evaluatedCount} opportunit{evaluatedCount === 1 ? 'y' : 'ies'} today — {picks.length} pick{picks.length === 1 ? '' : 's'} confirmed so far. Picks unlock as lineups lock in throughout the day.
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          <div style={{ flex: 1, background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 10, padding: '10px 0', textAlign: 'center' }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: '#fff' }}>{evaluatedCount}</div>
+            <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>Games Evaluated</div>
+          </div>
+          <div style={{ flex: 1, background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 10, padding: '10px 0', textAlign: 'center' }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: '#f5a623' }}>{picks.length}</div>
+            <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>Official Picks</div>
+          </div>
         </div>
       )}
 
@@ -2793,6 +2800,3 @@ const S = {
     nextBtn: { width: "100%", background: "linear-gradient(135deg,#f5a623,#f7c948)", color: "#000", border: "none", borderRadius: 14, padding: 16, fontSize: 16, fontWeight: 700, cursor: "pointer", marginTop: 12 },
   },
 };
-
-
-
