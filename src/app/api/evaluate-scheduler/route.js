@@ -264,53 +264,37 @@ async function runEvaluateScheduler() {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
     timeZone: 'America/New_York'
   });
-  const now = new Date().toISOString();
 
-  // ── First-look queue: brand-new games, never evaluated ───────────────
-  const { data: firstLookRows, error: firstLookError } = await supabase
-    .from('game_candidates')
-    .select('*')
-    .eq('date', today)
-    .eq('research_status', 'pending_evaluation')
-    .order('research_trigger_at', { ascending: true })
-    .limit(EVALUATE_CONCURRENCY_CAP);
+  // ── Atomically claim a batch (first-look + second-look, capped) ──────
+  // Replaces two plain SELECTs that had no claiming mechanism at all — a
+  // real risk found Aug 5: this function is wrapped in waitUntil(),
+  // decoupling the cron's HTTP response from actual background
+  // completion, so a slow tick (worst-case single-game latency can
+  // approach this function's own 300s ceiling) could let a concurrent
+  // invocation grab and double-process the same rows, wasting real
+  // Anthropic API cost. claim_evaluation_batch claims rows atomically via
+  // FOR UPDATE SKIP LOCKED inside one transaction — two overlapping
+  // invocations can never claim the same row. It also auto-reclaims any
+  // row stuck in a claimed state for more than 6 minutes, in case a prior
+  // invocation crashed mid-run without ever writing a final status.
+  const { data: claimedRows, error: claimError } = await supabase
+    .rpc('claim_evaluation_batch', { p_date: today, p_cap: EVALUATE_CONCURRENCY_CAP });
 
-  if (firstLookError) throw firstLookError;
+  if (claimError) throw claimError;
 
-  // ── Second-look queue: games rejected on their first look, now that
-  // this sport's own tuned research_trigger_at has arrived — giving
-  // fresh information (confirmed lineups, late injury news, line
-  // movement) a genuine chance to flip an early "no edge" verdict.
-  // Only fills whatever capacity first-look games didn't already use, so
-  // a single tick's wall-clock time stays bounded exactly the same way
-  // as before — never more than EVALUATE_CONCURRENCY_CAP games total,
-  // regardless of the mix.
-  const remainingSlots = EVALUATE_CONCURRENCY_CAP - (firstLookRows?.length || 0);
-  let secondLookRows = [];
-  if (remainingSlots > 0) {
-    const { data: slRows, error: secondLookError } = await supabase
-      .from('game_candidates')
-      .select('*')
-      .eq('date', today)
-      .eq('research_status', 'awaiting_second_look')
-      .lte('research_trigger_at', now)
-      .order('research_trigger_at', { ascending: true })
-      .limit(remainingSlots);
-    if (secondLookError) throw secondLookError;
-    secondLookRows = slRows || [];
-  }
-
-  const pending = [
-    ...(firstLookRows || []).map(row => ({ row, isSecondLook: false })),
-    ...secondLookRows.map(row => ({ row, isSecondLook: true })),
-  ];
+  const pending = (claimedRows || []).map(row => ({
+    row,
+    isSecondLook: row.research_status === 'evaluating_claimed_second',
+  }));
 
   if (pending.length === 0) {
     console.log('No games pending evaluation (first or second look) this run.');
     return;
   }
 
-  console.log(`${firstLookRows?.length || 0} first-look + ${secondLookRows.length} second-look game(s) this tick (combined cap: ${EVALUATE_CONCURRENCY_CAP}).`);
+  const firstLookCount = pending.filter(p => !p.isSecondLook).length;
+  const secondLookCount = pending.length - firstLookCount;
+  console.log(`${firstLookCount} first-look + ${secondLookCount} second-look game(s) claimed this tick (combined cap: ${EVALUATE_CONCURRENCY_CAP}).`);
 
   const recentPicksMemory = await buildRecentPicksMemory();
 
