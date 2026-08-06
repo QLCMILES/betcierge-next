@@ -758,8 +758,17 @@ const { data } = await supabase
         // Fires exactly once per user, ever.
         const welcome = { role: 'assistant', text: buildIntroMessage(user) };
         setMessages([welcome]);
-        await supabase.from('user_conversations').insert({ user_id: userKey, role: 'assistant', content: welcome.text });
-        await supabase.from('user_profiles').update({ hunter_intro_shown_at: new Date().toISOString() }).eq('user_id', userKey);
+        const { error: introInsertError } = await supabase.from('user_conversations').insert({ user_id: userKey, role: 'assistant', content: welcome.text });
+        if (introInsertError) {
+          // Don't stamp hunter_intro_shown_at if the message never actually
+          // saved — otherwise this user permanently loses the real welcome
+          // with nothing to show for it. The message still rendered on
+          // screen (setMessages already ran above) — it just won't
+          // survive a refresh, and next load will correctly retry.
+          console.error('Failed to save Hunter intro message, not marking as shown:', introInsertError);
+        } else {
+          await supabase.from('user_profiles').update({ hunter_intro_shown_at: new Date().toISOString() }).eq('user_id', userKey);
+        }
       } else {
         // Returning user, fresh day, intro already seen before
         const welcome = { role: 'assistant', text: `Hey ${user.name.split(' ')[0]} 👋 What's on your mind today?` };
