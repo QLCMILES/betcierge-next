@@ -134,10 +134,13 @@ function inferBetType(pick) {
   // Game total
   if ((p.includes('over') || p.includes('under')) &&
       p.match(/\d+\.?\d*/)) return 'total';
+  // Explicit moneyline signals — checked BEFORE the runline digit-pattern
+  // heuristic below. An explicit "ML" marker is unambiguous and must win
+  // over a loose regex that can misread 3-digit odds (e.g. "-118") as a
+  // spread number when the odds are embedded directly in the pick text.
+  if (p.includes(' ml') || p.endsWith(' ml')) return 'moneyline';
   // Run line / spread (has a +/- number but not just odds)
   if (p.match(/[+-]\d+\.?\d+/) && !p.match(/^[+-]\d{3,}$/)) return 'runline';
-  // Explicit moneyline signals
-  if (p.includes(' ml') || p.endsWith(' ml')) return 'moneyline';
   return 'moneyline';
 }
 
@@ -1058,7 +1061,7 @@ async function settleDailyPicks() {
   for (const pick of pendingPicks) {
     const pickLower = pick.pick?.toLowerCase() || '';
     const sport = pick.sport?.toLowerCase() || '';
-    const betType = inferBetType(pick.pick); // FIX: use centralized inferBetType
+    const betType = pick.bet_type || inferBetType(pick.pick); // Prefer the real bet_type column set at pick-creation time; inferBetType is the fallback only for rows without it.
 
     // Build a bet-like object with consistent shape
     const betLike = {
