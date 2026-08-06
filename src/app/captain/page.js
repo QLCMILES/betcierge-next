@@ -1,17 +1,12 @@
 "use client";
 import { useState, useEffect } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "../../lib/supabase";
 import {
   FOUNDING_TOTAL,
   FOUNDING_SPOTS_LEFT,
   FOUNDING_ACTIVE,
   STRIPE_PRICE_CURRENT,
 } from "../../lib/pricing";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
 
 const GOLD = "#f5a623";
 const DARK = "#0a0a0f";
