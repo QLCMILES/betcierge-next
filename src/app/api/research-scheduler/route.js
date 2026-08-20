@@ -153,7 +153,7 @@ function buildStage2SystemPrompt(candidate, today_display) {
 This is STAGE 2 — deep research on exactly ONE game. You have already identified this candidate as worth researching:
 Game: ${candidate.game}
 Sport: ${candidate.sport}
-Proposed angle: ${candidate.proposed_pick} (${candidate.reason})
+Proposed angle: ${candidate.proposed_pick} (${candidate.stage1_reason})
 
 You are researching THIS GAME ONLY. Do not discuss or reference any other game, any other sport, or any other matchup anywhere in your search queries, your reasoning, or your written insight. This isolation is deliberate — mixing in other games' context is exactly the failure mode we are protecting against.
 
