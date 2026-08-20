@@ -174,6 +174,68 @@ export const REQUIREMENTS = {
   // grades, QB status) per the review's football-templating note.
 };
 
+// ── Critical slots, keyed by sport × market ──────────────────────────────
+// Criticality is MARKET-DEPENDENT (e.g. park_factor is critical for a total
+// but not for a spread), so it's defined per-market here rather than as a flat
+// flag on the requirement. A slot listed here means: if it is unresolved at
+// the research ceiling (never reported at all), the pick is REFUSED. A slot
+// NOT listed here is non-critical — a strong pick may publish even if that
+// slot never resolved.
+//
+// This is the handicapper's judgment (Miles, Aug 20) encoded in code — the
+// gate keys ONLY on these flags, NOT on the model's self-reported `importance`
+// field (which is kept as audit data but never trusted for the gate, so the
+// model can't rate its own gap as "minor" to escape).
+//
+// IMPORTANT: hard-gate keys (starter_confirmed_both, lineup_confirmed) are
+// ALWAYS critical regardless of what's listed here — getCriticalSlotKeys()
+// unions them in defensively so a hard gate can never be accidentally omitted.
+//
+// `unavailable` (genuinely not knowable yet, after real searching) counts as
+// RESOLVED, not a gap — so a critical slot coming back `unavailable` does NOT
+// by itself refuse the pick. Only a critical slot that is never reported at
+// all triggers refusal. (The one edge — should a CRITICAL slot require
+// supported/conflicting and treat unavailable as refuse? — is flagged for the
+// three-way review; current behavior: unavailable = resolved for all slots.)
+export const CRITICAL = {
+  MLB: {
+    _baseline: [
+      'starter_confirmed_both',        // hard gate
+      'starter_recent_form_both',
+      'starting_pitching_matchup_edge',
+      'offense_recent_form_both',
+      'bullpen_full_assessment_both',
+      'line_movement_and_price',
+      // NON-critical baseline (publishable without, if genuinely missing):
+      //   material_conditions        — catch-all; nothing material = trivially resolved
+      //   lineup_vs_todays_starter_both — a strong pick may publish without it (Miles override)
+    ],
+    moneyline: [],   // baseline critical set fully governs a who-wins bet
+    spread: [
+      // park_factor is NON-critical for a spread (secondary; affects margin not outcome)
+    ],
+    total: [
+      'park_factor',      // critical for a total — fundamental run environment
+      'weather_detail',   // critical for a total — affects carry/scoring
+      // umpire_strikezone is NON-critical: often not posted until late, legitimately unavailable
+    ],
+    f5: [
+      'starter_durability_tto_both',
+      'starter_avg_innings_last5_both',
+    ],
+    first_half: [
+      'starter_durability_tto_both',
+      'starter_avg_innings_last5_both',
+    ],
+    prop: [
+      'lineup_confirmed',                 // hard gate
+      'player_recent_form',
+      'opposing_starter_allowed_profile',
+      // NON-critical: player_handedness_splits, lineup_position, park_or_category_factor
+    ],
+  },
+};
+
 // Bet types Layer 1 can classify. Anything not mapped for a sport is caught
 // by isMarketFullyMapped() and fails safe rather than researching baseline-only.
 export const KNOWN_MARKETS = ['moneyline', 'spread', 'total', 'f5', 'first_half', 'prop'];
@@ -227,6 +289,24 @@ export function getSupplementaryKeys(sport, betType) {
   return getRequirementKeys(sport, betType).filter(
     k => REQUIREMENT_META[k]?.supplementary === true
   );
+}
+
+// The CRITICAL required slots for a sport+market: if any of these is
+// unresolved at the research ceiling, the pick is refused. Built from the
+// per-market CRITICAL config, UNIONed with hard-gate keys (which are always
+// critical), and INTERSECTED with the market's actual required slots (so a
+// critical key that doesn't apply to this market can't leak in). Returns a
+// subset of getRequiredSlotKeys(sport, betType).
+export function getCriticalSlotKeys(sport, betType) {
+  const required = new Set(getRequiredSlotKeys(sport, betType));
+  const criticalBlock = CRITICAL[sport] || {};
+  const baselineCritical = criticalBlock._baseline || [];
+  const marketCritical = criticalBlock[betType] || [];
+  const hardGates = getHardGateKeys(sport, betType); // always critical
+  const union = new Set([...baselineCritical, ...marketCritical, ...hardGates]);
+  // Only keep critical keys that are genuinely part of this market's required
+  // set — defends against a typo or a stale critical entry for another market.
+  return [...union].filter(k => required.has(k));
 }
 
 // The required slots the stopping loop checks: every requirement key EXCEPT
