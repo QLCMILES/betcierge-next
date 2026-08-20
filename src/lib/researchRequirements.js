@@ -369,3 +369,120 @@ export function buildRequirementInstructions(sport, betType) {
   }
   return lines.join('\n');
 }
+
+// ── Evidence validation — the code-owned completion gate ─────────────────
+// The research loop (research-scheduler) calls evaluateEvidence() after each
+// turn to decide, in CODE, whether the pick's `evidence` array actually
+// SATISFIES each required slot — not merely whether the model mentioned it.
+// Core of the Aug 20 decision: Claude researches and reports; code decides
+// whether the evidence is sufficient to publish.
+
+// Normalize a slot key for matching model output against config keys — trims
+// and lowercases, so a stray capital or space in the model's `requirement`
+// field doesn't read as a missing slot and burn a turn.
+export function normalizeSlotKey(k) {
+  return String(k == null ? '' : k).trim().toLowerCase();
+}
+
+// Shape classification of ONE evidence entry (or undefined). Pure — knows
+// nothing of criticality or policy; only: is this entry well-formed?
+//   supported/conflicting need a real finding AND >=1 non-empty source
+//   unavailable needs a real finding (why), sources not required
+export function classifyEvidenceEntry(entry) {
+  if (!entry || typeof entry !== 'object') return 'MISSING';
+  const status = normalizeSlotKey(entry.status);
+  const finding = String(entry.finding == null ? '' : entry.finding).trim();
+  const sources = Array.isArray(entry.sources)
+    ? entry.sources.filter(s => typeof s === 'string' && s.trim().length > 0)
+    : [];
+
+  if (status !== 'supported' && status !== 'conflicting' && status !== 'unavailable') {
+    return 'INVALID_STATUS';
+  }
+  if (finding.length === 0) return 'INVALID_MISSING_FINDING';
+  if (status === 'unavailable') return 'VALID_UNAVAILABLE';
+  if (sources.length === 0) return 'INVALID_MISSING_SOURCE';
+  return status === 'conflicting' ? 'VALID_CONFLICTING' : 'VALID_SUPPORTED';
+}
+
+// Resolution state of ONE required slot: shape classification + criticality +
+// per-slot unavailable policy. Returns:
+//   'resolved'             done; don't loop back; safe to publish on
+//   'needs_research'       missing/malformed; loop back to research it
+//   'unavailable_blocking' critical + unavailable + policy=refuse; loop back to
+//                          try to establish it, and REFUSE if still this at the
+//                          ceiling
+export function slotResolutionState(sport, betType, slotKey, entry, criticalSet) {
+  const cls = classifyEvidenceEntry(entry);
+  const isCritical = criticalSet
+    ? criticalSet.has(slotKey)
+    : new Set(getCriticalSlotKeys(sport, betType)).has(slotKey);
+
+  if (cls === 'VALID_SUPPORTED' || cls === 'VALID_CONFLICTING') return 'resolved';
+
+  if (cls === 'VALID_UNAVAILABLE') {
+    if (!isCritical) return 'resolved';
+    return criticalUnavailableRefuses(sport, slotKey) ? 'unavailable_blocking' : 'resolved';
+  }
+
+  // MISSING / INVALID_* — slot not satisfied
+  return 'needs_research';
+}
+
+// Whole-pick evaluation the loop consumes each turn. Normalizes the model's
+// evidence array, matches it against the required slots, and returns the
+// partitioned view plus the two control flags the loop keys on:
+//   isComplete  — nothing left to research (stop early and publish)
+//   publishable — no critical slot unresolved (publish at the ceiling,
+//                 recording any non-critical gaps)
+// Supplementary slots are excluded upstream (getRequiredSlotKeys). Extra and
+// duplicate reported slots are surfaced for logging, never used to satisfy a
+// gate.
+export function evaluateEvidence(sport, betType, pick) {
+  const required = getRequiredSlotKeys(sport, betType);
+  const criticalSet = new Set(getCriticalSlotKeys(sport, betType));
+  const rawEvidence = Array.isArray(pick && pick.evidence) ? pick.evidence : [];
+
+  const entryByKey = new Map();
+  const duplicates = [];
+  for (const e of rawEvidence) {
+    const key = normalizeSlotKey(e && e.requirement);
+    if (!key) continue;
+    if (entryByKey.has(key)) { duplicates.push(key); continue; }
+    entryByKey.set(key, e);
+  }
+
+  const requiredNorm = new Set(required.map(normalizeSlotKey));
+  const extras = [...entryByKey.keys()].filter(k => !requiredNorm.has(k));
+
+  const perSlot = {};
+  const resolved = [];
+  const needsResearch = [];
+  const unavailableBlocking = [];
+
+  for (const slot of required) {
+    const entry = entryByKey.get(normalizeSlotKey(slot));
+    const classification = classifyEvidenceEntry(entry);
+    const resolution = slotResolutionState(sport, betType, slot, entry, criticalSet);
+    perSlot[slot] = { classification, resolution, isCritical: criticalSet.has(slot) };
+    if (resolution === 'resolved') resolved.push(slot);
+    else if (resolution === 'unavailable_blocking') unavailableBlocking.push(slot);
+    else needsResearch.push(slot);
+  }
+
+  const unresolved = [...needsResearch, ...unavailableBlocking];
+  const criticalUnresolved = unresolved.filter(s => criticalSet.has(s));
+
+  return {
+    perSlot,
+    resolved,
+    needsResearch,
+    unavailableBlocking,
+    unresolved,
+    criticalUnresolved,
+    duplicates,
+    extras,
+    isComplete: unresolved.length === 0,
+    publishable: criticalUnresolved.length === 0,
+  };
+}
