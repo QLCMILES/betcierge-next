@@ -191,12 +191,12 @@ export const REQUIREMENTS = {
 // ALWAYS critical regardless of what's listed here — getCriticalSlotKeys()
 // unions them in defensively so a hard gate can never be accidentally omitted.
 //
-// `unavailable` (genuinely not knowable yet, after real searching) counts as
-// RESOLVED, not a gap — so a critical slot coming back `unavailable` does NOT
-// by itself refuse the pick. Only a critical slot that is never reported at
-// all triggers refusal. (The one edge — should a CRITICAL slot require
-// supported/conflicting and treat unavailable as refuse? — is flagged for the
-// three-way review; current behavior: unavailable = resolved for all slots.)
+// `unavailable` on a NON-CRITICAL slot counts as RESOLVED (publishable). For a
+// CRITICAL slot, `unavailable` is governed by CRITICAL_UNAVAILABLE_ALLOW below:
+// the default is REFUSE, with per-slot exceptions declared explicitly. A
+// critical slot that is never reported at all always triggers refusal.
+// (Resolved Aug 20 three-way review — this replaces the earlier "unavailable =
+// resolved for all slots" behavior, which left the critical gate bypassable.)
 export const CRITICAL = {
   MLB: {
     _baseline: [
@@ -235,6 +235,41 @@ export const CRITICAL = {
     ],
   },
 };
+
+// ── Unavailable policy for CRITICAL slots ────────────────────────────────
+// Decision (Aug 20, post three-way review): a CRITICAL slot returning
+// `unavailable` after real searching does NOT automatically count as resolved.
+// This closes the escape hatch the review flagged — otherwise the strongest
+// gate could be bypassed by the model simply reporting `unavailable`.
+//
+// Default policy for EVERY critical slot: REFUSE. If the handicapper declared
+// this evidence necessary for the bet, inability to establish it should
+// prevent publication — that is what "critical" means. Non-critical slots are
+// unaffected: `unavailable` on a non-critical slot is always fine to publish.
+//
+// A slot is listed here ONLY to grant an explicit exception — publish the pick
+// even when this critical slot is `unavailable`. Reserve it for a datum that
+// is (a) legitimately not knowable until close to game time AND (b) one the
+// bet can genuinely survive without.
+//
+// MLB today: intentionally EMPTY. The genuinely often-unavailable MLB slot
+// (umpire_strikezone) is already NON-critical, so no critical MLB slot needs
+// an allow-exception. The mechanism exists for future sports / tuning; do not
+// add an entry without Miles's sign-off, since it directly weakens a gate.
+export const CRITICAL_UNAVAILABLE_ALLOW = {
+  MLB: {
+    // slot_key: true,   // ← publish even if this CRITICAL slot is `unavailable`
+  },
+};
+
+// Returns true if a critical slot coming back `unavailable` must REFUSE the
+// pick (the default), false if an explicit exception permits publishing anyway.
+// Only meaningful for slots that are actually critical for the market — the
+// loop consults this only after getCriticalSlotKeys() says the slot is critical.
+export function criticalUnavailableRefuses(sport, slot) {
+  const allowed = CRITICAL_UNAVAILABLE_ALLOW[sport]?.[slot] === true;
+  return !allowed; // default: refuse
+}
 
 // Bet types Layer 1 can classify. Anything not mapped for a sport is caught
 // by isMarketFullyMapped() and fails safe rather than researching baseline-only.
