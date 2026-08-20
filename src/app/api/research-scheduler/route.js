@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { waitUntil } from '@vercel/functions';
+import { buildRequirementInstructions, getRequiredSlotKeys } from '../../../lib/researchRequirements';
 
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
@@ -147,7 +148,48 @@ function checkFreshness(originalMoneyline, freshMoneyline, originalSpread, fresh
 }
 
 // ── Stage 2 system prompt for ONE isolated game ─────────────────────────
+// Now driven by the per-bet-type requirement config (researchRequirements.js)
+// instead of a single generic research instruction. The requirement set is
+// selected from candidate.bet_type (classified by Layer 1) and composed into
+// the RESEARCH REQUIREMENTS block. The model returns an `evidence` array —
+// one entry per required slot — which the code-owned stopping loop (added in
+// the next step) verifies before a pick is allowed to finalize. In this step
+// the prompt ASKS for the evidence; enforcement lands separately.
 function buildStage2SystemPrompt(candidate, today_display) {
+  const sportKey = candidate.sport;
+  const betType = candidate.bet_type;
+  const requirementBlock = buildRequirementInstructions(sportKey, betType);
+  const requiredSlots = getRequiredSlotKeys(sportKey, betType);
+
+  // Defensive: if there are no composed requirements (a sport/market not in
+  // the config), fall back to the prior generic instruction so the prompt is
+  // never empty. In normal MLB operation this branch is never taken —
+  // isMarketFullyMapped gates unmapped markets upstream — but the prompt must
+  // still be well-formed if it is ever reached.
+  const researchDirective = requirementBlock && requirementBlock.trim().length > 0
+    ? `RESEARCH REQUIREMENTS — you MUST establish each of the following for this ${betType} bet. For each, search until you can report it as supported, unavailable, or conflicting — do not skip any. Items marked [REQUIRED — will be verified against official data] are cross-checked against official sources after you respond; do not claim confirmation you did not find.
+
+${requirementBlock}
+
+After researching, report an "evidence" entry for each numbered requirement above (except any marked supplementary), stating what you found. This is how your research depth is measured — by coverage of these requirements, not by search count alone.`
+    : `Perform at least ${MIN_SEARCHES_PER_GAME} distinct web searches before finalizing your analysis. Cover: confirmed participants/starters, recent form, injury reports, matchup history, and any line movement or sharp money signals you can find.`;
+
+  const evidenceSlotList = requiredSlots.map(k => `"${k}"`).join(', ');
+  const evidenceSchema = requiredSlots.length > 0
+    ? `,
+  "evidence": [
+    // One object per required requirement key. Required keys for this bet: ${evidenceSlotList}
+    {
+      "requirement": "one of the required keys above",
+      "status": "supported" | "unavailable" | "conflicting",
+      "finding": "one specific sentence on what you found (with the actual number/fact), or why it was unavailable",
+      "direction": "supports_pick" | "against_pick" | "neutral",
+      "importance": "high" | "medium" | "low",
+      "sources": ["short description or URL of the search result(s) backing this finding"]
+    }
+  ]`
+    : '';
+
   return `You are Hunter, an elite sports betting analyst. Today is ${today_display}.
 
 This is STAGE 2 — deep research on exactly ONE game. You have already identified this candidate as worth researching:
@@ -161,9 +203,10 @@ CRITICAL DATA INTEGRITY RULES:
 1. Every stat, injury note, or lineup detail you cite must be about a team or player who is actually IN this specific game (${candidate.game}). Never let a stat about an unrelated team bleed into this analysis.
 2. Never invent a game, player, or stat. If you cannot verify something, say so or omit it.
 3. For starting pitchers/lineups/goalies: only state a name as confirmed if you found it in a live search result from today. If not confirmed, say so plainly — do not guess or use memory.
-4. Perform at least ${MIN_SEARCHES_PER_GAME} distinct web searches before finalizing your analysis. Cover: confirmed participants/starters, recent form, injury reports, matchup history, and any line movement or sharp money signals you can find.
-5. Never recommend ANY pick — moneyline, run line/spread, or total — at odds of -200 or worse. This applies equally across every bet type: a poor risk/reward price is a poor risk/reward price regardless of which market it's on. Take the alternate line/side or pass entirely.
-6. Your insight must directly support your pick — no contradictions between your analysis and your conclusion.
+4. Never recommend ANY pick — moneyline, run line/spread, or total — at odds of -200 or worse. This applies equally across every bet type: a poor risk/reward price is a poor risk/reward price regardless of which market it's on. Take the alternate line/side or pass entirely.
+5. Your insight must directly support your pick — no contradictions between your analysis and your conclusion.
+
+${researchDirective}
 
 WRITING STANDARDS FOR THE INSIGHT FIELD (Aug 5 — matches the established style, do not deviate):
 - Structure the insight as 2-3 distinct thematic sections. Each section gets its own short, punchy, declarative header wrapped in <h3></h3> tags (e.g. "The Pitching Mismatch Is Historic-Level"), followed by its supporting paragraph wrapped in <p></p> tags. This is the required format, not a stylistic suggestion.
@@ -193,10 +236,9 @@ Return ONLY this JSON, no other text:
     "lineup_confirmed": true or false,
     "data_confidence": "Low" or "Medium" or "High"
   },
-  "score": 0-10 (your honest assessment of how strong this specific edge is)
+  "score": 0-10 (your honest assessment of how strong this specific edge is)${evidenceSchema}
 }`;
 }
-
 const PER_CANDIDATE_TIMEOUT_MS = 120000; // hard cap per candidate's research call
 
 async function callClaudeSync(body, retryCount = 0, timeoutMs = PER_CANDIDATE_TIMEOUT_MS) {
