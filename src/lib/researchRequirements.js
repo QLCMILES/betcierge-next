@@ -12,37 +12,47 @@
 //    keys into prompt instructions and into the required-slot list the
 //    code-owned stopping loop checks against.
 //  - `_baseline` applies to EVERY market for that sport. Per-market lists
-//    add only what's market-specific on top.
+//    add only what's genuinely market-specific on top.
 //  - Two keys are HARD CODE GATES (verified against MLB Stats API, not the
 //    model's self-report): starter_confirmed_both, and lineup_confirmed for
-//    props. Marked with hardGate: true in REQUIREMENT_META below.
+//    props. Marked with hardGate: true.
 //
-// Miles's Aug 20 sign-offs baked in:
-//  - Bullpen: full availability + recent workload, both teams, in _baseline.
-//  - material_conditions (weather/injury/other decisive factor): a slot on
-//    EVERY market. Light weight for MLB; will be heavy-weight baseline for
-//    football when that config block is added.
+// Baseline philosophy (Miles, Aug 20): baseball is streaky and these factors
+// tie into EVERY pick regardless of bet type — so the heavy handicapping core
+// lives in baseline and every MLB pick runs it. Recent offensive form (both
+// teams), each lineup vs today's opposing starter, the starting-pitching
+// matchup edge, and the full bullpen picture (availability + workload/fatigue
+// + depth, both teams) are baseline, not market-specific add-ons. Market
+// add-ons are only the genuinely bet-specific extras (park/umpire/weather for
+// totals, etc.). This is a deliberate quality-for-cost trade — more research
+// per pick — explicitly chosen for "best picks possible."
 
-// Human-readable research instruction for each requirement key. The engine
-// composes the selected keys' instructions into the Stage 2 prompt, so the
-// model is told specifically WHAT to establish — not a generic "do research."
-// Keep each instruction concrete and about the evidence to establish, not
-// the number of searches to run (searches are a guardrail, coverage is the
-// objective).
 export const REQUIREMENT_META = {
   // ── Baseline (every MLB market) ──
   starter_confirmed_both: {
     label: 'Both starting pitchers confirmed',
     instruction: "Confirm BOTH starting pitchers for this game via a dated source today (e.g. MLB.com probable pitchers). State each by name with the source.",
-    hardGate: true, // verified in code against MLB Stats API; model claim that contradicts the API = reject
+    hardGate: true, // verified in code against MLB Stats API; model claim contradicting the API = reject
   },
   starter_recent_form_both: {
     label: 'Both starters recent form',
     instruction: "Establish each starter's RECENT form — last 3 starts (ERA, hits, runs, command), NOT season averages. Recent form beats season stats when they disagree.",
   },
-  bullpen_availability_workload_both: {
-    label: 'Bullpen availability + workload, both teams',
-    instruction: "Establish BOTH bullpens' availability AND recent workload — innings/high-leverage arms used the last 1-3 days, and who is therefore unavailable or short tonight. A tired pen gives up late runs and blows leads; this matters for the whole game, not just the closer.",
+  starting_pitching_matchup_edge: {
+    label: 'Starting pitching matchup edge',
+    instruction: "Compare the two starters against EACH OTHER and state who has the edge tonight and by how much — this is the pitching-mismatch assessment (not head-to-head history; they don't face each other). Base it on the recent-form and stuff of each arm, not season reputation.",
+  },
+  offense_recent_form_both: {
+    label: "Both teams' recent offensive form",
+    instruction: "Establish BOTH teams' recent offensive form — last 7-10 days / last 10 games (runs scored, run differential, hot or cold RIGHT NOW). Baseball is streaky; how each lineup is actually swinging the bat this week matters to every bet type, not just totals.",
+  },
+  lineup_vs_todays_starter_both: {
+    label: "Each lineup vs today's opposing starter",
+    instruction: "For BOTH teams, establish how that lineup matches up against the specific pitcher they face tonight — handedness splits (wRC+/OPS vs LHP/RHP as applicable) plus any meaningful history/trend against that arm or that pitch profile.",
+  },
+  bullpen_full_assessment_both: {
+    label: 'Full bullpen assessment, both teams',
+    instruction: "Establish the COMPLETE bullpen picture for BOTH teams — address all three: (1) availability — who is unavailable or limited tonight; (2) recent workload/fatigue — innings and high-leverage arms used the last 1-3 days; (3) depth — how many reliable arms deep each pen is before a soft spot. This decides late-inning outcomes for every bet type: holding a lead (ML), protecting/extending a margin without a soft arm giving back the cover (run line), and late runs pushing a total. Address availability, workload/fatigue, AND depth — do not report only one.",
   },
   line_movement_and_price: {
     label: 'Line movement + price',
@@ -53,42 +63,14 @@ export const REQUIREMENT_META = {
     instruction: "Note any genuinely decisive material condition — weather (wind/temp), a headline injury, a park quirk, or anything that materially changes this specific bet. For MLB this is usually light, but flag it if it's real. If nothing material, say so explicitly.",
   },
 
-  // ── Offense / matchup ──
-  opposing_offense_recent_form: {
-    label: 'Opposing offense recent form',
-    instruction: "Establish the opposing offense's recent form — last 10 games, run differential, hot or cold RIGHT NOW. Never skip the offense to focus only on pitching.",
-  },
-  opposing_offense_handedness_splits: {
-    label: 'Opposing offense handedness splits',
-    instruction: "Establish the opposing lineup's splits (wRC+/OPS) against THIS starter's throwing hand (LHP/RHP). A lineup that mashes lefties vs a lefty starter is a real signal.",
-  },
-  opposing_offense_output_both: {
-    label: "Both teams' recent offensive output",
-    instruction: "For a total, establish BOTH teams' real recent offensive output (runs last 7-14 days, not just the pitching matchup). Totals built on pitching narratives alone without weighing both offenses have measurably underperformed.",
-  },
-
-  // ── Run line / spread specific ──
-  bullpen_depth_margin_context: {
-    label: 'Bullpen depth for margin',
-    instruction: "Beyond baseline availability, assess bullpen DEPTH as it bears on the margin — can this pen protect (or extend) a multi-run margin across innings 6-9 without a soft arm giving back the cover?",
-  },
+  // ── Total specific ──
   park_factor: {
     label: 'Park factor',
-    instruction: "Establish this park's run/HR factor and how it bears on this pick (suppresses or inflates).",
+    instruction: "Establish this park's run/HR factor and how it bears on this pick (suppresses or inflates scoring).",
   },
-  park_factor_light: {
-    label: 'Park factor (secondary)',
-    instruction: "Note the park's run factor as secondary context for this F5 pick (lighter weight than a full-game total).",
-  },
-
-  // ── Total specific ──
   umpire_strikezone: {
     label: 'Umpire strike-zone tendency',
     instruction: "Establish the assigned home-plate umpire's strike-zone tendency (larger zone = more Ks/fewer walks, favors under; tighter zone favors over). If the assignment isn't posted yet, mark unavailable — do not guess.",
-  },
-  bullpen_fatigue_both: {
-    label: 'Bullpen fatigue, both sides (totals)',
-    instruction: "For a total specifically, establish whether EITHER bullpen threw heavy innings the last 1-2 days — tired pens give up late runs and favor the over. Both sides.",
   },
   weather_detail: {
     label: 'Weather detail (totals)',
@@ -139,50 +121,42 @@ export const REQUIREMENT_META = {
 };
 
 // ── The requirement sets, keyed by sport × market ────────────────────────
-// _baseline applies to every market for that sport; per-market arrays add
-// only the market-specific requirements on top. The engine merges
-// _baseline + REQUIREMENTS[sport][market] to get the full required set.
+// _baseline applies to every market; per-market arrays add only the
+// market-specific extras. The engine merges _baseline + REQUIREMENTS[sport][market].
+// An empty market array (e.g. MLB moneyline) is legitimate and intended — it
+// means baseline fully covers that bet. isMarketFullyMapped() treats a market
+// as mapped if it's a key in the sport block at all (even with an empty
+// array), so an intentionally-empty add-on is NOT mistaken for an unmapped market.
 export const REQUIREMENTS = {
   MLB: {
     _baseline: [
       'starter_confirmed_both',
       'starter_recent_form_both',
-      'bullpen_availability_workload_both',
+      'starting_pitching_matchup_edge',
+      'offense_recent_form_both',
+      'lineup_vs_todays_starter_both',
+      'bullpen_full_assessment_both',
       'line_movement_and_price',
       'material_conditions',
     ],
-    moneyline: [
-      'opposing_offense_recent_form',
-      'opposing_offense_handedness_splits',
-    ],
+    // Baseline fully covers a "who wins" bet — no moneyline-specific add-on.
+    moneyline: [],
     spread: [
-      'opposing_offense_recent_form',
-      'opposing_offense_handedness_splits',
-      'bullpen_depth_margin_context',
       'park_factor',
     ],
     total: [
       'park_factor',
       'umpire_strikezone',
-      'bullpen_fatigue_both',
       'weather_detail',
-      'opposing_offense_output_both',
     ],
     f5: [
       'starter_durability_tto_both',
       'starter_avg_innings_last5_both',
-      'opposing_offense_handedness_splits',
-      'park_factor_light',
     ],
-    // first_half is the same handicapping question as F5 in MLB (starters +
-    // early offense decide it), so it gets the identical requirement set
-    // rather than falling back to baseline-only. Kept as its own entry (not
-    // an alias) so it can diverge later if sub-market taxonomy is built.
+    // first_half is the same handicapping question as F5 in MLB — identical set.
     first_half: [
       'starter_durability_tto_both',
       'starter_avg_innings_last5_both',
-      'opposing_offense_handedness_splits',
-      'park_factor_light',
     ],
     prop: [
       'lineup_confirmed',
@@ -195,24 +169,21 @@ export const REQUIREMENTS = {
     ],
   },
   // NFL / NCAAF: added later as their own blocks, same engine. When added,
-  // material_conditions (weather) becomes heavy-weight and the "starter"
-  // keys are replaced by unit-metric keys (o-line, secondary grades, QB
-  // status) per the review's football-templating note.
+  // material_conditions (weather) becomes heavy-weight baseline and the
+  // "starter" keys are replaced by unit-metric keys (o-line, secondary
+  // grades, QB status) per the review's football-templating note.
 };
 
-// Bet types Layer 1 can classify. Anything not in REQUIREMENTS[sport] falls
-// back to _baseline only (engine handles this) so an unmapped market never
-// crashes — it just researches the baseline. first_half maps to the same
-// shape as f5 conceptually but is kept distinct for future sub-market work.
+// Bet types Layer 1 can classify. Anything not mapped for a sport is caught
+// by isMarketFullyMapped() and fails safe rather than researching baseline-only.
 export const KNOWN_MARKETS = ['moneyline', 'spread', 'total', 'f5', 'first_half', 'prop'];
 
 // ── The generic engine ───────────────────────────────────────────────────
 
-// Returns the full ordered list of requirement KEYS for a sport+market:
-// baseline first, then market-specific, de-duplicated (a market array may
-// legitimately repeat a baseline-adjacent key; we never want it twice).
-// Unknown sport → empty array (caller decides fallback). Unknown market for
-// a known sport → baseline only.
+// Full ordered list of requirement KEYS for a sport+market: baseline first,
+// then market-specific, de-duplicated. Unknown sport → empty array (caller
+// decides fallback). A mapped market with an empty add-on (e.g. MLB moneyline)
+// correctly returns just the baseline.
 export function getRequirementKeys(sport, betType) {
   const sportBlock = REQUIREMENTS[sport];
   if (!sportBlock) return [];
@@ -229,36 +200,29 @@ export function getRequirementKeys(sport, betType) {
   return ordered;
 }
 
-// Whether a sport+market has a REAL, market-specific requirement set — i.e.
-// the market is explicitly mapped, not just falling back to baseline-only.
-// research-scheduler uses this to FAIL SAFE: if Layer 1 ever hands over a
-// bet_type we don't have a full playbook for, the candidate is refused (not
-// published on baseline-only research) and logged loudly for attention.
-// In normal operation this is always true — Layer 1's bet_type enum is
-// fully mapped for MLB — so this only fires if something upstream produces
-// an unexpected market, which is exactly when publishing an under-researched
-// pick would be the wrong outcome. A missing/skipped edge-case pick is cheap;
-// a published pick backed by research we can't vouch for is not.
+// Whether a sport+market is a REAL, intended market — i.e. the market key
+// exists in the sport block at all (even as an empty array, which means
+// "baseline fully covers it"). research-scheduler uses this to FAIL SAFE: if
+// Layer 1 ever hands over a bet_type that is NOT an intended market for this
+// sport, the candidate is refused and logged, never published on baseline-
+// only research. Crucially this returns TRUE for MLB moneyline (empty add-on
+// but intended) and FALSE for a genuinely unmapped/unexpected market.
 export function isMarketFullyMapped(sport, betType) {
   const sportBlock = REQUIREMENTS[sport];
   if (!sportBlock) return false;
-  const marketSpecific = sportBlock[betType];
-  return Array.isArray(marketSpecific) && marketSpecific.length > 0;
+  return Object.prototype.hasOwnProperty.call(sportBlock, betType);
 }
 
-// The subset of a requirement set that must be verified in CODE against a
-// structured source (MLB Stats API), not trusted from the model's self-
-// report. Used by the downstream hard-gate step in research-scheduler.
+// Keys that must be verified in CODE against a structured source (MLB Stats
+// API), not trusted from the model's self-report.
 export function getHardGateKeys(sport, betType) {
   return getRequirementKeys(sport, betType).filter(
     k => REQUIREMENT_META[k]?.hardGate === true
   );
 }
 
-// The subset that is SUPPLEMENTARY — present in the prompt as "use only if
-// sample is meaningful," but NOT counted as a required slot by the code-
-// owned stopping loop (so the model isn't forced to loop forever chasing a
-// BvP line that doesn't meaningfully exist).
+// Supplementary keys — present in the prompt as "use only if sample is
+// meaningful," but NOT counted as a required slot by the stopping loop.
 export function getSupplementaryKeys(sport, betType) {
   return getRequirementKeys(sport, betType).filter(
     k => REQUIREMENT_META[k]?.supplementary === true
@@ -266,19 +230,15 @@ export function getSupplementaryKeys(sport, betType) {
 }
 
 // The required slots the stopping loop checks: every requirement key EXCEPT
-// supplementary ones. Each of these must come back with an explicit status
-// (supported | unavailable | conflicting) before the model is allowed to
-// finalize; a missing/empty one forces it back to search.
+// supplementary ones. Each must return an explicit status before finalize.
 export function getRequiredSlotKeys(sport, betType) {
   const supplementary = new Set(getSupplementaryKeys(sport, betType));
   return getRequirementKeys(sport, betType).filter(k => !supplementary.has(k));
 }
 
-// Composes the human-readable research instructions for the selected
-// requirement set, numbered, for injection into the Stage 2 prompt. Marks
-// hard-gate items and supplementary items inline so the model knows which
-// are which. Unknown keys are skipped defensively (should never happen, but
-// a typo in REQUIREMENTS shouldn't emit "undefined" into the prompt).
+// Composes the numbered, human-readable research instructions for the
+// selected requirement set, for injection into the Stage 2 prompt. Tags
+// hard-gate and supplementary items inline. Unknown keys skipped defensively.
 export function buildRequirementInstructions(sport, betType) {
   const keys = getRequirementKeys(sport, betType);
   const lines = [];
