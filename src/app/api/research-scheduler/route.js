@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { waitUntil } from '@vercel/functions';
-import { buildRequirementInstructions, getRequiredSlotKeys } from '../../../lib/researchRequirements';
+import { runStage2ResearchLoop, extractText, cleanJson } from '../../../lib/researchLoop';
 
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
@@ -24,11 +24,6 @@ const MAX_RESEARCH_ATTEMPTS = 3; // after this many failures, stop retrying and 
 // it — not nitpick normal drift.
 const MONEYLINE_REJECT_CENTS = 50;
 const POINT_REJECT = 3.0;
-
-// Single-game isolated research still needs real depth — this mirrors
-// the spirit of the old "15 searches minimum across the whole pool" rule,
-// scaled down since this call now covers exactly one game, not 8-10.
-const MIN_SEARCHES_PER_GAME = 10;
 
 // ── Entity-consistency matching ─────────────────────────────────────────
 // FIRST-PASS DRAFT — Miles's call, edit freely. These are team-name tokens
@@ -85,22 +80,6 @@ function findEntityBleed(insightText, candidate, knownGamesToday) {
   return null;
 }
 
-function extractText(content) {
-  return (content || []).filter(c => c.type === 'text').map(c => c.text).join('');
-}
-
-function cleanJson(text) {
-  const clean = text
-    .replace(/```json|```/g, '')
-    .replace(/<cite[^>]*>([\s\S]*?)<\/cite>/g, '$1')
-    .replace(/<cite[^>]*>/g, '')
-    .replace(/<\/cite>/g, '')
-    .trim();
-  const jsonMatch = clean.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('No JSON found in response: ' + text.slice(0, 300));
-  return JSON.parse(jsonMatch[0]);
-}
-
 // Parses a string like "American League: 116, National League: -136" into
 // { "American League": 116, "National League": -136 } for diffing.
 function parseOddsString(str) {
@@ -145,168 +124,6 @@ function checkFreshness(originalMoneyline, freshMoneyline, originalSpread, fresh
     }
   }
   return { stale: false, reason: null };
-}
-
-// ── Stage 2 system prompt for ONE isolated game ─────────────────────────
-// Now driven by the per-bet-type requirement config (researchRequirements.js)
-// instead of a single generic research instruction. The requirement set is
-// selected from candidate.bet_type (classified by Layer 1) and composed into
-// the RESEARCH REQUIREMENTS block. The model returns an `evidence` array —
-// one entry per required slot — which the code-owned stopping loop (added in
-// the next step) verifies before a pick is allowed to finalize. In this step
-// the prompt ASKS for the evidence; enforcement lands separately.
-function buildStage2SystemPrompt(candidate, today_display) {
-  const sportKey = candidate.sport;
-  const betType = candidate.bet_type;
-  const requirementBlock = buildRequirementInstructions(sportKey, betType);
-  const requiredSlots = getRequiredSlotKeys(sportKey, betType);
-
-  // Defensive: if there are no composed requirements (a sport/market not in
-  // the config), fall back to the prior generic instruction so the prompt is
-  // never empty. In normal MLB operation this branch is never taken —
-  // isMarketFullyMapped gates unmapped markets upstream — but the prompt must
-  // still be well-formed if it is ever reached.
-  const researchDirective = requirementBlock && requirementBlock.trim().length > 0
-    ? `RESEARCH REQUIREMENTS — you MUST establish each of the following for this ${betType} bet. For each, search until you can report it as supported, unavailable, or conflicting — do not skip any. Items marked [REQUIRED — will be verified against official data] are cross-checked against official sources after you respond; do not claim confirmation you did not find.
-
-${requirementBlock}
-
-After researching, report an "evidence" entry for each numbered requirement above (except any marked supplementary), stating what you found. This is how your research depth is measured — by coverage of these requirements, not by search count alone.`
-    : `Perform at least ${MIN_SEARCHES_PER_GAME} distinct web searches before finalizing your analysis. Cover: confirmed participants/starters, recent form, injury reports, matchup history, and any line movement or sharp money signals you can find.`;
-
-  const evidenceSlotList = requiredSlots.map(k => `"${k}"`).join(', ');
-  const evidenceSchema = requiredSlots.length > 0
-    ? `,
-  "evidence": [
-    // One object per required requirement key. Required keys for this bet: ${evidenceSlotList}
-    {
-      "requirement": "one of the required keys above",
-      "status": "supported" | "unavailable" | "conflicting",
-      "finding": "one specific sentence on what you found (with the actual number/fact), or why it was unavailable",
-      "direction": "supports_pick" | "against_pick" | "neutral",
-      "importance": "high" | "medium" | "low",
-      "sources": ["short description or URL of the search result(s) backing this finding"]
-    }
-  ]`
-    : '';
-
-  return `You are Hunter, an elite sports betting analyst. Today is ${today_display}.
-
-This is STAGE 2 — deep research on exactly ONE game. You have already identified this candidate as worth researching:
-Game: ${candidate.game}
-Sport: ${candidate.sport}
-Proposed angle: ${candidate.proposed_pick} (${candidate.stage1_reason})
-
-You are researching THIS GAME ONLY. Do not discuss or reference any other game, any other sport, or any other matchup anywhere in your search queries, your reasoning, or your written insight. This isolation is deliberate — mixing in other games' context is exactly the failure mode we are protecting against.
-
-CRITICAL DATA INTEGRITY RULES:
-1. Every stat, injury note, or lineup detail you cite must be about a team or player who is actually IN this specific game (${candidate.game}). Never let a stat about an unrelated team bleed into this analysis.
-2. Never invent a game, player, or stat. If you cannot verify something, say so or omit it.
-3. For starting pitchers/lineups/goalies: only state a name as confirmed if you found it in a live search result from today. If not confirmed, say so plainly — do not guess or use memory.
-4. Never recommend ANY pick — moneyline, run line/spread, or total — at odds of -200 or worse. This applies equally across every bet type: a poor risk/reward price is a poor risk/reward price regardless of which market it's on. Take the alternate line/side or pass entirely.
-5. Your insight must directly support your pick — no contradictions between your analysis and your conclusion.
-
-${researchDirective}
-
-WRITING STANDARDS FOR THE INSIGHT FIELD (Aug 5 — matches the established style, do not deviate):
-- Structure the insight as 2-3 distinct thematic sections. Each section gets its own short, punchy, declarative header wrapped in <h3></h3> tags (e.g. "The Pitching Mismatch Is Historic-Level"), followed by its supporting paragraph wrapped in <p></p> tags. This is the required format, not a stylistic suggestion.
-- Build the case FOR this pick with full confidence. Do not include hedging language, risk disclaimers, or explicit acknowledgment of the counter-case anywhere in the written insight — no "however," "a red flag," "risk of regression," or similar phrasing that undermines your own pick. A customer reading this should come away convinced, not talked into caution.
-
-SELF-VALIDATION (a private check before finalizing — this informs your decision, it is never something you write about):
-- Would a sharp bettor agree this edge is real, or does it collapse under scrutiny?
-- Does every fact in your insight actually belong to ${candidate.game} specifically?
-- Is your pick's direction (favorite/underdog, over/under, spread sign) internally consistent with your own reasoning?
-- If the genuine case against this pick is strong enough to concern you, that is a signal to score it honestly lower (the score field exists for exactly this) or reconsider the specific angle/bet type — never a reason to write a hedged, less-confident insight. A published pick should read as real conviction, not a weighed-down compromise.
-
-ELIGIBILITY (report honestly — do not inflate to force a pick through):
-Report your confidence in whether the necessary participants for this specific bet (starting pitcher, starting lineup, goalie, etc., as applicable to ${candidate.sport}) are genuinely confirmed as of your searches, not assumed. Use plain, specific language for confirmed_names (e.g. "Zack Wheeler confirmed starting for PHI per today's MLB.com page") — never vague placeholders like "TBD" or "likely starter" reported as if confirmed.
-
-Return ONLY this JSON, no other text:
-{
-  "game": "${candidate.game}",
-  "sport": "${candidate.sport}",
-  "pick": "specific pick with line/odds",
-  "odds": "e.g. -110",
-  "units": 0.5 or 1 or 2,
-  "confidence": "Low" or "Medium" or "High",
-  "insight": "200+ word HTML-formatted writeup, structured per WRITING STANDARDS above (2-3 <h3> headers each with a supporting <p>)",
-  "eligibility": {
-    "mandatory_participant_confirmed": true or false,
-    "confirmed_names": ["specific confirmed names with source, or empty array if none"],
-    "lineup_confirmed": true or false,
-    "data_confidence": "Low" or "Medium" or "High"
-  },
-  "score": 0-10 (your honest assessment of how strong this specific edge is)${evidenceSchema}
-}`;
-}
-const PER_CANDIDATE_TIMEOUT_MS = 120000; // hard cap per candidate's research call
-
-async function callClaudeSync(body, retryCount = 0, timeoutMs = PER_CANDIDATE_TIMEOUT_MS) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  let response;
-  try {
-    response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (fetchErr) {
-    clearTimeout(timeoutId);
-    if (fetchErr.name === 'AbortError') {
-      console.log(`ANTHROPIC_API_TIMEOUT (research-scheduler): call exceeded ${timeoutMs}ms`);
-      return { type: 'error', error: { type: 'timeout_error', message: `Call exceeded ${timeoutMs}ms` } };
-    }
-    throw fetchErr;
-  }
-  clearTimeout(timeoutId);
-
-  const data = await response.json();
-
-  if (data.type === 'error') {
-    const errType = data.error?.type || 'unknown';
-    const errMsg = data.error?.message || 'no message';
-    console.log(`ANTHROPIC_API_ERROR (research-scheduler): http_status=${response.status} error_type=${errType} message="${errMsg}" retry_count=${retryCount}`);
-    const transientTypes = ['overloaded_error', 'rate_limit_error', 'api_error'];
-    if (transientTypes.includes(errType) && retryCount < 1) {
-      console.log('Retrying once after transient API error, waiting 3s...');
-      await new Promise(r => setTimeout(r, 3000));
-      return callClaudeSync(body, retryCount + 1, timeoutMs);
-    }
-  }
-
-  return data;
-}
-
-// SYNCHRONOUS Stage 2 research on ONE candidate — replaces the old
-// submit-to-Batches-API-and-poll-later pattern. Calling /v1/messages
-// directly means this either finishes within its own bounded timeout or
-// it doesn't — no dependency on Anthropic's batch queue, which has no
-// completion-time guarantee and was the actual cause of 4 of 10
-// candidates missing their confirmation deadline on July 22 (production
-// independently hit the same batch-queue slowness that same day).
-async function runStage2Research(candidate, today_display) {
-  const system = buildStage2SystemPrompt(candidate, today_display);
-  const response = await callClaudeSync({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 16000,
-    system,
-    messages: [{
-      role: 'user',
-      content: `Research ${candidate.game} (${candidate.sport}) now and return the JSON pick.`
-    }],
-    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-  }, 0, PER_CANDIDATE_TIMEOUT_MS);
-
-  const text = extractText(response.content);
-  if (!text.trim()) throw new Error('Stage 2 research returned no text');
-  return cleanJson(text);
 }
 
 // Shared gating logic — the three quality gates originally lived only
@@ -389,6 +206,39 @@ async function gateAndFinalizeResearch(candidate, pick, knownGamesToday) {
 
   console.log(`Research complete and gated successfully: "${candidate.game}" (score: ${pick.score})${bledInTeam ? ' [entity mention flagged, non-blocking]' : ''}`);
 }
+
+// Persists a research-loop refusal to the candidate_refusals audit table.
+// Called only for verdict:'refuse' from runStage2ResearchLoop — never for a
+// publish (those go through gateAndFinalizeResearch instead). Column mapping
+// verified directly against the live candidate_refusals schema: evaluation
+// (evaluateEvidence()'s return shape) maps criticalUnresolved/unresolved/
+// perSlot onto the array/array/jsonb columns; diagnostics maps turns/
+// searchesTotal/turnLog onto the int/int/jsonb columns. turn_history stores
+// the COMPACT per-turn log (searches/tokens/unresolved per turn), not the raw
+// search transcript, per the Aug 24 decision.
+async function recordRefusal(candidate, today, result) {
+  const evaluation = result.evaluation || {};
+  const diagnostics = result.diagnostics || {};
+  const { error } = await supabase.from('candidate_refusals').insert({
+    candidate_id: candidate.id,
+    date: today,
+    game: candidate.game,
+    sport: candidate.sport,
+    bet_type: candidate.bet_type,
+    reason: diagnostics.reason || 'unknown',
+    critical_unresolved: evaluation.criticalUnresolved || [],
+    unresolved_all: evaluation.unresolved || [],
+    per_slot: evaluation.perSlot || null,
+    turn_count: diagnostics.turns ?? null,
+    search_count: diagnostics.searchesTotal ?? null,
+    turn_history: diagnostics.turnLog || null,
+    last_valid_pick: result.pick || null,
+  });
+  if (error) {
+    console.error(`Failed to record refusal for "${candidate.game}" in candidate_refusals:`, error.message);
+  }
+}
+
 async function fetchLiveOddsForGame(gameName, sportKey) {
   const oddsRes = await fetch('https://betcierge-next.vercel.app/api/odds', { method: 'POST' });
   const oddsData = await oddsRes.json();
@@ -407,7 +257,23 @@ async function fetchLiveOddsForGame(gameName, sportKey) {
 
 // ── Submit phase: pick up newly-triggered candidates ────────────────────
 // ── Submit + synchronously research newly-triggered candidates ──────────
+// Function-level time budget for this run of submitNewResearch. Mirrors the
+// route's maxDuration (300s) minus a safety margin reserved for the last
+// candidate's DB writes and clean shutdown. Computed once per run and passed
+// into every runStage2ResearchLoop call — the loop's own hybrid wall-clock
+// guard (MIN_USEFUL_TURN_MS) then honors this same deadline internally.
+const FUNCTION_BUDGET_MS = 300000;
+const SAFETY_MARGIN_MS = 30000;
+// Below this much remaining budget, don't even start a new candidate's loop
+// this run — leave it pending_research for the next cron tick (it re-selects
+// automatically) rather than start a loop that's essentially guaranteed to
+// immediately hit its own no-time-left guard and record a manufactured
+// refusal that was never a real research attempt.
+const MIN_REMAINING_FOR_NEW_CANDIDATE_MS = 30000;
+
 async function submitNewResearch(today) {
+  const fnStart = Date.now();
+  const deadlineTs = fnStart + FUNCTION_BUDGET_MS - SAFETY_MARGIN_MS;
   const now = new Date().toISOString();
 
   const { data: candidates, error } = await supabase
@@ -444,6 +310,16 @@ async function submitNewResearch(today) {
 
   for (const candidate of candidates) {
     try {
+      // Time-budget check FIRST — before touching this candidate at all. If
+      // this run's shared deadline is nearly up, stop here and leave the
+      // rest pending_research for the next tick rather than start (and likely
+      // truncate) another candidate's research loop.
+      const remainingBudgetMs = deadlineTs - Date.now();
+      if (remainingBudgetMs < MIN_REMAINING_FOR_NEW_CANDIDATE_MS) {
+        console.log(`TIME_BUDGET_EXHAUSTED: stopping before "${candidate.game}" — only ${Math.round(remainingBudgetMs / 1000)}s left in this run's budget. Remaining candidates stay pending_research for the next tick.`);
+        break;
+      }
+
       // Deadline check FIRST, before spending anything.
       if (candidate.confirmation_deadline_at && new Date(candidate.confirmation_deadline_at) < new Date()) {
         console.log(`ALREADY_EXPIRED_AT_SUBMIT: "${candidate.game}" — confirmation deadline already passed before research was even started — skipping entirely, not spending a research call.`);
@@ -479,11 +355,12 @@ async function submitNewResearch(today) {
         continue;
       }
 
-      // Fresh odds check passed — run REAL research right now, synchronously.
-      // Bounded by PER_CANDIDATE_TIMEOUT_MS inside callClaudeSync — this
-      // either finishes within that window or fails now, with no
+      // Fresh odds check passed — run the real, code-owned multi-turn
+      // research loop, bounded by this run's shared deadlineTs (the loop
+      // honors it via its own hybrid wall-clock guard). This either reaches
+      // a publish/refuse verdict within budget or refuses outright — no
       // dependency on a batch queue with no completion-time guarantee.
-      const pick = await runStage2Research(candidate, today_display);
+      const result = await runStage2ResearchLoop(candidate, today_display, deadlineTs);
 
       await supabase.from('game_candidates').update({
         research_triggered_actual_at: new Date().toISOString(),
@@ -493,12 +370,21 @@ async function submitNewResearch(today) {
         fresh_total: freshOdds.total,
       }).eq('id', candidate.id);
 
-      // Gate immediately — no more separate poll-later phase for new
-      // candidates. Real deadline re-check happens again in finalize-picks
-      // regardless, same as before.
-      await gateAndFinalizeResearch(candidate, pick, knownGamesToday);
-
-      console.log(`Synchronous research complete for "${candidate.game}".`);
+      if (result.verdict === 'publish') {
+        // Gate immediately — no more separate poll-later phase for new
+        // candidates. Real deadline re-check happens again in finalize-picks
+        // regardless, same as before.
+        await gateAndFinalizeResearch(candidate, result.pick, knownGamesToday);
+        console.log(`Synchronous research complete for "${candidate.game}" — published (turns=${result.diagnostics.turns}, searches=${result.diagnostics.searchesTotal}).`);
+      } else {
+        await recordRefusal(candidate, today, result);
+        await supabase.from('game_candidates').update({
+          research_status: 'researched',
+          status: 'rejected_no_edge',
+          notes: `Research loop refused: ${result.diagnostics.reason || 'unknown'} (turns=${result.diagnostics.turns}, searches=${result.diagnostics.searchesTotal}).`,
+        }).eq('id', candidate.id);
+        console.log(`Synchronous research refused for "${candidate.game}": ${result.diagnostics.reason} (turns=${result.diagnostics.turns}, searches=${result.diagnostics.searchesTotal}).`);
+      }
     } catch (err) {
       const attempts = (candidate.research_attempts || 0) + 1;
       console.error(`Error researching candidate ${candidate.id} (${candidate.game}), attempt ${attempts}/${MAX_RESEARCH_ATTEMPTS}:`, err.message);
