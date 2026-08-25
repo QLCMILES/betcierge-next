@@ -132,20 +132,21 @@ async function buildRecentPicksMemory() {
 // inputs, never that N boxes must light up. Adding a new sport is a new block
 // here, not a rewrite of researchGameFindings.
 //
-// Scoping (Aug 24, Miles): MLB factors are defined and locked. Pitching and
-// offensive quality each weigh season-long and recent form EQUALLY — neither
-// overrides the other, and a disagreement between them is treated as signal to
-// note, not a tie to break by defaulting to one side. (This is a deliberate
-// contrast with Stage 2's deep dive, which is recency-primary — "recent form
-// beats season stats when they disagree." Stage 1 is a stabler screen: the
-// balanced read keeps a strong team on a cold week, or a struggling-but-real
-// team, from being wrongly screened out or forwarded on one window alone.)
-// Football is intentionally NOT built here yet — its factors (trenches, QB
-// status, unit grades, pace) are a genuinely different model and get their own
-// methodology session; until then football falls through to the generic block
-// rather than shipping a guessed screen.
+// Scoping: the map keys on sport_key (canonical Odds API identifier), so the
+// entries below are baseball_mlb / americanfootball_nfl / americanfootball_ncaaf.
+// MLB factors are Miles's (Aug 20/24); football factors were drafted and locked
+// Aug 25 from Miles's knowledge + research into what sharp NFL/college
+// handicappers weight. Core framing: MLB and college are more ABSOLUTE (stack up
+// the talent / true strength); NFL is RELATIONAL (talent compresses among pros,
+// so the edge is trench/scheme matchup — how the two teams interact — because
+// lines are set on team-level data and miss unit-vs-unit mismatches). MLB
+// pitching/offense weigh season and recent form EQUALLY (deliberate contrast
+// with Stage 2's recency-primary deep dive). NFL five are REGULAR-SEASON tuned —
+// preseason is a different screen (starters barely play, soft lines) and is not
+// specifically handled here yet. Adding a sport is a new block keyed by its
+// sport_key, NOT a rewrite of researchGameFindings.
 const SPORT_SCREEN_CRITERIA = {
-  MLB: `MLB SCREENING FACTORS — you MUST genuinely assess EACH of the following before concluding, using real searched data (not reputation or memory). These are the factors that actually decide a baseball pick; a verdict that skipped any of them is not a real evaluation:
+  baseball_mlb: `MLB SCREENING FACTORS — you MUST genuinely assess EACH of the following before concluding, using real searched data (not reputation or memory). These are the factors that actually decide a baseball pick; a verdict that skipped any of them is not a real evaluation:
 
 1. STARTING PITCHERS — Confirm who is actually starting for both teams today (dated source). If today's starters aren't confirmed yet, note that; do not assume from the rotation.
 2. PITCHING QUALITY — How good each starter actually is. Weigh season-long effectiveness (ERA, WHIP, the full-season body of work) and recent form (last 3 starts) EQUALLY — neither overrides the other. When the two disagree, that tension is itself information: note it rather than defaulting to one.
@@ -156,6 +157,26 @@ const SPORT_SCREEN_CRITERIA = {
 FOR TOTALS SPECIFICALLY: this system has a real, measured problem — totals proposed on pitching/bullpen narratives alone, without weighing both teams' actual offensive quality, have underperformed badly. If you land on a total here, you MUST have searched and weighed BOTH teams' real offensive quality (per factor 4 above), not just the pitching matchup.
 
 Weigh these factors together holistically — do NOT require a fixed number of them to align. A single dominant factor (e.g. a genuine ace-vs-cold-lineup mismatch) can be a real edge on its own; several mild factors that all merely lean the same way often are not. The question is always: taken together, do these point to a real edge the market has not already priced?`,
+
+  americanfootball_nfl: `NFL SCREENING FACTORS — you MUST genuinely assess EACH of the following before concluding, using real searched data (not reputation or memory). NFL is a RELATIONAL sport: because every player is a pro, raw talent compresses and the edge lives in MATCHUP and SCHEME — how these two specific teams interact, not their ratings in isolation. A verdict that only stacked up abstract team quality is not a real evaluation:
+
+1. UNIT QUALITY (POWER RATINGS) — Rank both teams by unit (O-line, D-line, skill positions, secondary) and build your own read; records lie. This is the absolute-quality baseline BEFORE matchup adjusts it.
+2. TRENCH & SCHEME MATCHUP — THE DISRUPTION SPINE. Whose line of scrimmage and scheme takes away what the opponent wants to do? Assess specifically: (a) O-line pass protection vs. the opposing pass rush — can they keep the QB clean, or does pressure arrive before plays develop; (b) run blocking vs. run defense — can they impose the run or get stuffed on early downs and short yardage; (c) coverage vs. receiver personnel — a top corner erasing a No. 1 receiver. THE BETTING EDGE: sportsbook lines are set on TEAM-level data, so a specific unit-vs-unit or scheme mismatch the team number does not capture is exactly where value lives. A lesser team that wins the trenches or takes away the opponent's identity can cover or win outright.
+3. QB RELATIVE TO THE DEFENSE HE FACES — QB is the biggest single lever, but frame it relationally: THIS QB against THIS defense's ability to handle his type (mobile QB vs. a contain-weak front; timing passer vs. a fast pass rush; pocket passer vs. heavy pressure). Include QB and key O-line / pass-rush injuries — weight the LESS-OBVIOUS ones the market has not priced, since headline QB injuries are already baked into the line.
+4. SITUATIONAL: REST, TRAVEL, SCHEDULE, MOTIVATION — short weeks / Thursday games, bye-week advantage, cross-country and time-zone travel, and letdown/lookahead trap spots. These are absolute, not relational — real regardless of matchup.
+5. LINE VALUE & ENVIRONMENT — where the line opened vs. now, where sharp money points, and whether value is still on the board (CLV mindset); plus weather and expected game script/pace that amplify or neutralize the trench/scheme edge from factor 2.
+
+Weigh these factors together holistically — do NOT require a fixed number of them to align. A single dominant factor (e.g. a decisive trench mismatch that takes away the opponent's whole identity) can be a real edge on its own; several mild factors that all merely lean the same way often are not. The question is always: taken together, do these point to a real edge the market has not already priced?`,
+
+  americanfootball_ncaaf: `COLLEGE FOOTBALL SCREENING FACTORS — you MUST genuinely assess EACH of the following before concluding, using real searched data (not reputation or memory). Unlike the NFL, college talent gaps are ENORMOUS and often unbridgeable, so the college edge is more about the REALITY of the talent gap and true team strength than about scheme disruption. A verdict that skipped any of these is not a real evaluation:
+
+1. TRUE TEAM STRENGTH vs. RECORD (POWER RATINGS + SCHEDULE CONTEXT) — Who is actually better, adjusted for wildly unbalanced schedules? Records lie hard in college: a 7-2 team can be worse than a 5-4 team depending on who they have actually played. You cannot screen a college game without accounting for schedule strength. This is the spine.
+2. TALENT-GAP REALITY & THE TRENCHES — the "is the underdog LIVE or DEAD" filter. How wide is the real athletic gap, especially at the line of scrimmage? Some big spreads are big because the gap is genuinely UNBRIDGEABLE (e.g. an FCS or bottom-tier team vs. a blue-blood — no scheme or motivation overcomes that athletic mismatch = a dead dog, do not back it). Others are big because the market is OVERRATING a name-brand favorite (= a live dog with real cover/upset value). Distinguishing the two is the core college edge.
+3. QB PLAY — arguably the single biggest factor in college. Assess the starter's quality and type (mobile vs. pocket), experience and volatility (freshman/transfer uncertainty), and how the opposing defense handles that specific QB type.
+4. SITUATIONAL & MOTIVATIONAL SPOTS — active/motivated underdogs (revenge, coming off a blowout loss, a Group-of-Five team with a signature-win shot against a Power program), trap favorites looking ahead to a bigger game, rivalry intensity, and hostile-environment/travel — which matters MORE in college than any other sport, especially for young teams that do not travel well.
+5. LINE VALUE & PACE — where the line opened vs. now and whether value is still on the board (CLV mindset); and pace as a totals INPUT (methodical ~60-play offenses vs. up-tempo 90+-play offenses create real totals volatility) WHEN a total is the natural bet — but do NOT go hunting for totals and do NOT apply any built-in lean toward overs; evaluate a total only on its own merits if the game genuinely points there.
+
+Weigh these factors together holistically — do NOT require a fixed number of them to align. A single dominant factor (e.g. a genuinely unbridgeable talent/trench gap, or a clearly overrated name-brand favorite) can be a real edge on its own; several mild factors that all merely lean the same way often are not. The question is always: taken together, do these point to a real edge the market has not already priced?`,
 };
 
 // The generic block preserves the pre-Aug-24 Layer 1 research instruction
@@ -174,9 +195,20 @@ async function researchGameFindings(game, today_display, recentPicksMemory) {
     game.total ? `total: ${game.total}` : null,
   ].filter(Boolean).join(' | ');
 
-  // Select the sport-specific screening factors; fall back to the generic
-  // block for any sport not yet defined in SPORT_SCREEN_CRITERIA.
-  const screenCriteria = SPORT_SCREEN_CRITERIA[game.sport] || GENERIC_SCREEN_CRITERIA;
+  // Select the sport-specific screening factors, keyed on the STABLE
+  // sport_key (the canonical Odds API identifier — baseball_mlb,
+  // americanfootball_nfl, americanfootball_ncaaf, etc.) rather than the
+  // fragile human-readable `sport` display string, which the feed labels
+  // inconsistently ('MLB' but 'La Liga - Spain'). Keying on sport_key removes
+  // a whole class of silent-miss failure as sports are added. sport_key is
+  // verified non-null on every candidate row, and morning-trigger always
+  // writes it alongside sport from the same feed record — so a game with a
+  // usable sport_key is guaranteed. If it were ever somehow absent, the game
+  // degrades SAFELY to the generic block (still a real evaluation, just not
+  // sport-tailored) — no display-string fallback, deliberately, to avoid
+  // reintroducing the display-string fragility this re-keying removed.
+  const screenCriteria =
+    SPORT_SCREEN_CRITERIA[game.sport_key] || GENERIC_SCREEN_CRITERIA;
 
   const system = `You are Hunter, an elite sports betting analyst. Today is ${today_display}.
 
@@ -349,6 +381,7 @@ async function runEvaluateScheduler() {
     const game = {
       game: row.game,
       sport: row.sport,
+      sport_key: row.sport_key,
       moneyline: row.original_moneyline,
       spread: row.original_spread,
       total: row.original_total,
