@@ -2335,6 +2335,17 @@ const [session, setSession] = useState(null);
 const [authLoading, setAuthLoading] = useState(true);
 const [showLogin, setShowLogin] = useState(false);
 const userKey = session?.user?.id ?? null;
+  // Full-commit to the new onboarding flow: a logged-in user with no name
+  // is a new/mid-flow user — send them to /onboarding, whose own resume
+  // logic (incl. the backward-compat guard for the 11 existing old-flow
+  // users) decides where they land. In a useEffect, never in render, to
+  // avoid "update during render". Existing users have names, so this never
+  // fires for them — they go straight to the app as before.
+  useEffect(() => {
+    if (!authLoading && session && !user?.name) {
+      window.location.href = "/onboarding";
+    }
+  }, [authLoading, session, user]);
 
 useEffect(() => {
   supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -2633,9 +2644,9 @@ if (showLogin) return <LoginScreen onAuth={(s) => { setSession(s); setShowLogin(
 if (!session) {
   const hasFoundingPrice = typeof window !== 'undefined' && localStorage.getItem('founding_price_id');
   if (showLogin || hasFoundingPrice) return <LoginScreen onAuth={(s) => { setSession(s); setShowLogin(false); }} />;
-  return <Landing onGetStarted={() => setShowLogin(true)} />;
+  return <Landing onGetStarted={() => { window.location.href = "/onboarding"; }} onSignIn={() => setShowLogin(true)} />;
 }
-if (!user?.name) return <Onboarding onComplete={handleComplete} />;
+if (!user?.name) return null; // new users are redirected to /onboarding by the effect above
 
   return (
     <div style={{ background: "#0a0a0f", minHeight: "100vh", maxWidth: 430, margin: "0 auto", fontFamily: "'Outfit',sans-serif", paddingBottom: 80 }}>

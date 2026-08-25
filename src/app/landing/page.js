@@ -37,7 +37,7 @@ const faqs = [
   { q: "What do free accounts get?", a: "Our record is fully public and transparent — anyone can see it, no account needed. Our premium research, including full daily picks and Lean Machine, is reserved for subscribers." },
 ];
 
-export default function Landing({ onGetStarted }) {
+export default function Landing({ onGetStarted, onSignIn }) {
   const [openFaq, setOpenFaq] = useState(null);
   const [picks, setPicks] = useState([]);
   const [record, setRecord] = useState({ wins: 0, losses: 0, units: 0, roi: 0, winRate: 0 });
@@ -104,7 +104,7 @@ export default function Landing({ onGetStarted }) {
       {/* Nav */}
       <nav style={{ padding: "16px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 900, margin: "0 auto" }}>
         <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, fontWeight: 700, color: GOLD, letterSpacing: 2 }}>BETCIERGE</div>
-        <button onClick={go} style={{ background: "none", border: "1px solid #1e1e2e", color: LIGHT, padding: "8px 18px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>Sign in</button>
+                <button onClick={() => onSignIn && onSignIn()} style={{ background: "none", border: "1px solid #1e1e2e", color: LIGHT, padding: "8px 18px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>Sign in</button>
       </nav>
 
       {/* Hero */}
