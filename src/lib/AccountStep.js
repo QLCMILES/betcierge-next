@@ -154,7 +154,7 @@ export default function AccountStep({ onAccountCreated, onSwitchToSignIn }) {
         {error && <div style={S.error}>{error}</div>}
 
         <label style={S.label}>Full name</label>
-        <input style={S.input} placeholder="Miles Davis" value={name} onChange={e => setName(e.target.value)} />
+        <input style={S.input} placeholder="Full name" value={name} onChange={e => setName(e.target.value)} />
 
         <label style={S.label}>Email</label>
         <input style={S.input} type="email" placeholder="you@email.com" value={email} onChange={e => setEmail(e.target.value)} />
