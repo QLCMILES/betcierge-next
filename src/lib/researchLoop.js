@@ -17,6 +17,7 @@
 
 import {
   getRequiredSlotKeys,
+  getTurn1PriorityKeys,
   buildRequirementInstructions,
   evaluateEvidence,
   REQUIREMENT_META,
@@ -29,7 +30,7 @@ const MAX_OUTPUT_TOKENS = 16000;
 export const MAX_TURNS = 3;
 export const MIN_SEARCH_FLOOR = 5;   // anti-premature-stop backstop
 export const MAX_SEARCHES = 15;      // total across all turns; bounds cost
-const PER_TURN_CEILING_MS = 90000;   // hybrid timeout: per-turn cap
+const PER_TURN_CEILING_MS = 120000;  // hybrid timeout: per-turn cap (raised from 90s Aug 24 — secondary safety margin; the primary fix is the turn-1 scoping above)
 const MIN_USEFUL_TURN_MS = 20000;    // don't start a turn we can't safely finish
 const MIN_SEARCHES_PER_GAME = 10;    // legacy fallback prompt floor (unmapped markets)
 
@@ -54,15 +55,30 @@ export function cleanJson(text) {
 function buildStage2SystemPrompt(candidate, today_display) {
   const sportKey = candidate.sport;
   const betType = candidate.bet_type;
-  const requirementBlock = buildRequirementInstructions(sportKey, betType);
   const requiredSlots = getRequiredSlotKeys(sportKey, betType);
 
-  const researchDirective = requirementBlock && requirementBlock.trim().length > 0
-    ? `RESEARCH REQUIREMENTS — you MUST establish each of the following for this ${betType} bet. For each, search until you can report it as supported, unavailable, or conflicting — do not skip any. Items marked [REQUIRED — will be verified against official data] are cross-checked against official sources after you respond; do not claim confirmation you did not find.
+  // Turn-1 scoping (Aug 24): the initial call only asks for the turn-1
+  // priority subset, not every required item. Root cause it fixes: staging
+  // tests (2/2, MLB moneyline) showed the initial call timing out at 90s
+  // with ZERO searches completed when asked to establish all 8 baseline
+  // items in one non-streaming call — the ask was too big for one turn.
+  // Anything not covered here is picked up by buildContinuationPrompt in
+  // turn 2+, which already requests exactly the unresolved slots — the
+  // completion/critical gate (getRequiredSlotKeys, evaluateEvidence) is
+  // unchanged and still checks against the FULL required set regardless of
+  // what turn 1 was scoped to. Falls back to the full set if a sport/market
+  // has no turn1-flagged keys configured yet (old behavior preserved).
+  const turn1KeysRaw = getTurn1PriorityKeys(sportKey, betType);
+  const turn1Keys = turn1KeysRaw.length > 0 ? turn1KeysRaw : requiredSlots;
+  const turn1Block = buildRequirementInstructions(sportKey, betType, turn1Keys);
+  const deferredCount = requiredSlots.length - turn1Keys.length;
 
-${requirementBlock}
+  const researchDirective = turn1Block && turn1Block.trim().length > 0
+    ? `RESEARCH REQUIREMENTS — FIRST PASS. Establish each of the following for this ${betType} bet now. For each, search until you can report it as supported, unavailable, or conflicting — do not skip any of the items below. Items marked [REQUIRED — will be verified against official data] are cross-checked against official sources after you respond; do not claim confirmation you did not find.
 
-After researching, report an "evidence" entry for each numbered requirement above (except any marked supplementary), stating what you found. This is how your research depth is measured — by coverage of these requirements, not by search count alone.`
+${turn1Block}
+${deferredCount > 0 ? `\nThis is a first pass, not the complete requirement set for this bet — ${deferredCount} additional item${deferredCount === 1 ? '' : 's'} exist and will be requested in a follow-up turn if still needed after you report back. Do not try to cover them now; focus your searches on the items listed above and report them thoroughly.\n` : ''}
+After researching, report an "evidence" entry for each item listed above. This is how your research depth is measured for this turn — by real coverage of these items, not by search count alone.`
     : `Perform at least ${MIN_SEARCHES_PER_GAME} distinct web searches before finalizing your analysis. Cover: confirmed participants/starters, recent form, injury reports, matchup history, and any line movement or sharp money signals you can find.`;
 
   const evidenceSlotList = requiredSlots.map(k => `"${k}"`).join(', ');

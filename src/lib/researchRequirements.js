@@ -33,14 +33,17 @@ export const REQUIREMENT_META = {
     label: 'Both starting pitchers confirmed',
     instruction: "Confirm BOTH starting pitchers for this game via a dated source today (e.g. MLB.com probable pitchers). State each by name with the source.",
     hardGate: true, // verified in code against MLB Stats API; model claim contradicting the API = reject
+    turn1: true, // Aug 24: always establish the hard gate first — if this can't be confirmed, nothing else matters
   },
   starter_recent_form_both: {
     label: 'Both starters recent form',
     instruction: "Establish each starter's RECENT form — last 3 starts (ERA, hits, runs, command), NOT season averages. Recent form beats season stats when they disagree.",
+    turn1: true, // Aug 24: pairs with starting_pitching_matchup_edge — same searches largely cover both
   },
   starting_pitching_matchup_edge: {
     label: 'Starting pitching matchup edge',
     instruction: "Compare the two starters against EACH OTHER and state who has the edge tonight and by how much — this is the pitching-mismatch assessment (not head-to-head history; they don't face each other). Base it on the recent-form and stuff of each arm, not season reputation.",
+    turn1: true, // Aug 24: the core skill-edge assessment; depends on starter_recent_form_both, do together
   },
   offense_recent_form_both: {
     label: "Both teams' recent offensive form",
@@ -57,6 +60,7 @@ export const REQUIREMENT_META = {
   line_movement_and_price: {
     label: 'Line movement + price',
     instruction: "Check line movement (open vs current) and where sharp money points. HARD PRICE RULE: never recommend any pick — ML, run line, or total — at -200 or worse; take the alternate side/line or pass.",
+    turn1: true, // Aug 24: fast to check, and decides viability — no point researching deeper on an unbettable price
   },
   material_conditions: {
     label: 'Material conditions (weather/injury/other)',
@@ -351,11 +355,35 @@ export function getRequiredSlotKeys(sport, betType) {
   return getRequirementKeys(sport, betType).filter(k => !supplementary.has(k));
 }
 
+// Turn-1 priority subset (Aug 24): requirement keys the INITIAL research
+// call should focus on, so a single turn's real-world latency (search +
+// read, server-side, inside one non-streaming call) stays realistic. This
+// does NOT change what's required to publish — getRequiredSlotKeys() and the
+// critical/gating logic are untouched. It only changes what turn 1 is asked
+// to cover; anything not flagged here is picked up by the existing
+// continuation-prompt mechanism (buildContinuationPrompt) in turn 2+, which
+// already requests exactly the unresolved slots. Root cause: staging tests
+// (2/2) on MLB moneyline showed turn 1 timing out at 90s with ZERO searches
+// completed when asked to establish all 8 baseline items in one non-
+// streaming call — the ask was too big for one turn, not a wiring bug.
+// A requirement with no `turn1: true` entries for its sport/market (e.g. a
+// future sport not yet tuned) falls back to the full set — see
+// getTurn1PriorityKeys()'s caller in researchLoop.js.
+export function getTurn1PriorityKeys(sport, betType) {
+  return getRequirementKeys(sport, betType).filter(
+    k => REQUIREMENT_META[k]?.turn1 === true
+  );
+}
+
 // Composes the numbered, human-readable research instructions for the
 // selected requirement set, for injection into the Stage 2 prompt. Tags
 // hard-gate and supplementary items inline. Unknown keys skipped defensively.
-export function buildRequirementInstructions(sport, betType) {
-  const keys = getRequirementKeys(sport, betType);
+// Optional `onlyKeys`: restrict to this subset (e.g. the turn-1 priority
+// list) while preserving the requirement set's natural order. Omit for the
+// full set (existing behavior, unchanged for any other caller).
+export function buildRequirementInstructions(sport, betType, onlyKeys) {
+  const allKeys = getRequirementKeys(sport, betType);
+  const keys = Array.isArray(onlyKeys) ? allKeys.filter(k => onlyKeys.includes(k)) : allKeys;
   const lines = [];
   let n = 1;
   for (const key of keys) {
