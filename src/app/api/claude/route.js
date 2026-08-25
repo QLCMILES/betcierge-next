@@ -2,13 +2,69 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
-  process.env.SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
+// Free-tier users get this many Hunter chat messages per day (ET). Paid and
+// trialing users are unlimited. Enforced server-side so it can't be bypassed
+// from the browser. Tune here only.
+const FREE_DAILY_MESSAGE_LIMIT = 3;
+
+// Mirror of isEntitled() in lib/pricing.js — kept in sync deliberately. Answers
+// "does this user currently have paid access (active trial or subscription)?"
+function isEntitledServer(profile) {
+  if (!profile) return false;
+  if (profile.trial_ends_at && new Date(profile.trial_ends_at) > new Date()) return true;
+  const status = (profile.subscription_status || '').toLowerCase();
+  return status === 'active' || status === 'trialing';
+}
 
 export async function POST(request) {
   try {
     const body = await request.json();
+
+    // Only Hunter chat sends enforceLimit. Other internal callers (e.g. bet-slip
+    // parsing) omit it and pass straight through, uncounted and unblocked.
+    if (body.enforceLimit) {
+      const authHeader = request.headers.get('authorization') || '';
+      const token = authHeader.replace('Bearer ', '');
+      if (!token) {
+        return Response.json({ error: 'Missing auth token' }, { status: 401 });
+      }
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) {
+        return Response.json({ error: 'Invalid session' }, { status: 401 });
+      }
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('trial_ends_at, subscription_status')
+        .eq('user_id', user.id)
+        .single();
+
+      // Free-tier users are capped; entitled users skip the check entirely.
+      if (!isEntitledServer(profile)) {
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+        const { count } = await supabase
+          .from('user_conversations')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('role', 'user')
+          .gte('created_at', `${today}T00:00:00`)
+          .lte('created_at', `${today}T23:59:59`);
+        // The browser saves the user's message BEFORE calling this route, so the
+        // current message is already counted. Allowing 3 answered messages means
+        // blocking once the saved count exceeds 3 (i.e. the 4th attempt).
+        if ((count || 0) > FREE_DAILY_MESSAGE_LIMIT) {
+          return Response.json({ limitReached: true });
+        }
+      }
+    }
+
+    // Strip our internal flag before forwarding to Anthropic — it's not a valid
+    // Messages API field.
+    const { enforceLimit, ...anthropicBody } = body;
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -16,7 +72,7 @@ export async function POST(request) {
         'x-api-key': process.env.ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(anthropicBody),
     });
     const data = await response.json();
     return Response.json(data, { status: response.status });

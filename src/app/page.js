@@ -60,7 +60,7 @@ const currentTimeDisplay = () => {
 };
 
 // ── API Call Helper ────────────────────────────────────────────────────────
-const callClaude = async (messages, system, useSearch = false, imageBase64 = null, maxTokens = 4000) => {
+const callClaude = async (messages, system, useSearch = false, imageBase64 = null, maxTokens = 4000, _onChunk = null, accessToken = null, enforceLimit = false) => {
   const body = {
     model: "claude-sonnet-4-6",
     max_tokens: maxTokens,
@@ -68,12 +68,16 @@ const callClaude = async (messages, system, useSearch = false, imageBase64 = nul
     messages,
   };
   if (useSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
+  if (enforceLimit) body.enforceLimit = true;
+  const headers = { "Content-Type": "application/json" };
+  if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
   const response = await fetch("/api/claude", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   });
   const data = await response.json();
+  if (data.limitReached) return { limitReached: true };
   const text = (data.content || []).filter(c => c.type === "text").map(c => c.text).join("");
   return { text, raw: data };
 };
@@ -709,7 +713,7 @@ gameTime: leg.gameTime || new Date(legMatch.commence_time).toLocaleTimeString('e
 }
 
 // ── Hunter Chat ────────────────────────────────────────────────────────────
-function HunterChat({ user, bets, userKey }) {
+function HunterChat({ user, bets, userKey, onNav }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1031,9 +1035,17 @@ You remember this user's history from previous conversations.${todayPicksContext
             updated[updated.length - 1] = { role: "assistant", text: updated[updated.length - 1].text + chunk };
             return updated;
           });
-        }
+        },
+        (await supabase.auth.getSession()).data.session?.access_token || null,
+        true
       );
 
+      if (result.limitReached) {
+        const wallText = `That's your three for today, ${user.name.split(' ')[0]}. I'm just getting warmed up though. Unlock unlimited and I'm on call every hour: every game, every line, whenever you need me. Ready to go all in?`;
+        setMessages(m => [...m, { role: "assistant", text: wallText, isUpgradeWall: true }]);
+        setLoading(false);
+        return;
+      }
       const assistantMsg = { role: "assistant", text: result.text };
 setMessages(m => [...m, assistantMsg]);
 
@@ -1085,6 +1097,11 @@ return (
                   })}
                 </div>
               ) : m.text}
+              {m.isUpgradeWall && (
+                <button onClick={() => onNav('upgrade')} style={{ marginTop: 12, width: '100%', background: '#f5a623', color: '#000', fontWeight: 700, fontSize: 14, padding: '12px', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
+                  Unlock Unlimited Hunter →
+                </button>
+              )}
             </div>
           ))}
         {loading && <div style={{ maxWidth: "88%", padding: "10px 14px", borderRadius: 16, fontSize: 13, background: "#1e1e2e", color: "#555", fontStyle: "italic", alignSelf: "flex-start" }}>Hunter is thinking...</div>}
@@ -1529,7 +1546,7 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
       {/* Hunter Chat — Front and Center */}
       <div style={{ marginBottom: 8 }}>
         <div style={S.secTitle}>Talk to Hunter 🤖</div>
-        <HunterChat user={user} bets={bets} userKey={userKey} />
+        <HunterChat user={user} bets={bets} userKey={userKey} onNav={onNav} />
       </div>
     </div>
   );
