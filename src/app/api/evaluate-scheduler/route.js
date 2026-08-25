@@ -121,6 +121,51 @@ async function buildRecentPicksMemory() {
   return summary;
 }
 
+// ── Layer 1 per-sport screening criteria ─────────────────────────────
+// Stage 1 can only forward the BEST candidates if it screens on the factors
+// that actually decide a pick for that sport — a generic "is there an edge"
+// pass selects on vibes. Each sport declares the handicapping factors the
+// evaluator MUST genuinely assess before concluding, plus any sport-specific
+// guardrails. The factors are mandatory INPUTS, not a scoring formula: the
+// worth-pursuing bar stays holistic (a real, unpriced edge; passing is the
+// default) — the factors only guarantee the judgment is made on the right
+// inputs, never that N boxes must light up. Adding a new sport is a new block
+// here, not a rewrite of researchGameFindings.
+//
+// Scoping (Aug 24, Miles): MLB factors are defined and locked. Pitching and
+// offensive quality each weigh season-long and recent form EQUALLY — neither
+// overrides the other, and a disagreement between them is treated as signal to
+// note, not a tie to break by defaulting to one side. (This is a deliberate
+// contrast with Stage 2's deep dive, which is recency-primary — "recent form
+// beats season stats when they disagree." Stage 1 is a stabler screen: the
+// balanced read keeps a strong team on a cold week, or a struggling-but-real
+// team, from being wrongly screened out or forwarded on one window alone.)
+// Football is intentionally NOT built here yet — its factors (trenches, QB
+// status, unit grades, pace) are a genuinely different model and get their own
+// methodology session; until then football falls through to the generic block
+// rather than shipping a guessed screen.
+const SPORT_SCREEN_CRITERIA = {
+  MLB: `MLB SCREENING FACTORS — you MUST genuinely assess EACH of the following before concluding, using real searched data (not reputation or memory). These are the factors that actually decide a baseball pick; a verdict that skipped any of them is not a real evaluation:
+
+1. STARTING PITCHERS — Confirm who is actually starting for both teams today (dated source). If today's starters aren't confirmed yet, note that; do not assume from the rotation.
+2. PITCHING QUALITY — How good each starter actually is. Weigh season-long effectiveness (ERA, WHIP, the full-season body of work) and recent form (last 3 starts) EQUALLY — neither overrides the other. When the two disagree, that tension is itself information: note it rather than defaulting to one.
+3. STARTING PITCHING EDGE — Weigh the two starters against each other: is there a genuine mismatch tonight, and how big? This is the single biggest driver of a baseball edge.
+4. OFFENSIVE QUALITY — How good each team's offense is. Weigh season-long output (the full-year quality of the lineup) and the recent window (last 7-10 days, hot/cold right now) EQUALLY — neither overrides the other. When they disagree, note the tension rather than defaulting to one.
+5. LINE MOVEMENT & PRICE — Where the line opened vs. now and where money is pointing. A real edge the market has ALREADY moved to price in is not an edge worth forwarding — the value has to still be on the board.
+
+FOR TOTALS SPECIFICALLY: this system has a real, measured problem — totals proposed on pitching/bullpen narratives alone, without weighing both teams' actual offensive quality, have underperformed badly. If you land on a total here, you MUST have searched and weighed BOTH teams' real offensive quality (per factor 4 above), not just the pitching matchup.
+
+Weigh these factors together holistically — do NOT require a fixed number of them to align. A single dominant factor (e.g. a genuine ace-vs-cold-lineup mismatch) can be a real edge on its own; several mild factors that all merely lean the same way often are not. The question is always: taken together, do these point to a real edge the market has not already priced?`,
+};
+
+// The generic block preserves the pre-Aug-24 Layer 1 research instruction
+// verbatim, for any sport without its own criteria yet (soccer, MMA, and —
+// deliberately, for now — football). Keeping the exact prior wording means no
+// current sport's screening behavior changes as a side effect of this MLB work.
+const GENERIC_SCREEN_CRITERIA = `Run 3-5 targeted web searches covering whatever's most relevant to this specific game (confirmed starters/lineups, injuries, recent form, line movement, matchup history — as applicable). This is a fast, real check, not the full deep-dive research that happens later for whatever you flag here as worth pursuing.
+
+FOR TOTALS SPECIFICALLY: this system has a real, measured problem — totals proposed on pitching/bullpen narratives alone, without weighing both teams' actual offensive quality, have underperformed badly. If you land on a total here, you MUST have searched and weighed BOTH teams' real recent offensive output, not just the pitching matchup.`;
+
 // ── Layer 1: pure research, no format constraint ─────────────────────
 async function researchGameFindings(game, today_display, recentPicksMemory) {
   const linesSummary = [
@@ -128,6 +173,10 @@ async function researchGameFindings(game, today_display, recentPicksMemory) {
     game.spread ? `spread: ${game.spread}` : null,
     game.total ? `total: ${game.total}` : null,
   ].filter(Boolean).join(' | ');
+
+  // Select the sport-specific screening factors; fall back to the generic
+  // block for any sport not yet defined in SPORT_SCREEN_CRITERIA.
+  const screenCriteria = SPORT_SCREEN_CRITERIA[game.sport] || GENERIC_SCREEN_CRITERIA;
 
   const system = `You are Hunter, an elite sports betting analyst. Today is ${today_display}.
 
@@ -137,9 +186,7 @@ Game: ${game.game}
 Sport: ${game.sport}
 Current lines: ${linesSummary || 'not available'}
 
-Run 3-5 targeted web searches covering whatever's most relevant to this specific game (confirmed starters/lineups, injuries, recent form, line movement, matchup history — as applicable). This is a fast, real check, not the full deep-dive research that happens later for whatever you flag here as worth pursuing.
-
-FOR TOTALS SPECIFICALLY: this system has a real, measured problem — totals proposed on pitching/bullpen narratives alone, without weighing both teams' actual offensive quality, have underperformed badly. If you land on a total here, you MUST have searched and weighed BOTH teams' real recent offensive output, not just the pitching matchup.
+${screenCriteria}
 
 Be honest and selective. Passing on this game is the correct, default outcome — do not manufacture an angle that isn't really there just to have something to report. Most individual games will NOT have a real edge today.
 
