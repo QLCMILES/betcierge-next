@@ -1,38 +1,36 @@
 "use client";
 import { useState } from "react";
-import { signInWithEmail, signUpWithEmail, signInWithGoogle } from "./supabase";
+import { useRouter } from "next/navigation";
+import { signInWithEmail, signInWithGoogle } from "./supabase";
 
+// Sign-in ONLY. Per BETC_ONBOARDING_ARCHITECTURE_DECISION.md (Option B),
+// new-user account creation now lives in the onboarding flow (Screen 1 /
+// AccountStep), not here. This screen is for RETURNING users:
+//   - email/password sign-in
+//   - Google sign-in (returning Google users)
+//   - a link sending brand-new users to /onboarding to create an account
+//
+// The old signup tab + signUpWithEmail path was removed deliberately — it
+// was the source of the "enter name/email twice" bug (signup collected
+// email, then onboarding re-collected it). Account creation happens in one
+// place now.
 export default function LoginScreen({ onAuth }) {
-  const [mode, setMode] = useState("signin"); // "signin" | "signup"
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [confirmMsg, setConfirmMsg] = useState("");
 
   const handleSubmit = async () => {
     setError("");
-    setConfirmMsg("");
     if (!email.trim() || !password.trim()) {
       setError("Please enter your email and password.");
       return;
     }
     setLoading(true);
-    if (mode === "signup") {
-      const { data, error: err } = await signUpWithEmail(email.trim(), password);
-      if (err) { setError(err.message); setLoading(false); return; }
-      // Supabase may require email confirmation depending on project settings
-      if (data?.user && !data.session) {
-        setConfirmMsg("Check your email to confirm your account, then sign in.");
-        setLoading(false);
-        return;
-      }
-      if (data?.session) onAuth(data.session);
-    } else {
-      const { data, error: err } = await signInWithEmail(email.trim(), password);
-      if (err) { setError(err.message); setLoading(false); return; }
-      if (data?.session) onAuth(data.session);
-    }
+    const { data, error: err } = await signInWithEmail(email.trim(), password);
+    if (err) { setError(err.message); setLoading(false); return; }
+    if (data?.session) onAuth(data.session);
     setLoading(false);
   };
 
@@ -43,118 +41,20 @@ export default function LoginScreen({ onAuth }) {
   };
 
   const S = {
-    wrap: {
-      minHeight: "100vh",
-      background: "#0a0a0a",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontFamily: "'Outfit', sans-serif",
-      padding: 20,
-    },
-    card: {
-      background: "#111",
-      border: "1px solid #222",
-      borderRadius: 16,
-      padding: "40px 36px",
-      width: "100%",
-      maxWidth: 420,
-    },
-    logo: {
-      fontSize: 28,
-      fontWeight: 700,
-      color: "#fff",
-      letterSpacing: 2,
-      marginBottom: 4,
-      fontFamily: "'Cormorant Garamond', serif",
-    },
-    tagline: {
-      fontSize: 13,
-      color: "#666",
-      marginBottom: 32,
-    },
-    tabs: {
-      display: "flex",
-      marginBottom: 28,
-      background: "#1a1a1a",
-      borderRadius: 10,
-      padding: 4,
-    },
-    tab: (active) => ({
-      flex: 1,
-      padding: "8px 0",
-      border: "none",
-      borderRadius: 8,
-      cursor: "pointer",
-      fontSize: 14,
-      fontWeight: 500,
-      background: active ? "#222" : "transparent",
-      color: active ? "#fff" : "#555",
-      transition: "all 0.15s",
-    }),
-    input: {
-      width: "100%",
-      background: "#1a1a1a",
-      border: "1px solid #2a2a2a",
-      borderRadius: 10,
-      padding: "12px 14px",
-      color: "#fff",
-      fontSize: 14,
-      marginBottom: 12,
-      outline: "none",
-      boxSizing: "border-box",
-    },
-    btn: {
-      width: "100%",
-      padding: "13px 0",
-      borderRadius: 10,
-      border: "none",
-      cursor: "pointer",
-      fontSize: 15,
-      fontWeight: 600,
-      marginBottom: 12,
-      transition: "opacity 0.15s",
-    },
-    primaryBtn: {
-      background: "#e8c97a",
-      color: "#000",
-    },
-    googleBtn: {
-      background: "#1a1a1a",
-      color: "#fff",
-      border: "1px solid #2a2a2a",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 10,
-    },
-    divider: {
-      display: "flex",
-      alignItems: "center",
-      gap: 12,
-      margin: "4px 0 12px",
-      color: "#444",
-      fontSize: 12,
-    },
+    wrap: { minHeight: "100vh", background: "#0a0a0a", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Outfit', sans-serif", padding: 20 },
+    card: { background: "#111", border: "1px solid #222", borderRadius: 16, padding: "40px 36px", width: "100%", maxWidth: 420 },
+    logo: { fontSize: 28, fontWeight: 700, color: "#fff", letterSpacing: 2, marginBottom: 4, fontFamily: "'Cormorant Garamond', serif" },
+    tagline: { fontSize: 13, color: "#666", marginBottom: 28 },
+    heading: { fontSize: 16, fontWeight: 600, color: "#fff", marginBottom: 20 },
+    input: { width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 14, marginBottom: 12, outline: "none", boxSizing: "border-box" },
+    btn: { width: "100%", padding: "13px 0", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 15, fontWeight: 600, marginBottom: 12, transition: "opacity 0.15s" },
+    primaryBtn: { background: "#e8c97a", color: "#000" },
+    googleBtn: { background: "#1a1a1a", color: "#fff", border: "1px solid #2a2a2a", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 },
+    divider: { display: "flex", alignItems: "center", gap: 12, margin: "4px 0 12px", color: "#444", fontSize: 12 },
     line: { flex: 1, height: 1, background: "#2a2a2a" },
-    error: {
-      background: "#2a1a1a",
-      border: "1px solid #5a2a2a",
-      borderRadius: 8,
-      padding: "10px 12px",
-      color: "#e07a7a",
-      fontSize: 13,
-      marginBottom: 12,
-    },
-    confirm: {
-      background: "#1a2a1a",
-      border: "1px solid #2a5a2a",
-      borderRadius: 8,
-      padding: "10px 12px",
-      color: "#7ae07a",
-      fontSize: 13,
-      marginBottom: 12,
-    },
+    error: { background: "#2a1a1a", border: "1px solid #5a2a2a", borderRadius: 8, padding: "10px 12px", color: "#e07a7a", fontSize: 13, marginBottom: 12 },
+    signupRow: { textAlign: "center", color: "#666", fontSize: 13, marginTop: 18 },
+    signupLink: { color: "#e8c97a", cursor: "pointer", fontWeight: 600 },
   };
 
   return (
@@ -163,18 +63,9 @@ export default function LoginScreen({ onAuth }) {
       <div style={S.card}>
         <div style={S.logo}>BETCIERGE</div>
         <div style={S.tagline}>Your Personal Betting Concierge</div>
-
-        <div style={S.tabs}>
-          <button style={S.tab(mode === "signin")} onClick={() => { setMode("signin"); setError(""); setConfirmMsg(""); }}>
-            Sign In
-          </button>
-          <button style={S.tab(mode === "signup")} onClick={() => { setMode("signup"); setError(""); setConfirmMsg(""); }}>
-            Sign Up
-          </button>
-        </div>
+        <div style={S.heading}>Welcome back.</div>
 
         {error && <div style={S.error}>{error}</div>}
-        {confirmMsg && <div style={S.confirm}>{confirmMsg}</div>}
 
         <input
           style={S.input}
@@ -198,7 +89,7 @@ export default function LoginScreen({ onAuth }) {
           onClick={handleSubmit}
           disabled={loading}
         >
-          {loading ? "..." : mode === "signin" ? "Sign In" : "Create Account"}
+          {loading ? "..." : "Sign In"}
         </button>
 
         <div style={S.divider}>
@@ -214,6 +105,11 @@ export default function LoginScreen({ onAuth }) {
           </svg>
           Continue with Google
         </button>
+
+        <div style={S.signupRow}>
+          New to Betcierge?{" "}
+          <span style={S.signupLink} onClick={() => router.push("/onboarding")}>Create an account</span>
+        </div>
       </div>
     </div>
   );
