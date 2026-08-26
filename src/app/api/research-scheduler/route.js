@@ -276,14 +276,14 @@ async function submitNewResearch(today) {
   const deadlineTs = fnStart + FUNCTION_BUDGET_MS - SAFETY_MARGIN_MS;
   const now = new Date().toISOString();
 
+  // Atomic claim (Aug 26) — was a plain SELECT with no locking, so two
+  // overlapping runs (manual curl + cron tick, or two cron ticks) could
+  // both grab the same pending_research row and pay for the same
+  // research twice. claim_research_batch uses FOR UPDATE SKIP LOCKED so
+  // a row can only ever be claimed by one run. Mirrors Stage 1's
+  // claim_evaluation_batch, added Aug 5.
   const { data: candidates, error } = await supabase
-    .from('game_candidates')
-    .select('*')
-    .eq('date', today)
-    .eq('research_status', 'pending_research')
-    .lte('research_trigger_at', now)
-    .order('research_trigger_at', { ascending: true })
-    .limit(CONCURRENCY_CAP);
+    .rpc('claim_research_batch', { p_date: today, p_cap: CONCURRENCY_CAP });
 
   if (error) throw error;
   if (!candidates || candidates.length === 0) {
