@@ -110,6 +110,12 @@ function cleanJson(text) {
 // resolveOrCreateGamesBatch's repair path below for how this is used.
 const FOOTBALL_SPORT_KEYS = new Set(['americanfootball_nfl', 'americanfootball_ncaaf']);
 
+// TEMPORARY (Aug 26, 2026) — pausing all soccer leagues while pre-revenue,
+// to cut Layer 1 evaluation cost. Soccer was driving real day-to-day cost
+// spikes (multiple leagues, 20-60+ games some days) with no test value
+// right now. Flip to false to bring soccer back once ready.
+const SKIP_SOCCER = true;
+
 async function resolveOrCreateGamesBatch(candidates) {
   const results = new Map();
 
@@ -459,6 +465,7 @@ async function generateMorningTrigger() {
     // this once college football/basketball are back in season: at ~100+
     // games in one day, this loop's wall-clock time could approach or
     // exceed this function's 300s maxDuration. Fine for MLB-only days now.
+    .filter(g => !(SKIP_SOCCER && (g.sport_key || '').startsWith('soccer_')))
     .map(g => {
       const bm = g.bookmakers?.[0];
       const h2h = bm?.markets?.find(m => m.key === 'h2h');
