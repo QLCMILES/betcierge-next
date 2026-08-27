@@ -31,7 +31,7 @@ export const REQUIREMENT_META = {
   // ── Baseline (every MLB market) ──
   starter_confirmed_both: {
     label: 'Both starting pitchers confirmed',
-    instruction: "Confirm BOTH starting pitchers for this game via a dated source today (e.g. MLB.com probable pitchers). State each by name with the source.",
+    instruction: "Confirm BOTH starting pitchers for this game via a dated source today (e.g. MLB.com probable pitchers). State each by name with the source. If any source disagrees with the team's own official probable-pitchers page, the official page wins — do not override it based on an older preview article or your own reasoning about which seems more likely.",
     hardGate: true, // verified in code against MLB Stats API; model claim contradicting the API = reject
     turn1: true, // Aug 24: always establish the hard gate first — if this can't be confirmed, nothing else matters
   },
