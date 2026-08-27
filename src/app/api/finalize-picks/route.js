@@ -13,8 +13,21 @@ const supabase = createClient(
 
 // Same "material move" thresholds used in research-scheduler's pre-flight
 // freshness check — kept consistent across both gates.
+//
+// Aug 27 fix: this is the FINAL gate before a pick actually publishes, so
+// it had the same two bugs as research-scheduler's pre-flight check, and
+// arguably mattered more here — (1) checked moneyline+spread regardless
+// of the pick's actual bet type, and (2) compared bookmakers[0] against
+// bookmakers[0] from two different points in time with no guarantee it's
+// the same sportsbook both times. Fixed the same way in both places.
 const MONEYLINE_REJECT_CENTS = 50;
 const POINT_REJECT = 3.0;
+const TOTAL_REJECT = 1.0; // runs — same default as research-scheduler, Miles's call to tune
+
+// KEEP IN SYNC with the same constant in research-scheduler/route.js and
+// morning-trigger/route.js — all three now pin to this one named book so
+// every odds snapshot taken anywhere in the pipeline is comparable.
+const PRIMARY_BOOKMAKER_KEY = 'draftkings';
 
 // SINGLE-LIST REBUILD (Aug 3, 2026) — Official/Lean tier split removed.
 // PUBLISH_SCORE_THRESHOLD is set to the OLD Lean floor, not the old
@@ -77,25 +90,60 @@ function parsePointsString(str) {
   return out;
 }
 
-function checkFreshness(originalMoneyline, freshMoneyline, originalSpread, freshSpread) {
-  const origML = parseOddsString(originalMoneyline);
-  const freshML = parseOddsString(freshMoneyline);
-  for (const team of Object.keys(origML)) {
-    if (freshML[team] === undefined) continue;
-    const diff = Math.abs(freshML[team] - origML[team]);
-    if (diff >= MONEYLINE_REJECT_CENTS) {
-      return { stale: true, reason: `Moneyline moved ${diff} cents on ${team} since research (${origML[team]} \u2192 ${freshML[team]})` };
+// e.g. "Over 7.5: -102, Under 7.5: -120" -> 7.5
+function parseTotalPoint(str) {
+  if (!str) return null;
+  const match = str.match(/(-?\d+(\.\d+)?)/);
+  return match ? parseFloat(match[1]) : null;
+}
+
+// Aug 27 fix: only checks the ONE market matching the pick's actual bet
+// type — see the reordering below where betType is now computed BEFORE
+// this runs, using the real researched pick text rather than Stage 1's
+// guess (candidate.bet_type), since Stage 2 can land on a different bet
+// type than Stage 1 proposed.
+function checkFreshness(betType, original, fresh) {
+  if (betType === 'moneyline') {
+    const origML = parseOddsString(original.moneyline);
+    const freshML = parseOddsString(fresh.moneyline);
+    for (const team of Object.keys(origML)) {
+      if (freshML[team] === undefined) continue;
+      const diff = Math.abs(freshML[team] - origML[team]);
+      if (diff >= MONEYLINE_REJECT_CENTS) {
+        return { stale: true, reason: `Moneyline moved ${diff} cents on ${team} since research (${origML[team]} → ${freshML[team]})` };
+      }
     }
+    return { stale: false, reason: null };
   }
-  const origPts = parsePointsString(originalSpread);
-  const freshPts = parsePointsString(freshSpread);
-  for (const team of Object.keys(origPts)) {
-    if (freshPts[team] === undefined) continue;
-    const diff = Math.abs(freshPts[team] - origPts[team]);
-    if (diff >= POINT_REJECT) {
-      return { stale: true, reason: `Spread moved ${diff} points on ${team} since research (${origPts[team]} \u2192 ${freshPts[team]})` };
+
+  if (betType === 'runline' || betType === 'spread') {
+    const origPts = parsePointsString(original.spread);
+    const freshPts = parsePointsString(fresh.spread);
+    for (const team of Object.keys(origPts)) {
+      if (freshPts[team] === undefined) continue;
+      const diff = Math.abs(freshPts[team] - origPts[team]);
+      if (diff >= POINT_REJECT) {
+        return { stale: true, reason: `Spread moved ${diff} points on ${team} since research (${origPts[team]} → ${freshPts[team]})` };
+      }
     }
+    return { stale: false, reason: null };
   }
+
+  if (betType === 'total') {
+    const origTotal = parseTotalPoint(original.total);
+    const freshTotal = parseTotalPoint(fresh.total);
+    if (origTotal !== null && freshTotal !== null) {
+      const diff = Math.abs(freshTotal - origTotal);
+      if (diff >= TOTAL_REJECT) {
+        return { stale: true, reason: `Total moved ${diff} runs since research (${origTotal} → ${freshTotal})` };
+      }
+    }
+    return { stale: false, reason: null };
+  }
+
+  // combo / btts / f5 / first_half / prop / unknown — no honest
+  // same-market original snapshot to compare against; skip rather than
+  // falsely check against an unrelated market.
   return { stale: false, reason: null };
 }
 
@@ -104,7 +152,10 @@ async function fetchLiveOddsForGame(gameName) {
   const oddsData = await oddsRes.json();
   const match = (oddsData.games || []).find(g => `${g.away_team} @ ${g.home_team}` === gameName);
   if (!match) return null;
-  const bm = match.bookmakers?.[0];
+  const bm = match.bookmakers?.find(b => b.key === PRIMARY_BOOKMAKER_KEY) || match.bookmakers?.[0];
+  if (bm && bm.key !== PRIMARY_BOOKMAKER_KEY) {
+    console.log(`BOOKMAKER_FALLBACK: "${gameName}" — ${PRIMARY_BOOKMAKER_KEY} not posted for this game yet, using ${bm.key} instead for the final freshness check.`);
+  }
   const h2h = bm?.markets?.find(m => m.key === 'h2h');
   const spread = bm?.markets?.find(m => m.key === 'spreads');
   const total = bm?.markets?.find(m => m.key === 'totals');
@@ -467,6 +518,14 @@ async function finalizePicks() {
       // Compares against fresh_moneyline/fresh_spread \u2014 the snapshot
       // taken at Stage 2 research-submission time \u2014 not the morning's
       // original snapshot, since that's the most recent honest baseline.
+      // Bet type is derived here now, BEFORE the freshness check (it used
+      // to be derived much later, after the freshness check had already
+      // run against the wrong market). Uses the ACTUAL researched pick
+      // text, not candidate.bet_type (Stage 1's guess, which Stage 2 can
+      // correctly override) — see inferBetTypeFromPickText() above.
+      const pick = candidate.research_log || {};
+      const betType = inferBetTypeFromPickText(pick.pick, pick.odds) || candidate.bet_type || 'unknown';
+
       const liveOdds = await fetchLiveOddsForGame(candidate.game);
       if (!liveOdds) {
         console.log(`FINAL_STALE_VANISHED: "${candidate.game}" no longer in live odds feed \u2014 discarding.`);
@@ -477,8 +536,9 @@ async function finalizePicks() {
         continue;
       }
       const freshness = checkFreshness(
-        candidate.fresh_moneyline, liveOdds.moneyline,
-        candidate.fresh_spread, liveOdds.spread
+        betType,
+        { moneyline: candidate.fresh_moneyline, spread: candidate.fresh_spread, total: candidate.fresh_total },
+        liveOdds
       );
       if (freshness.stale) {
         console.log(`FINAL_STALE_LINE_MOVE: "${candidate.game}" \u2014 ${freshness.reason} \u2014 discarding rather than publishing a dead edge.`);
@@ -515,11 +575,8 @@ async function finalizePicks() {
         console.log(`FINAL_LINEUP_ADJUSTED: "${candidate.game}" \u2014 ${originalScore} \u2192 ${score} (${adjustment}) \u2014 ${currency.adjustment_reasoning || 'no reasoning given'}`);
       }
 
-      const pick = candidate.research_log || {};
-      // Derive from the ACTUAL final pick text, not candidate.bet_type (the
-      // stale Stage 1 guess) — see inferBetTypeFromPickText() above for why.
-      const betType = inferBetTypeFromPickText(pick.pick, pick.odds) || candidate.bet_type || 'unknown';
-
+      // pick/betType now computed earlier, before the freshness check —
+      // see there for why (needs the real bet type, not Stage 1's guess).
       const isTotal = betType === 'total';
       const effectiveThreshold = isTotal ? TOTAL_PUBLISH_THRESHOLD : PUBLISH_SCORE_THRESHOLD;
 

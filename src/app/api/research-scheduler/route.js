@@ -22,8 +22,26 @@ const MAX_RESEARCH_ATTEMPTS = 3; // after this many failures, stop retrying and 
 // This is a coarse filter: catch a candidate that's gone genuinely stale
 // (huge line move, likely real news) before spending a Stage 2 call on
 // it — not nitpick normal drift.
+//
+// Aug 27 fix: freshness is now checked ONLY against the market matching
+// the candidate's own bet_type (see checkFreshness below). Before this,
+// a moneyline candidate could be discarded because the RUN LINE moved —
+// a completely separate, separately-priced market. Real case: a Dodgers
+// @ Braves moneyline candidate was killed by a 3-point run-line "swing"
+// that was actually two different sportsbooks disagreeing (see
+// PRIMARY_BOOKMAKER_KEY below), not the game changing.
 const MONEYLINE_REJECT_CENTS = 50;
 const POINT_REJECT = 3.0;
+const TOTAL_REJECT = 1.0; // runs — Claude's reasonable default (roughly "a scratched starter or real weather news"-sized move); Miles's call to tune
+
+// Both this file's fresh-odds re-check AND morning-trigger's original
+// snapshot now pin to this SAME named bookmaker, instead of whichever
+// book The Odds API happened to return first (bookmakers[0]) — which is
+// not guaranteed to be the same book twice. Comparing bookmakers[0] vs
+// bookmakers[0] hours apart was really comparing two different
+// sportsbooks and mistaking their disagreement for real line movement.
+// KEEP IN SYNC with the same constant in morning-trigger/route.js.
+const PRIMARY_BOOKMAKER_KEY = 'draftkings';
 
 // ── Entity-consistency matching ─────────────────────────────────────────
 // FIRST-PASS DRAFT — Miles's call, edit freely. These are team-name tokens
@@ -103,26 +121,70 @@ function parsePointsString(str) {
   return out;
 }
 
-// Returns { stale: boolean, reason: string|null }
-function checkFreshness(originalMoneyline, freshMoneyline, originalSpread, freshSpread) {
-  const origML = parseOddsString(originalMoneyline);
-  const freshML = parseOddsString(freshMoneyline);
-  for (const team of Object.keys(origML)) {
-    if (freshML[team] === undefined) continue;
-    const diff = Math.abs(freshML[team] - origML[team]);
-    if (diff >= MONEYLINE_REJECT_CENTS) {
-      return { stale: true, reason: `Moneyline moved ${diff} cents on ${team} (${origML[team]} → ${freshML[team]})` };
+// e.g. "Over 7.5: -102, Under 7.5: -120" -> 7.5 (over/under always share
+// the same point on a real total, so just grab the first number).
+function parseTotalPoint(str) {
+  if (!str) return null;
+  const match = str.match(/(-?\d+(\.\d+)?)/);
+  return match ? parseFloat(match[1]) : null;
+}
+
+// Returns { stale: boolean, reason: string|null }.
+//
+// Aug 27 fix: this now only checks the ONE market matching the
+// candidate's actual bet_type, instead of checking moneyline AND spread
+// on every candidate regardless of what was actually being bet.
+// Moneyline and run line/spread are separately quoted markets — one
+// moving (or two different sportsbooks disagreeing on it, see
+// PRIMARY_BOOKMAKER_KEY) says nothing about whether the OTHER market's
+// edge is still live. A totals check is included now too since totals
+// candidates were previously never checked for staleness at all.
+//
+// original/fresh are both { moneyline, spread, total } shaped objects.
+function checkFreshness(betType, original, fresh) {
+  if (betType === 'moneyline') {
+    const origML = parseOddsString(original.moneyline);
+    const freshML = parseOddsString(fresh.moneyline);
+    for (const team of Object.keys(origML)) {
+      if (freshML[team] === undefined) continue;
+      const diff = Math.abs(freshML[team] - origML[team]);
+      if (diff >= MONEYLINE_REJECT_CENTS) {
+        return { stale: true, reason: `Moneyline moved ${diff} cents on ${team} (${origML[team]} → ${freshML[team]})` };
+      }
     }
+    return { stale: false, reason: null };
   }
-  const origPts = parsePointsString(originalSpread);
-  const freshPts = parsePointsString(freshSpread);
-  for (const team of Object.keys(origPts)) {
-    if (freshPts[team] === undefined) continue;
-    const diff = Math.abs(freshPts[team] - origPts[team]);
-    if (diff >= POINT_REJECT) {
-      return { stale: true, reason: `Spread moved ${diff} points on ${team} (${origPts[team]} → ${freshPts[team]})` };
+
+  if (betType === 'spread') {
+    const origPts = parsePointsString(original.spread);
+    const freshPts = parsePointsString(fresh.spread);
+    for (const team of Object.keys(origPts)) {
+      if (freshPts[team] === undefined) continue;
+      const diff = Math.abs(freshPts[team] - origPts[team]);
+      if (diff >= POINT_REJECT) {
+        return { stale: true, reason: `Spread moved ${diff} points on ${team} (${origPts[team]} → ${freshPts[team]})` };
+      }
     }
+    return { stale: false, reason: null };
   }
+
+  if (betType === 'total') {
+    const origTotal = parseTotalPoint(original.total);
+    const freshTotal = parseTotalPoint(fresh.total);
+    if (origTotal !== null && freshTotal !== null) {
+      const diff = Math.abs(freshTotal - origTotal);
+      if (diff >= TOTAL_REJECT) {
+        return { stale: true, reason: `Total moved ${diff} runs (${origTotal} → ${freshTotal})` };
+      }
+    }
+    return { stale: false, reason: null };
+  }
+
+  // f5 / first_half / prop / unknown — we only ever captured FULL-GAME
+  // odds in original_moneyline/spread/total, not the sub-market's own
+  // line, so there's no honest same-market comparison available here.
+  // Skip rather than falsely check a partial-game bet against full-game
+  // numbers.
   return { stale: false, reason: null };
 }
 
@@ -244,7 +306,10 @@ async function fetchLiveOddsForGame(gameName, sportKey) {
   const oddsData = await oddsRes.json();
   const match = (oddsData.games || []).find(g => `${g.away_team} @ ${g.home_team}` === gameName);
   if (!match) return null;
-  const bm = match.bookmakers?.[0];
+  const bm = match.bookmakers?.find(b => b.key === PRIMARY_BOOKMAKER_KEY) || match.bookmakers?.[0];
+  if (bm && bm.key !== PRIMARY_BOOKMAKER_KEY) {
+    console.log(`BOOKMAKER_FALLBACK: "${gameName}" — ${PRIMARY_BOOKMAKER_KEY} not posted for this game yet, using ${bm.key} instead for the freshness check.`);
+  }
   const h2h = bm?.markets?.find(m => m.key === 'h2h');
   const spread = bm?.markets?.find(m => m.key === 'spreads');
   const total = bm?.markets?.find(m => m.key === 'totals');
@@ -344,8 +409,9 @@ async function submitNewResearch(today) {
       }
 
       const freshness = checkFreshness(
-        candidate.original_moneyline, freshOdds.moneyline,
-        candidate.original_spread, freshOdds.spread
+        candidate.bet_type,
+        { moneyline: candidate.original_moneyline, spread: candidate.original_spread, total: candidate.original_total },
+        freshOdds
       );
       if (freshness.stale) {
         console.log(`STALE_LINE_MOVE: "${candidate.game}" — ${freshness.reason} — discarding rather than researching a dead candidate.`);

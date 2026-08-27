@@ -116,6 +116,15 @@ const FOOTBALL_SPORT_KEYS = new Set(['americanfootball_nfl', 'americanfootball_n
 // right now. Flip to false to bring soccer back once ready.
 const SKIP_SOCCER = true;
 
+// (Aug 27, 2026) — pin the odds snapshot taken here to a SPECIFIC named
+// book, instead of whichever book The Odds API happened to return first
+// (bookmakers[0]). research-scheduler's later freshness re-check pins to
+// this same book, so the two snapshots are actually comparable — before
+// this, a "line move" could just be two different sportsbooks disagreeing
+// at two different points in time, not the market actually moving.
+// KEEP IN SYNC with the same constant in research-scheduler/route.js.
+const PRIMARY_BOOKMAKER_KEY = 'draftkings';
+
 async function resolveOrCreateGamesBatch(candidates) {
   const results = new Map();
 
@@ -467,7 +476,7 @@ async function generateMorningTrigger() {
     // exceed this function's 300s maxDuration. Fine for MLB-only days now.
     .filter(g => !(SKIP_SOCCER && (g.sport_key || '').startsWith('soccer_')))
     .map(g => {
-      const bm = g.bookmakers?.[0];
+      const bm = g.bookmakers?.find(b => b.key === PRIMARY_BOOKMAKER_KEY) || g.bookmakers?.[0];
       const h2h = bm?.markets?.find(m => m.key === 'h2h');
       const spread = bm?.markets?.find(m => m.key === 'spreads');
       const total = bm?.markets?.find(m => m.key === 'totals');
