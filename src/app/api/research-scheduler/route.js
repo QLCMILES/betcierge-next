@@ -337,6 +337,7 @@ async function submitNewResearch(today) {
         console.log(`STALE_GAME_VANISHED: "${candidate.game}" no longer appears in the live odds feed — discarding.`);
         await supabase.from('game_candidates').update({
           research_status: 'discarded_stale',
+          status: 'discarded_stale',
           notes: 'Game no longer found in live odds feed at research-trigger time (likely postponed or pulled).',
         }).eq('id', candidate.id);
         continue;
@@ -350,6 +351,7 @@ async function submitNewResearch(today) {
         console.log(`STALE_LINE_MOVE: "${candidate.game}" — ${freshness.reason} — discarding rather than researching a dead candidate.`);
         await supabase.from('game_candidates').update({
           research_status: 'discarded_stale',
+          status: 'discarded_stale',
           notes: `Discarded at pre-flight: ${freshness.reason}`,
         }).eq('id', candidate.id);
         continue;
