@@ -654,6 +654,8 @@ async function finalizePicks() {
         insight: candidate.insight || pick.insight || null,
         result: 'Pending',
         status: 'active',
+        pipeline_source: 'v2', // tags this row as the new pipeline's output; the shadow-mode RLS filter hides pipeline_source='v2' from users during the parallel-run trial, and it keeps v2 out of the legacy public record. Legacy inserts omit this and correctly default to 'legacy'.
+
         game_time: candidate.game_time,
         tier: null, // deprecated with the single-list rebuild — column stays in schema, cleaned up during the production migration, not written to going forward
         miss_reason: publishNote, // repurposed: null normally, 'elite_override' when this pick only got in via the 4th-pick rule — internal auditability, never shown to users
