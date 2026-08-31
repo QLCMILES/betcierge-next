@@ -1147,7 +1147,28 @@ function PicksTab({ userKey, user, session, onNav }) {
   const [expandedDates, setExpandedDates] = useState({});
   const [evaluatedCount, setEvaluatedCount] = useState(null);
 
-  useEffect(() => { loadPicks(); loadHistory(); loadEvaluatedCount(); }, []);
+  useEffect(() => {
+    loadPicks();
+    loadHistory();
+    loadEvaluatedCount();
+
+    // loadEvaluatedCount previously only ran once on mount, so a tab or
+    // installed PWA left open across days kept showing whatever count
+    // existed the moment it was first opened — it never went stale in the
+    // database, only on screen. Poll it (mirrors the 60s live-scores
+    // pattern below) and also refetch immediately when the tab/app comes
+    // back into view, since polling alone can be throttled while backgrounded.
+    const evaluatedCountInterval = setInterval(loadEvaluatedCount, 60000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadEvaluatedCount();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(evaluatedCountInterval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
 
   const updatePickResult = async (pickId, result) => {
     await supabase.from('daily_picks').update({ result }).eq('id', pickId);
