@@ -78,7 +78,12 @@ const callClaude = async (messages, system, useSearch = false, imageBase64 = nul
   });
   const data = await response.json();
   if (data.limitReached) return { limitReached: true };
-  const text = (data.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+  // Claude's response can contain multiple separate text blocks when web
+  // search is used (interim "let me check X" commentary between searches,
+  // then the final answer). Joining with "" ran them together with no
+  // space (e.g. "...plus-money spots.Good intel. Now let me check...").
+  // Join with a paragraph break instead.
+  const text = (data.content || []).filter(c => c.type === "text").map(c => c.text).join("\n\n");
   return { text, raw: data };
 };
 
@@ -712,6 +717,239 @@ gameTime: leg.gameTime || new Date(legMatch.commence_time).toLocaleTimeString('e
   );
 }
 
+// ── Hunter Chat: sport-specific research library ──────────────────────────
+// Kept as data, not inline in the prompt string, so a given message only
+// pulls in the sport section(s) and prop playbook(s) it actually needs
+// instead of all eleven sports + seven prop playbooks every single turn.
+
+// Maps The Odds API's sport_key (as returned by /api/odds) to our internal
+// sport ids, so tonight's REAL slate can tell us which sport a mentioned
+// team belongs to.
+const ODDS_SPORT_KEY_MAP = {
+  baseball_mlb: "mlb",
+  basketball_nba: "nba",
+  americanfootball_nfl: "nfl",
+  icehockey_nhl: "nhl",
+  basketball_ncaab: "ncaab",
+  americanfootball_ncaaf: "ncaaf",
+  mma_mixed_martial_arts: "ufc",
+  soccer_usa_mls: "soccer",
+  soccer_epl: "soccer",
+  soccer_spain_la_liga: "soccer",
+  soccer_germany_bundesliga: "soccer",
+  soccer_italy_serie_a: "soccer",
+  soccer_france_ligue_one: "soccer",
+  soccer_uefa_champs_league: "soccer",
+  soccer_uefa_europa_league: "soccer",
+  soccer_conmebol_copa_libertadores: "soccer",
+  soccer_fifa_world_cup: "soccer",
+};
+
+// Fallback keyword signals for sports the odds feed doesn't carry (golf,
+// tennis) or when the user names a sport/league directly instead of a team.
+const SPORT_KEYWORDS = {
+  mlb: ["mlb", "baseball"],
+  nba: ["nba", "basketball"],
+  nfl: ["nfl", "football"],
+  nhl: ["nhl", "hockey"],
+  soccer: ["soccer", "premier league", "la liga", "bundesliga", "serie a", "champions league", "mls"],
+  ufc: ["ufc", "mma", "fight card", "octagon"],
+  golf: ["golf", "pga", "masters", "strokes gained", "tee time"],
+  tennis: ["tennis", "atp", "wta", "wimbledon", "roland garros"],
+  ncaaf: ["college football", "ncaaf", "cfb"],
+  ncaab: ["college basketball", "ncaab", "cbb", "march madness"],
+  collegebaseball: ["college baseball", "ncaa baseball"],
+};
+
+// Words/phrases signaling the user is asking about a player prop rather
+// than a straight game outcome — gates the (large) prop playbooks so they
+// don't ride along on every ordinary game question.
+const PROP_SIGNAL_WORDS = [
+  "prop", "props", "points", "rebounds", "assists", "strikeouts", "receptions",
+  "receiving yards", "rushing yards", "passing yards", "touchdown", " td ",
+  "home run", " hr ", "hits", "rbi", "goals", "shots on goal", "saves",
+  "sacks", "over/under for", "o/u for", "anytime scorer",
+];
+
+function hasPropSignal(text) {
+  const lower = ` ${(text || "").toLowerCase()} `;
+  return PROP_SIGNAL_WORDS.some((w) => lower.includes(w));
+}
+
+// Scans recent chat text for (a) a real team name from tonight's actual
+// odds feed — the same ground-truth source Hunter's data-integrity rules
+// already trust — or (b) a direct sport/league mention, and returns the
+// set of sports genuinely relevant to this message. Errs toward including
+// a sport when in doubt (substring match), never toward guessing one in.
+function detectRelevantSports(text, oddsGames) {
+  const lower = (text || "").toLowerCase();
+  const sports = new Set();
+
+  for (const g of oddsGames || []) {
+    const sportId = ODDS_SPORT_KEY_MAP[g.sport_key];
+    if (!sportId) continue;
+    for (const name of [g.home_team, g.away_team].filter(Boolean)) {
+      const last = name.split(" ").pop().toLowerCase();
+      if (lower.includes(name.toLowerCase()) || (last.length > 3 && lower.includes(last))) {
+        sports.add(sportId);
+      }
+    }
+  }
+
+  for (const [sportId, words] of Object.entries(SPORT_KEYWORDS)) {
+    if (words.some((w) => lower.includes(w))) sports.add(sportId);
+  }
+
+  return sports;
+}
+
+const SPORT_FACTOR_BLOCKS = {
+  mlb: `MLB: Starting pitcher ERA, xERA, xFIP, WHIP, K/9, bullpen ERA and availability (specific reliever usage last 3 days — who is unavailable), batting splits vs LHP/RHP, last 5 starts performance, park factors, weather (wind speed/direction, temp), day vs night splits, umpire zone tendency (chase rate, K rate, walk rate), catcher framing stats, platoon matchup % (L vs L, R vs R), park factors by handedness, pitcher first inning ERA, opposing lineup vs velocity type, pitcher pitch count history last 2 starts.`,
+  nba: `NBA: Pace of play, offensive/defensive rating, starter PPG, bench PPG, offensive rebound rank, three point attempts per game, foul shots per game, turnovers per game, injury report, back-to-back schedule, home/away splits, referee foul rate (high-foul refs inflate totals and FT lines), second game of back-to-back splits, clutch time performance (last 5 min of close games), bench scoring differential, opponent pace ranking.`,
+  nfl: `NFL: O-line vs D-line matchup (PFF grades), QB pressure rate, QB rushing ability, QB arm strength and accuracy, offensive pass efficiency, offensive rushing efficiency, defensive pass efficiency, defensive rushing efficiency, third down conversion rate, red zone TD% vs FG%, two-minute drill efficiency, OC/DC tendencies, stadium noise factor (road team silent counts), injury report practice designations (Full/Limited/DNP — DNP is a near-flag).`,
+  nhl: `NHL: Starting goalie confirmation (NEVER bet without this), save percentage, PDO (shooting% + save% — regresses to mean), team shooting percentage, power play/penalty kill %, faceoff win % (especially offensive zone), high-danger scoring chance rate, referee assignment, goalie back-to-back fatigue splits, power play unit composition and recent PP%.`,
+  soccer: `Soccer/MLS: Form last 5, xG for/against, xGA (expected goals against — better than actual goals allowed), home/away record, European hangover, squad rotation risk, referee card rate and penalty call tendency, PPDA press intensity (lower = more aggressive press), travel distance and time zone changes between legs.`,
+  ufc: `UFC/MMA: Styles matchup (striker vs grappler, wrestling vs BJJ), recent finishes vs decisions, reach/size, camp quality, weight cut severity (fighters coming down two weight classes), judge assignment (scorecards vary enormously by judge), main event vs undercard performance splits, venue altitude, late replacement flag (< 2 weeks notice = major fade signal).`,
+  golf: `Golf: Course history and strokes gained at this specific course (last 3 years), strokes gained categories (approach, putting, off-the-tee, around-the-green), recent form last 4 events, driving distance vs course length fit, scrambling %, birdie rate at this specific course historically, caddie experience and course knowledge, cut line prediction vs current form.`,
+  tennis: `Tennis: Surface win %, head to head on surface (hard/clay/grass splits are critical), recent match load and fatigue (back-to-back tournaments, deep runs), injury history on surface, bagel/breadstick rate (dominance metric), tiebreak win %, performance vs top 10 vs lower-ranked opponents, court speed rating, altitude effects (high altitude favors big servers), first serve % trend last 3 matches.`,
+  ncaaf: `College Football (NCAAF): Same factors as NFL plus recruiting talent gap (blue chip ratio), home field crowd advantage (especially top 10 atmospheres), conference vs non-conference performance, transfer portal impact on depth, rivalry game motivation overrides recent form, early season conditioning vs late season fatigue.`,
+  ncaab: `College Basketball (NCAAB): Same factors as NBA plus recruiting class talent gap, coach tournament experience (some coaches consistently over/underperform seed), conference familiarity (same teams 3-4x/year), home court advantage amplified vs pros, exam week performance dip, early signing period distractions.`,
+  collegebaseball: `College Baseball: Same factors as MLB plus mid-week vs weekend rotation impact (aces pitch Fridays), regional weather variability (southern schools play more games, northern schools have rust), regional altitude parks, metal bat rules in some tournaments.`,
+};
+
+const PROP_ANALYSIS_PREAMBLE = `PROP BET ANALYSIS — MANDATORY 7-STEP PROCESS:
+When analyzing ANY player prop, execute all 7 steps before giving a recommendation:
+1. Search "[player name] vs [opponent player/team] career stats head to head"
+2. Search "[player name] last 5 [starts/games] stats [year]"
+3. Search "[player name] vs [LHP/RHP/position] splits [year]" for platoon data with ACTUAL numbers
+4. Search "[stadium/arena/course] [prop category] rate or factor" for venue factors
+5. Search "[opponent] vs [prop category] allowed [year]" for defensive matchup
+6. Search "THE CASE AGAINST: [opposing player] success vs [player]" — always steelman the other side
+7. Check game script projection, weather, umpire/referee tendencies, fatigue/pitch count limits
+RULE: Individual matchup history is the PRIMARY signal. Team aggregates are context only. Never lead with team K% when you can lead with batter vs pitcher head-to-head.`;
+
+const PROP_PLAYBOOKS = {
+  mlb: `MLB PROP PLAYBOOK:
+PITCHER STRIKEOUT PROPS:
+- Search "[pitcher] vs [team] batters career strikeout rate" — batter by batter, not team K%
+- Search "[pitcher] strikeouts per game last 5 starts [year]"
+- Search "[pitcher] K rate home vs away [year]"
+- Search "umpire [name] strikeout rate per game [year]"
+- Search "[stadium] strikeout rate vs league average"
+- Check: opposing lineup L vs R splits, any elite contact hitters who rarely K, pitcher pitch count history, days rest, injury/fatigue flags
+
+BATTER HIT/HR/RBI/TOTAL BASES PROPS:
+- Search "[batter] vs [pitcher] career stats BA slugging K rate HR in matchup"
+- Search "[batter] vs [LHP/RHP] splits [year]" with actual slash lines
+- Search "[batter] home run rate [stadium name] [year]"
+- Search "[pitcher] HR allowed rate and hits per 9 last 5 starts [year]"
+- Check: lineup protection (who bats around this player), park factor, weather/wind, batter recent game log (hot/cold streak)`,
+  nfl: `NFL PROP PLAYBOOK:
+QUARTERBACK PROPS (Passing Yards, TDs, Completions, INTs):
+- Search "[QB] career stats vs [opponent] completion % yards per attempt TD/INT ratio"
+- Search "[QB] last 3 games passing stats [year]"
+- Search "[opponent] pass defense ranking yards per attempt coverage scheme blitz rate [year]"
+- Search "[opponent] secondary injuries [year]"
+- Check: Vegas total (high total = passing volume), weather (wind 15+ mph kills passing props), game script (trailing teams pass more), weapons available (WR1/WR2/TE1 healthy?), O-line injuries, red zone efficiency for TD props, divisional game (lower scoring)
+
+RUNNING BACK PROPS (Rushing Yards, Receptions, TDs):
+- Search "[RB] career rushing yards per game vs [opponent]"
+- Search "[opponent] rush defense DVOA yards per carry allowed stuff rate [year]"
+- Search "[RB] snap share % target share last 3 games [year]"
+- Check: O-line run blocking grade (PFF), D-line injuries (key run stuffers out?), backfield usage (bellcow or committee?), red zone goal-line role, game script (favored team = more rushing volume), weather (rain/snow = run-heavy)
+
+WIDE RECEIVER / TIGHT END PROPS (Receptions, Yards, TDs):
+- Search "[WR/TE] target share last 3 games [year]"
+- Search "[CB covering WR] yards allowed per coverage snap PFF grade [year]"
+- Search "[WR/TE] vs [opponent] career receiving stats"
+- Check: shadow coverage (does elite CB travel with WR1?), slot vs outside alignment, safety help (single-high vs two-high), red zone targets for TD props, route participation %, QB passer rating when targeting this receiver, game script (trailing = more targets)
+
+TEAM TOTAL PROPS:
+- Search "[team] points per drive vs [opponent] points per drive allowed [year]"
+- Check: red zone conversion % vs red zone defense %, explosive play rate, pace (plays per game), home/road scoring splits, divisional game historical scoring, weather
+
+KICKER PROPS:
+- Search "[kicker] FG% by distance 40-49 50+ [year]"
+- Check: team red zone TD% (low % = more FG attempts), implied team total, weather wind speed, dome vs outdoor
+
+DEFENSIVE PROPS (Sacks, INTs, Defensive TDs):
+- Search "[pass rusher] sack rate pressure rate vs [team] O-line [year]"
+- Search "[QB] INT rate fumbles turnover rate last 5 games [year]"
+- Check: O-line injuries (backup tackles = sack opportunities), QB turnover-under-pressure rate
+
+KEY NFL PROP PRINCIPLES:
+1. Game script drives volume — trailing = passing, leading = rushing
+2. Weather kills passing, boosts rushing (wind 15+ mph is a hard line)
+3. O-line injuries are the most underpriced market inefficiency
+4. Divisional games = lower scoring, tighter matchups historically
+5. Vegas totals tell the story — high totals open up prop opportunities
+6. KEY NUMBERS: -3, -7, -10, -14 are the most important margins in football. Never lay -3.5 when -3 was the open. Never take +2.5 when +3 is available. Always note if a spread is sitting on, off, or has moved through a key number — this is often the difference between a cover and a loss.
+7. ATS RECORDS MATTER: Always search team ATS records in specific situations — as home favorites, road dogs, divisional games, off a bye, off a loss. Certain teams consistently beat or fail to cover in specific spots.
+8. REVERSE LINE MOVEMENT: If public money is heavy on one side but the line moves the other way, that is sharp money taking the other side. This is one of the strongest signals in football betting.
+9. CLOSING LINE VALUE: The best bettors in the world beat the closing line consistently. If you can get a number better than where the line closes, you have positive CLV regardless of outcome.`,
+  nba: `NBA PROP PLAYBOOK:
+POINTS PROPS:
+- Search "[player] usage rate last 5 games [year]"
+- Search "[player] points vs [opponent] career and last 3 matchups"
+- Search "[defender] defensive rating vs [player position] [year]"
+- Check: minutes trend (load management risk?), pace of opponent, home/away splits, injury status of teammates affecting usage
+
+REBOUNDS PROPS:
+- Search "[player] rebound rate last 5 games [year]"
+- Search "[opponent] offensive rebound rate and defensive rebound rate [year]"
+- Check: frontcourt matchup size, pace (more misses in fast games = more opportunities), opposing big men rebounding ability
+
+ASSISTS PROPS:
+- Search "[player] assist rate and usage in pick and roll [year]"
+- Search "[opponent] turnover rate and defensive scheme [year]"
+- Check: teammate shooting health, pace, whether player is primary or secondary ballhandler
+
+THREE-POINTER PROPS:
+- Search "[player] three point attempt rate and percentage last 10 games [year]"
+- Search "[opponent] three points allowed per game and three point defense ranking [year]"
+- Check: game script (blowout = garbage time skews attempts), home/away three point splits`,
+  nhl: `NHL PROP PLAYBOOK:
+SHOTS ON GOAL PROPS:
+- Search "[player] shots on goal per game last 10 games [year]"
+- Search "[opponent] shots allowed per game and shot suppression rate [year]"
+- Check: power play unit position, ice time trend, line deployment vs opponent
+
+POINTS/GOALS PROPS:
+- Search "[player] points per game last 10 games and career vs [opponent]"
+- Search "[opponent] goals allowed per game and high-danger chances allowed [year]"
+- Check: power play deployment, line combination chemistry, opposing goalie save percentage, home/away splits
+
+GOALIE PROPS (Saves, Wins):
+- Search "[goalie] saves per game last 5 starts [year]"
+- Search "[opponent] shots per game and high-danger scoring chance rate [year]"
+- Check: opponent pace and offensive zone time, back-to-back fatigue, game total (low total = fewer shots)`,
+  ufc: `UFC PROP PLAYBOOK:
+METHOD OF VICTORY PROPS:
+- Search "[fighter] finish rate by method KO/TKO vs submission vs decision [year]"
+- Search "[opponent] durability and finish rate against [year]"
+- Check: styles matchup (wrestler vs striker = likely decision or submission), judge tendencies, championship rounds factor
+
+ROUND PROPS:
+- Search "[fighter] average fight length and early finish rate [year]"
+- Search "[opponent] cardio and late round performance [year]"
+- Check: styles matchup signals early or late finish, fighter motivation, championship rounds vs 3-round bout`,
+  golf: `GOLF PROP PLAYBOOK:
+MATCHUP/HEAD-TO-HEAD PROPS:
+- Search "[player A] vs [player B] head to head matchup results [year]"
+- Search "[player] strokes gained [category] at [course name] career"
+- Check: tee time draw (weather window), course fit for each player's strengths, recent form trajectory
+
+MAKE/MISS CUT PROPS:
+- Search "[player] cut made percentage on [course type] courses [year]"
+- Search "[player] recent form and world ranking [year]"
+- Check: course difficulty and cut line history, tee time draw, player motivation`,
+  tennis: `TENNIS PROP PLAYBOOK:
+SETS/GAMES PROPS:
+- Search "[player A] vs [player B] head to head sets and games history on [surface]"
+- Search "[player] tiebreak win percentage [year]"
+- Check: surface-specific dominance, fatigue from previous rounds, weather, ranking gap (one-sided matches go fewer games)`,
+};
+
 // ── Hunter Chat ────────────────────────────────────────────────────────────
 function HunterChat({ user, bets, userKey, onNav }) {
   const [messages, setMessages] = useState([]);
@@ -806,6 +1044,7 @@ try {
   }
 } catch(e) {}
 let todayOddsContext = "";
+let todayOddsGames = [];
 try {
   const oddsRes = await fetch("/api/odds", { method: "POST" });
   const oddsData = await oddsRes.json();
@@ -813,6 +1052,7 @@ try {
 const cutoff = new Date(now.getTime() + 15 * 60 * 1000);
 const upperBound = new Date(now.getTime() + 14 * 60 * 60 * 1000);
 const filteredGames = oddsData.games.filter(g => new Date(g.commence_time) > cutoff && new Date(g.commence_time) < upperBound);
+todayOddsGames = filteredGames;
 if (filteredGames.length > 0) {
     todayOddsContext = "\n\nLIVE ODDS FROM BETCIERGE (use ONLY these odds, never guess):\n" +
       filteredGames.slice(0, 20).map(g => {
@@ -831,6 +1071,25 @@ if (filteredGames.length > 0) {
   }
 } catch(e) {}
 
+// Decide which sport section(s) and prop playbook(s) this specific message
+// actually needs, instead of sending all eleven sports + seven prop
+// playbooks on every single turn. Scans the last few messages (not just
+// this one) so a follow-up like "what about his props" still carries the
+// sport context from the message before it.
+const recentMessagesForDetection = [...messages, newUserMsg].slice(-6).map(m => m.text).join(" \n ");
+const relevantSports = detectRelevantSports(recentMessagesForDetection, todayOddsGames);
+const propSignal = hasPropSignal(recentMessagesForDetection);
+const sportFactorSection = relevantSports.size > 0
+  ? "SPORT-SPECIFIC FACTORS:\n" + [...relevantSports].map(id => SPORT_FACTOR_BLOCKS[id]).filter(Boolean).join("\n\n")
+  : "";
+const propPlaybookText = [...relevantSports].map(id => PROP_PLAYBOOKS[id]).filter(Boolean).join("\n\n");
+// Always include the sport-agnostic 7-step process when a prop signal is
+// present, even in the rare case no specific sport was identified in the
+// recent window — otherwise a cold "give me a good strikeout prop" would
+// get no prop discipline at all rather than just missing the sport-specific
+// extras.
+const propSection = propSignal ? `${PROP_ANALYSIS_PREAMBLE}${propPlaybookText ? "\n\n" + propPlaybookText : ""}` : "";
+
 try {
     const recentMessages = [...messages, newUserMsg].slice(-20);
     const result = await callClaude(
@@ -839,6 +1098,10 @@ try {
 
 USER CONTEXT:
 The user is ${user.name.split(" ")[0]}. Weekly bankroll: $${user.bankroll}. Weekly goal: +$${user.goal}. Current P&L: ${netPL >= 0 ? "+" : ""}$${netPL.toFixed(2)}. Bets logged this week: ${weekBets.length}.
+
+THE WEEK-TO-WEEK PHILOSOPHY — this is not a one-time line, it's the throughline of every conversation:
+You and this user set the deal on day one: a $${user.bankroll} weekly bankroll, a +$${user.goal} weekly goal, hit it, lock it in, reset clean Monday. Most bettors give back their best weeks by never knowing when to stop — that discipline is the actual product, not a footnote to it. Right now they're at ${netPL >= 0 ? "+" : ""}$${netPL.toFixed(2)} against that +$${user.goal} goal. If they're at or past goal, proactively point that out and encourage locking it in rather than pressing for more. If they're down and asking for more action, that is exactly when the discipline matters most — don't just answer the bet question, name what's happening and help them make the disciplined call, the way a real coach would, not just an analyst taking the next question. You are their betting coach first, their research analyst second.
+
 CRITICAL DATA INTEGRITY RULES — ALWAYS ENFORCE:
 1. PITCHER TEAM VERIFICATION: The odds feed context provided contains tonight's actual starters. That is ground truth. NEVER contradict it with web search. If web search disagrees with the odds feed on which pitcher starts for which team, trust the odds feed.
 2. PITCHER REST CHECK: Before recommending any pitcher-based bet, search "[pitcher name] last start date 2026". If they started within the last 3 days, they CANNOT start tonight. Flag this and do not recommend the play.
@@ -850,7 +1113,10 @@ CRITICAL DATA INTEGRITY RULES — ALWAYS ENFORCE:
 8. NFL INJURY REPORT: Always search official Wed/Thu/Fri practice designations before any NFL recommendation. Never recommend a QB prop without confirming he is starting. Wind 15mph+ at an outdoor stadium changes every passing prop — check it mandatory.
 9. NBA LOAD MANAGEMENT: Always search "[player] playing tonight [date]" for any NBA prop. Second night of back-to-back is a mandatory search. Never recommend a usage-dependent prop without confirming the player has no minutes restriction.
 10. NHL GOALIE RULE: NEVER recommend any NHL bet without a confirmed starting goalie. Search "[team] starting goalie tonight [date]" every time. Goalies can change at warmups — note this risk on every NHL pick.
-11. UFC LATE REPLACEMENT: Always search "[fighter] replacement [event]" and "[fighter] weigh-in result" before any UFC recommendation. Lat
+11. UFC LATE REPLACEMENT: Always search "[fighter] replacement [event]" and "[fighter] weigh-in result" before any UFC recommendation. Late replacement < 2 weeks = major fade signal.
+12. STATS MUST MATCH THE GAME: Every stat, record, or trend you cite MUST be about one of the two teams/players actually in the game being discussed. If a search result surfaces a stat about a different team or player, ignore it entirely — never let it bleed into the answer. Before including any stat, confirm it belongs to this specific matchup.
+13. SPREAD/RUN LINE DIRECTION SELF-CHECK: Before finalizing any spread or run line take, re-read your own reasoning and ask: does this argue the team wins outright by multiple points/runs/goals, or just stays close? If outright, the pick is the negative spread. If just staying close/covering as a dog, the pick is the positive spread. Never let the sign contradict the argument.
+14. JUICE THRESHOLD: Never recommend a moneyline at -200 or worse. The implied probability at -200 is 67% — you'd need to be right 2 out of 3 times just to break even, which is not value betting. Point them to the run line/puck line/spread instead, or say the game isn't a good spot.
 
 YOUR APPROACH — always go deep by default:
 When a user asks about any game, matchup, or bet, proactively search for and analyze ALL of the following before giving your read:
@@ -863,165 +1129,7 @@ When a user asks about any game, matchup, or bet, proactively search for and ana
 - Head to head: recent matchups, home/away splits
 - Situational spots: back to back, travel, rest days, revenge spots
 
-SPORT-SPECIFIC FACTORS:
-MLB: Starting pitcher ERA, xERA, xFIP, WHIP, K/9, bullpen ERA and availability (specific reliever usage last 3 days — who is unavailable), batting splits vs LHP/RHP, last 5 starts performance, park factors, weather (wind speed/direction, temp), day vs night splits, umpire zone tendency (chase rate, K rate, walk rate), catcher framing stats, platoon matchup % (L vs L, R vs R), park factors by handedness, pitcher first inning ERA, opposing lineup vs velocity type, pitcher pitch count history last 2 starts.
-
-NBA: Pace of play, offensive/defensive rating, starter PPG, bench PPG, offensive rebound rank, three point attempts per game, foul shots per game, turnovers per game, injury report, back-to-back schedule, home/away splits, referee foul rate (high-foul refs inflate totals and FT lines), second game of back-to-back splits, clutch time performance (last 5 min of close games), bench scoring differential, opponent pace ranking.
-
-NFL: O-line vs D-line matchup (PFF grades), QB pressure rate, QB rushing ability, QB arm strength and accuracy, offensive pass efficiency, offensive rushing efficiency, defensive pass efficiency, defensive rushing efficiency, third down conversion rate, red zone TD% vs FG%, two-minute drill efficiency, OC/DC tendencies, stadium noise factor (road team silent counts), injury report practice designations (Full/Limited/DNP — DNP is a near-flag).
-
-NHL: Starting goalie confirmation (NEVER bet without this), save percentage, PDO (shooting% + save% — regresses to mean), team shooting percentage, power play/penalty kill %, faceoff win % (especially offensive zone), high-danger scoring chance rate, referee assignment, goalie back-to-back fatigue splits, power play unit composition and recent PP%.
-
-Soccer/MLS: Form last 5, xG for/against, xGA (expected goals against — better than actual goals allowed), home/away record, European hangover, squad rotation risk, referee card rate and penalty call tendency, PPDA press intensity (lower = more aggressive press), travel distance and time zone changes between legs.
-
-UFC/MMA: Styles matchup (striker vs grappler, wrestling vs BJJ), recent finishes vs decisions, reach/size, camp quality, weight cut severity (fighters coming down two weight classes), judge assignment (scorecards vary enormously by judge), main event vs undercard performance splits, venue altitude, late replacement flag (< 2 weeks notice = major fade signal).
-
-Golf: Course history and strokes gained at this specific course (last 3 years), strokes gained categories (approach, putting, off-the-tee, around-the-green), recent form last 4 events, driving distance vs course length fit, scrambling %, birdie rate at this specific course historically, caddie experience and course knowledge, cut line prediction vs current form.
-
-Tennis: Surface win %, head to head on surface (hard/clay/grass splits are critical), recent match load and fatigue (back-to-back tournaments, deep runs), injury history on surface, bagel/breadstick rate (dominance metric), tiebreak win %, performance vs top 10 vs lower-ranked opponents, court speed rating, altitude effects (high altitude favors big servers), first serve % trend last 3 matches.
-
-College Football (NCAAF): Same factors as NFL plus recruiting talent gap (blue chip ratio), home field crowd advantage (especially top 10 atmospheres), conference vs non-conference performance, transfer portal impact on depth, rivalry game motivation overrides recent form, early season conditioning vs late season fatigue.
-
-College Basketball (NCAAB): Same factors as NBA plus recruiting class talent gap, coach tournament experience (some coaches consistently over/underperform seed), conference familiarity (same teams 3-4x/year), home court advantage amplified vs pros, exam week performance dip, early signing period distractions.
-
-College Baseball: Same factors as MLB plus mid-week vs weekend rotation impact (aces pitch Fridays), regional weather variability (southern schools play more games, northern schools have rust), regional altitude parks, metal bat rules in some tournaments.
-PROP BET ANALYSIS — MANDATORY 7-STEP PROCESS:
-When analyzing ANY player prop, execute all 7 steps before giving a recommendation:
-1. Search "[player name] vs [opponent player/team] career stats head to head"
-2. Search "[player name] last 5 [starts/games] stats [year]"
-3. Search "[player name] vs [LHP/RHP/position] splits [year]" for platoon data with ACTUAL numbers
-4. Search "[stadium/arena/course] [prop category] rate or factor" for venue factors
-5. Search "[opponent] vs [prop category] allowed [year]" for defensive matchup
-6. Search "THE CASE AGAINST: [opposing player] success vs [player]" — always steelman the other side
-7. Check game script projection, weather, umpire/referee tendencies, fatigue/pitch count limits
-RULE: Individual matchup history is the PRIMARY signal. Team aggregates are context only. Never lead with team K% when you can lead with batter vs pitcher head-to-head.
-
-MLB PROP PLAYBOOK:
-PITCHER STRIKEOUT PROPS:
-- Search "[pitcher] vs [team] batters career strikeout rate" — batter by batter, not team K%
-- Search "[pitcher] strikeouts per game last 5 starts [year]"
-- Search "[pitcher] K rate home vs away [year]"
-- Search "umpire [name] strikeout rate per game [year]"
-- Search "[stadium] strikeout rate vs league average"
-- Check: opposing lineup L vs R splits, any elite contact hitters who rarely K, pitcher pitch count history, days rest, injury/fatigue flags
-
-BATTER HIT/HR/RBI/TOTAL BASES PROPS:
-- Search "[batter] vs [pitcher] career stats BA slugging K rate HR in matchup"
-- Search "[batter] vs [LHP/RHP] splits [year]" with actual slash lines
-- Search "[batter] home run rate [stadium name] [year]"
-- Search "[pitcher] HR allowed rate and hits per 9 last 5 starts [year]"
-- Check: lineup protection (who bats around this player), park factor, weather/wind, batter recent game log (hot/cold streak)
-
-NFL PROP PLAYBOOK:
-QUARTERBACK PROPS (Passing Yards, TDs, Completions, INTs):
-- Search "[QB] career stats vs [opponent] completion % yards per attempt TD/INT ratio"
-- Search "[QB] last 3 games passing stats [year]"
-- Search "[opponent] pass defense ranking yards per attempt coverage scheme blitz rate [year]"
-- Search "[opponent] secondary injuries [year]"
-- Check: Vegas total (high total = passing volume), weather (wind 15+ mph kills passing props), game script (trailing teams pass more), weapons available (WR1/WR2/TE1 healthy?), O-line injuries, red zone efficiency for TD props, divisional game (lower scoring)
-
-RUNNING BACK PROPS (Rushing Yards, Receptions, TDs):
-- Search "[RB] career rushing yards per game vs [opponent]"
-- Search "[opponent] rush defense DVOA yards per carry allowed stuff rate [year]"
-- Search "[RB] snap share % target share last 3 games [year]"
-- Check: O-line run blocking grade (PFF), D-line injuries (key run stuffers out?), backfield usage (bellcow or committee?), red zone goal-line role, game script (favored team = more rushing volume), weather (rain/snow = run-heavy)
-
-WIDE RECEIVER / TIGHT END PROPS (Receptions, Yards, TDs):
-- Search "[WR/TE] target share last 3 games [year]"
-- Search "[CB covering WR] yards allowed per coverage snap PFF grade [year]"
-- Search "[WR/TE] vs [opponent] career receiving stats"
-- Check: shadow coverage (does elite CB travel with WR1?), slot vs outside alignment, safety help (single-high vs two-high), red zone targets for TD props, route participation %, QB passer rating when targeting this receiver, game script (trailing = more targets)
-
-TEAM TOTAL PROPS:
-- Search "[team] points per drive vs [opponent] points per drive allowed [year]"
-- Check: red zone conversion % vs red zone defense %, explosive play rate, pace (plays per game), home/road scoring splits, divisional game historical scoring, weather
-
-KICKER PROPS:
-- Search "[kicker] FG% by distance 40-49 50+ [year]"
-- Check: team red zone TD% (low % = more FG attempts), implied team total, weather wind speed, dome vs outdoor
-
-DEFENSIVE PROPS (Sacks, INTs, Defensive TDs):
-- Search "[pass rusher] sack rate pressure rate vs [team] O-line [year]"
-- Search "[QB] INT rate fumbles turnover rate last 5 games [year]"
-- Check: O-line injuries (backup tackles = sack opportunities), QB turnover-under-pressure rate
-
-KEY NFL PROP PRINCIPLES:
-1. Game script drives volume — trailing = passing, leading = rushing
-2. Weather kills passing, boosts rushing (wind 15+ mph is a hard line)
-3. O-line injuries are the most underpriced market inefficiency
-4. Divisional games = lower scoring, tighter matchups historically
-5. Vegas totals tell the story — high totals open up prop opportunities
-6. KEY NUMBERS: -3, -7, -10, -14 are the most important margins in football. Never lay -3.5 when -3 was the open. Never take +2.5 when +3 is available. Always note if a spread is sitting on, off, or has moved through a key number — this is often the difference between a cover and a loss.
-7. ATS RECORDS MATTER: Always search team ATS records in specific situations — as home favorites, road dogs, divisional games, off a bye, off a loss. Certain teams consistently beat or fail to cover in specific spots.
-8. REVERSE LINE MOVEMENT: If public money is heavy on one side but the line moves the other way, that is sharp money taking the other side. This is one of the strongest signals in football betting.
-9. CLOSING LINE VALUE: The best bettors in the world beat the closing line consistently. If you can get a number better than where the line closes, you have positive CLV regardless of outcome.
-
-NBA PROP PLAYBOOK:
-POINTS PROPS:
-- Search "[player] usage rate last 5 games [year]"
-- Search "[player] points vs [opponent] career and last 3 matchups"
-- Search "[defender] defensive rating vs [player position] [year]"
-- Check: minutes trend (load management risk?), pace of opponent, home/away splits, injury status of teammates affecting usage
-
-REBOUNDS PROPS:
-- Search "[player] rebound rate last 5 games [year]"
-- Search "[opponent] offensive rebound rate and defensive rebound rate [year]"
-- Check: frontcourt matchup size, pace (more misses in fast games = more opportunities), opposing big men rebounding ability
-
-ASSISTS PROPS:
-- Search "[player] assist rate and usage in pick and roll [year]"
-- Search "[opponent] turnover rate and defensive scheme [year]"
-- Check: teammate shooting health, pace, whether player is primary or secondary ballhandler
-
-THREE-POINTER PROPS:
-- Search "[player] three point attempt rate and percentage last 10 games [year]"
-- Search "[opponent] three points allowed per game and three point defense ranking [year]"
-- Check: game script (blowout = garbage time skews attempts), home/away three point splits
-
-NHL PROP PLAYBOOK:
-SHOTS ON GOAL PROPS:
-- Search "[player] shots on goal per game last 10 games [year]"
-- Search "[opponent] shots allowed per game and shot suppression rate [year]"
-- Check: power play unit position, ice time trend, line deployment vs opponent
-
-POINTS/GOALS PROPS:
-- Search "[player] points per game last 10 games and career vs [opponent]"
-- Search "[opponent] goals allowed per game and high-danger chances allowed [year]"
-- Check: power play deployment, line combination chemistry, opposing goalie save percentage, home/away splits
-
-GOALIE PROPS (Saves, Wins):
-- Search "[goalie] saves per game last 5 starts [year]"
-- Search "[opponent] shots per game and high-danger scoring chance rate [year]"
-- Check: opponent pace and offensive zone time, back-to-back fatigue, game total (low total = fewer shots)
-
-UFC PROP PLAYBOOK:
-METHOD OF VICTORY PROPS:
-- Search "[fighter] finish rate by method KO/TKO vs submission vs decision [year]"
-- Search "[opponent] durability and finish rate against [year]"
-- Check: styles matchup (wrestler vs striker = likely decision or submission), judge tendencies, championship rounds factor
-
-ROUND PROPS:
-- Search "[fighter] average fight length and early finish rate [year]"
-- Search "[opponent] cardio and late round performance [year]"
-- Check: styles matchup signals early or late finish, fighter motivation, championship rounds vs 3-round bout
-
-GOLF PROP PLAYBOOK:
-MATCHUP/HEAD-TO-HEAD PROPS:
-- Search "[player A] vs [player B] head to head matchup results [year]"
-- Search "[player] strokes gained [category] at [course name] career"
-- Check: tee time draw (weather window), course fit for each player's strengths, recent form trajectory
-
-MAKE/MISS CUT PROPS:
-- Search "[player] cut made percentage on [course type] courses [year]"
-- Search "[player] recent form and world ranking [year]"
-- Check: course difficulty and cut line history, tee time draw, player motivation
-
-TENNIS PROP PLAYBOOK:
-SETS/GAMES PROPS:
-- Search "[player A] vs [player B] head to head sets and games history on [surface]"
-- Search "[player] tiebreak win percentage [year]"
-- Check: surface-specific dominance, fatigue from previous rounds, weather, ranking gap (one-sided matches go fewer games)
-
+${sportFactorSection}${propSection}
 STYLE:
 Be sharp, warm, direct. Give a clear recommendation with your confidence level. Lead with the most important insight. Use headers to organize. Never hedge excessively — take a stance. You are their trusted advisor, not a disclaimer machine.
 
