@@ -1,0 +1,698 @@
+import { createClient } from '@supabase/supabase-js';
+
+// Synchronous by design (not Batches API) — this step needs a guaranteed
+// timely response right up against each candidate's own publish deadline.
+// Intended cron cadence: every 2-3 minutes.
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+// Same "material move" thresholds used in research-scheduler's pre-flight
+// freshness check — kept consistent across both gates.
+//
+// Aug 27 fix: this is the FINAL gate before a pick actually publishes, so
+// it had the same two bugs as research-scheduler's pre-flight check, and
+// arguably mattered more here — (1) checked moneyline+spread regardless
+// of the pick's actual bet type, and (2) compared bookmakers[0] against
+// bookmakers[0] from two different points in time with no guarantee it's
+// the same sportsbook both times. Fixed the same way in both places.
+const MONEYLINE_REJECT_CENTS = 50;
+const POINT_REJECT = 3.0;
+const TOTAL_REJECT = 1.0; // runs — same default as research-scheduler, Miles's call to tune
+
+// KEEP IN SYNC with the same constant in research-scheduler/route.js and
+// morning-trigger/route.js — all three now pin to this one named book so
+// every odds snapshot taken anywhere in the pipeline is comparable.
+const PRIMARY_BOOKMAKER_KEY = 'draftkings';
+
+// SINGLE-LIST REBUILD (Aug 3, 2026) — Official/Lean tier split removed.
+// PUBLISH_SCORE_THRESHOLD is set to the OLD Lean floor, not the old
+// Official bar, deliberately — this preserves today's actual publish
+// volume while settlement data is still being trusted again. This is a
+// placeholder, not a final decision — Miles: revisit once a few clean
+// days of corrected data exist.
+const PUBLISH_SCORE_THRESHOLD = 6.0;
+// Totals keep their own higher bar — real July 20 data showed totals
+// going 0-6 while every side won that day. Same placeholder status.
+const TOTAL_PUBLISH_THRESHOLD = 7.0;
+const MAX_TOTALS_PER_DAY = 2;
+const DAILY_PICK_CAP = 3;
+const CORRELATION_CAP_PER_SPORT_BETTYPE = 2;
+const ELITE_OVERRIDE_THRESHOLD = 8.5; // a pick this strong publishes as a genuine 4th+ pick even when the daily cap is full — never bumps an existing pick (Miles, Aug 3). Does NOT override the correlation cap, which is a risk-concentration guard, not a quality gate.
+
+// Same logic as settle-bets.js's inferBetType() — deriving from the ACTUAL
+// final pick text, not the Stage 1 label. Stage 1's bet_type is a guess
+// made before real research; Stage 2 can (correctly) land on a completely
+// different bet type once the research is done (e.g. "moneyline" candidate
+// becomes a run line pick). Using the stale label here would feed wrong
+// data into the correlation cap, which reads this exact field.
+//
+// Stage 2 sometimes embeds odds directly in the pick text (e.g. "Giants ML
+// +120") and sometimes doesn't (e.g. "Chicago Cubs ML") — inconsistent
+// output, not something to special-case. Strip the known odds value out
+// first if present, so an embedded "+120" doesn't get misread as a spread
+// number and misclassify a moneyline pick as a runline.
+function inferBetTypeFromPickText(pickText, oddsText) {
+  if (!pickText) return 'unknown';
+  let p = pickText.toLowerCase();
+  if (oddsText) {
+    p = p.split(oddsText.toLowerCase().trim()).join('');
+  }
+  if (p.includes(' & ') || p.includes(' and ')) return 'combo';
+  if (p.includes('both teams to score') || p.includes('btts')) return 'btts';
+  if ((p.includes('over') || p.includes('under')) && p.match(/\d+\.?\d*/)) return 'total';
+  if (p.match(/[+-]\d+\.?\d+/) && !p.match(/^[+-]\d{3,}$/)) return 'runline';
+  if (p.includes(' ml') || p.endsWith(' ml') || p.includes('moneyline')) return 'moneyline';
+  return 'moneyline';
+}
+
+function parseOddsString(str) {
+  const out = {};
+  if (!str) return out;
+  for (const part of str.split(',')) {
+    const match = part.trim().match(/^(.+?):\s*(-?\d+(\.\d+)?)$/);
+    if (match) out[match[1].trim()] = parseFloat(match[2]);
+  }
+  return out;
+}
+
+function parsePointsString(str) {
+  const out = {};
+  if (!str) return out;
+  for (const part of str.split(',')) {
+    const match = part.trim().match(/^(.+?)\s(-?\d+(\.\d+)?):\s*-?\d+$/);
+    if (match) out[match[1].trim()] = parseFloat(match[2]);
+  }
+  return out;
+}
+
+// e.g. "Over 7.5: -102, Under 7.5: -120" -> 7.5
+function parseTotalPoint(str) {
+  if (!str) return null;
+  const match = str.match(/(-?\d+(\.\d+)?)/);
+  return match ? parseFloat(match[1]) : null;
+}
+
+// Aug 27 fix: only checks the ONE market matching the pick's actual bet
+// type — see the reordering below where betType is now computed BEFORE
+// this runs, using the real researched pick text rather than Stage 1's
+// guess (candidate.bet_type), since Stage 2 can land on a different bet
+// type than Stage 1 proposed.
+function checkFreshness(betType, original, fresh) {
+  if (betType === 'moneyline') {
+    const origML = parseOddsString(original.moneyline);
+    const freshML = parseOddsString(fresh.moneyline);
+    for (const team of Object.keys(origML)) {
+      if (freshML[team] === undefined) continue;
+      const diff = Math.abs(freshML[team] - origML[team]);
+      if (diff >= MONEYLINE_REJECT_CENTS) {
+        return { stale: true, reason: `Moneyline moved ${diff} cents on ${team} since research (${origML[team]} → ${freshML[team]})` };
+      }
+    }
+    return { stale: false, reason: null };
+  }
+
+  if (betType === 'runline' || betType === 'spread') {
+    const origPts = parsePointsString(original.spread);
+    const freshPts = parsePointsString(fresh.spread);
+    for (const team of Object.keys(origPts)) {
+      if (freshPts[team] === undefined) continue;
+      const diff = Math.abs(freshPts[team] - origPts[team]);
+      if (diff >= POINT_REJECT) {
+        return { stale: true, reason: `Spread moved ${diff} points on ${team} since research (${origPts[team]} → ${freshPts[team]})` };
+      }
+    }
+    return { stale: false, reason: null };
+  }
+
+  if (betType === 'total') {
+    const origTotal = parseTotalPoint(original.total);
+    const freshTotal = parseTotalPoint(fresh.total);
+    if (origTotal !== null && freshTotal !== null) {
+      const diff = Math.abs(freshTotal - origTotal);
+      if (diff >= TOTAL_REJECT) {
+        return { stale: true, reason: `Total moved ${diff} runs since research (${origTotal} → ${freshTotal})` };
+      }
+    }
+    return { stale: false, reason: null };
+  }
+
+  // combo / btts / f5 / first_half / prop / unknown — no honest
+  // same-market original snapshot to compare against; skip rather than
+  // falsely check against an unrelated market.
+  return { stale: false, reason: null };
+}
+
+async function fetchLiveOddsForGame(gameName) {
+  const oddsRes = await fetch('https://betcierge-next.vercel.app/api/odds', { method: 'POST' });
+  const oddsData = await oddsRes.json();
+  const match = (oddsData.games || []).find(g => `${g.away_team} @ ${g.home_team}` === gameName);
+  if (!match) return null;
+  const bm = match.bookmakers?.find(b => b.key === PRIMARY_BOOKMAKER_KEY) || match.bookmakers?.[0];
+  if (bm && bm.key !== PRIMARY_BOOKMAKER_KEY) {
+    console.log(`BOOKMAKER_FALLBACK: "${gameName}" — ${PRIMARY_BOOKMAKER_KEY} not posted for this game yet, using ${bm.key} instead for the final freshness check.`);
+  }
+  const h2h = bm?.markets?.find(m => m.key === 'h2h');
+  const spread = bm?.markets?.find(m => m.key === 'spreads');
+  const total = bm?.markets?.find(m => m.key === 'totals');
+  return {
+    moneyline: h2h?.outcomes?.map(o => `${o.name}: ${o.price}`).join(', ') || null,
+    spread: spread?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', ') || null,
+    total: total?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', ') || null,
+  };
+}
+
+function extractText(content) {
+  return (content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+}
+
+function cleanJson(text) {
+  const clean = text
+    .replace(/```json|```/g, '')
+    .replace(/<cite[^>]*>([\s\S]*?)<\/cite>/g, '$1')
+    .replace(/<cite[^>]*>/g, '')
+    .replace(/<\/cite>/g, '')
+    .trim();
+  const jsonMatch = clean.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON found in response: ' + text.slice(0, 300));
+  return JSON.parse(jsonMatch[0]);
+}
+
+// ── Final lineup-currency check ──────────────────────────────────────────
+// A small, targeted, SYNCHRONOUS call (not the Batches API, not a full
+// Stage 2 re-research) that re-checks only the specific named participants
+// this pick actually depends on, and returns a WEIGHTED score adjustment
+// rather than a flat keep/discard bucket. A minor bench change on a 9.0
+// pick should barely move it; a real problem on a 7.2 pick should be able
+// to sink it below the Lean floor entirely. Same 6.0/7.0 thresholds apply
+// to the adjusted score afterward — no separate decision tree.
+async function checkLineupCurrency(candidate) {
+  const elig = candidate.eligibility || {};
+  const confirmedNames = elig.confirmed_names || [];
+  const pickText = candidate.research_log?.pick || candidate.odds || '(pick text unavailable)';
+
+  const system = `You are Hunter. Right before publishing this pick, confirm the specific participants it depends on are STILL accurate — things can change in the time since research completed.
+
+Game: ${candidate.game} (${candidate.sport})
+Pick: ${pickText}
+Original score: ${candidate.score}/10
+Confirmed at research time: ${confirmedNames.join('; ') || '(none recorded)'}
+
+Search for any news since research completed that could affect ONLY the specific participants named above — not a general news scan of the whole game.
+
+Use real judgment on how much any change matters to THIS specific pick, not a flat rule. Some guidance based on how each sport typically behaves:
+- MLB: batting-order changes matter roughly in proportion to that hitter's importance — a #2 or #3 hitter scratched matters far more than a #8 or #9 hitter.
+- NBA/NCAAB: the most sensitive sport to late lineup swaps of any you cover — a non-superstar starter changing can still meaningfully shift a game's shape. Weight accordingly.
+- NHL: a goalie change this close to puck drop is rare and can be significant — weight it heavily, but this is NOT an automatic-cancel case (see below), reason about it like any other change.
+- NFL/soccer: only the specific players actually named above are relevant — an unrelated bench player's status has no bearing on this specific pick.
+
+AUTOMATIC CANCEL — separate from the weighted adjustment above. Exactly three cases end the pick outright, no matter how strong the original score was, because these three roles are load-bearing for the entire pick in a way no adjustment number can capture:
+1. MLB: the confirmed STARTING PITCHER for either team is no longer accurate.
+2. NFL/NCAAF: the confirmed STARTING QUARTERBACK for either team is no longer accurate.
+3. NBA/NCAAB: a team's clear best/focal player — the one whose absence would fundamentally change how the game plays out, not just any starter — is no longer accurate.
+Nothing else triggers automatic cancel, including an NHL goalie change — weight those through the adjustment instead.
+
+Return ONLY this JSON, no other text:
+{
+  "any_change_detected": true or false,
+  "changes": [{"player": "...", "what_changed": "...", "source": "..."}],
+  "automatic_cancel_triggered": true or false,
+  "automatic_cancel_reason": "which of the three specific roles triggered this, or null",
+  "score_adjustment": a number from -5.0 to 0 (0 = nothing meaningful changed, more negative = more damaging to this specific pick — never positive, this check only detects degradation),
+  "adjustment_reasoning": "one or two plain-language sentences a bettor would understand"
+}`;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1500,
+      system,
+      messages: [{ role: 'user', content: `Check currency now for ${candidate.game} and return the JSON.` }],
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    }),
+  });
+  const data = await response.json();
+  const text = extractText(data.content);
+  if (!text.trim()) throw new Error('Lineup-currency check returned no text');
+  return cleanJson(text);
+}
+
+// ── SMS hook — STUB. Twilio is not wired up yet. This is the intended call
+// site: once Twilio is configured, replace the body of this function only.
+// Only fires for tier='official' picks (per current product decision — Lean
+// Machine notifications are a separate, opt-in feature, not yet built).
+async function sendPickSMS(pickRow) {
+  console.log(`SMS_STUB: would notify opted-in Team/Edge users \u2014 "${pickRow.game}" (${pickRow.pick}) is now official.`);
+  // TODO(Twilio): send to all opted-in Team/Edge users, then:
+  // await supabase.from('daily_picks').update({ sms_sent_at: new Date().toISOString() }).eq('id', pickRow.id);
+  return null;
+}
+
+// ── Weight the impact of a missing named batter — fast, NO search ──────
+// The structured check below already confirms the FACT (this specific
+// player isn't in today's posted lineup) — so this call needs zero
+// searching. It only needs baseball judgment: how much does THIS
+// player's absence matter to THIS pick. Claude already knows who real
+// players are; feeding the fact directly instead of asking it to search
+// is what keeps this fast AND properly weighted (a 7-hole hitter and a
+// genuine superstar can't be treated as the same -2.0, per Miles).
+async function weighMissingBatters(candidate, missingBatters) {
+  const pickText = candidate.research_log?.pick || candidate.odds || '(pick text unavailable)';
+
+  const system = `You are Hunter. A structured, official MLB data check has already confirmed the following FACT — this is not something to verify or search for, it is already confirmed true:
+
+Game: ${candidate.game} (MLB)
+Pick: ${pickText}
+Original score: ${candidate.score}/10
+CONFIRMED FACT: the following player(s), previously confirmed as relevant to this pick's research, do NOT appear in today's official posted starting lineup for either team: ${missingBatters.join(', ')}
+
+Your job: judge how much THIS SPECIFIC absence matters to THIS SPECIFIC pick, using your own knowledge of these players — do not search, the fact above is already confirmed and final.
+
+Consider: is this player a genuine offensive focal point of their team's lineup (a real, meaningful bat), or a lower-impact role player? Weight the adjustment roughly in proportion to how much this specific player's presence actually mattered to the case for this specific pick — a true middle-of-the-order star missing should move the score significantly; a marginal bench-caliber player missing should barely move it at all.
+
+Return ONLY this JSON, no other text:
+{
+  "impact_tier": "bench_or_low_impact" or "regular_contributor" or "clear_focal_point",
+  "adjustment_reasoning": "one or two plain-language sentences explaining why, referencing who this player actually is"
+}`;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 500,
+      system,
+      messages: [{ role: 'user', content: `Judge the impact now and return the JSON.` }],
+      // Deliberately NO web_search tool \u2014 the fact is already confirmed
+      // structurally; this is pure judgment, which is what keeps it fast.
+    }),
+  });
+  const data = await response.json();
+  const text = extractText(data.content);
+  if (!text.trim()) throw new Error('Batter-weighting call returned no text');
+  return cleanJson(text);
+}
+
+// ── MLB structured lineup check (fast path, minimal LLM use) ────────────
+// Runs BEFORE the general search-based currency check, MLB only. Reads the
+// actual posted MLB boxscore directly \u2014 deterministic, sub-second, no
+// search round trip \u2014 instead of asking a model to search for something
+// a beat reporter may have posted only minutes ago that generic web
+// search might not have indexed yet.
+//
+// Checks TWO things, matching how automatic-cancel already works:
+//   1. Starting pitcher (either team) \u2014 mismatch = automatic cancel, per
+//      the existing load-bearing-pitcher rule. No judgment needed.
+//   2. Any other named participant from confirmed_names (e.g. a key
+//      hitter the pick depends on) \u2014 if missing from today's posted
+//      batting order, gets a REAL weighted judgment via
+//      weighMissingBatters() above, not a flat guess.
+//
+// Returns null ONLY if the boxscore has no posted lineup yet (too early)
+// \u2014 caller falls back to the search-based check in that case.
+async function checkMLBLineupStructured(candidate) {
+  if (candidate.sport_key !== 'baseball_mlb') return null;
+
+  const gameDate = new Date(candidate.game_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const awayTeam = candidate.game.split(' @ ')[0]?.trim();
+  const homeTeam = candidate.game.split(' @ ')[1]?.trim();
+  if (!awayTeam || !homeTeam) return null;
+
+  const wordMatch = (full, target) => {
+    const words = (target || '').toLowerCase().split(' ').filter(w => w.length > 3);
+    return words.some(w => (full || '').toLowerCase().includes(w));
+  };
+
+  let gamePk;
+  try {
+    const schedRes = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${gameDate}&gameType=R`);
+    const schedData = await schedRes.json();
+    const games = schedData.dates?.[0]?.games || [];
+    const match = games.find(g =>
+      wordMatch(g.teams?.away?.team?.name, awayTeam) ||
+      wordMatch(g.teams?.home?.team?.name, homeTeam)
+    );
+    if (!match) {
+      console.log(`MLB_STRUCTURED_NO_GAME_MATCH: "${candidate.game}" not found in schedule for ${gameDate} \u2014 falling back to search-based check.`);
+      return null;
+    }
+    gamePk = match.gamePk;
+  } catch (e) {
+    console.log(`MLB_STRUCTURED_SCHEDULE_ERROR: ${e.message} \u2014 falling back to search-based check.`);
+    return null;
+  }
+
+  let boxscore;
+  try {
+    const boxRes = await fetch(`https://statsapi.mlb.com/api/v1/game/${gamePk}/boxscore`);
+    boxscore = await boxRes.json();
+  } catch (e) {
+    console.log(`MLB_STRUCTURED_BOXSCORE_ERROR: ${e.message} \u2014 falling back to search-based check.`);
+    return null;
+  }
+
+  function getStartingPitcherName(sideData) {
+    const pitcherIds = sideData?.pitchers || [];
+    if (pitcherIds.length === 0) return null;
+    return sideData.players?.[`ID${pitcherIds[0]}`]?.person?.fullName || null;
+  }
+
+  function getBattingOrderNames(sideData) {
+    const order = sideData?.battingOrder || [];
+    return order.map((id) => sideData.players?.[`ID${id}`]?.person?.fullName || null).filter(Boolean);
+  }
+
+  const awaySide = boxscore.teams?.away;
+  const homeSide = boxscore.teams?.home;
+
+  const awayStarter = getStartingPitcherName(awaySide);
+  const homeStarter = getStartingPitcherName(homeSide);
+  const awayLineup = getBattingOrderNames(awaySide);
+  const homeLineup = getBattingOrderNames(homeSide);
+
+  if (!awayStarter && !homeStarter && awayLineup.length === 0 && homeLineup.length === 0) {
+    console.log(`MLB_STRUCTURED_NO_LINEUP_YET: "${candidate.game}" \u2014 boxscore has no posted starters or lineup yet \u2014 falling back to search-based check.`);
+    return null;
+  }
+
+  const confirmedNames = candidate.eligibility?.confirmed_names || [];
+  const lastWord = (n) => (n || '').trim().split(' ').pop().toLowerCase();
+
+  // confirmed_names entries are full sentences from Stage 2 research (e.g.
+  // "Framber Valdez confirmed starting for Detroit Tigers per FanDuel
+  // Research..."), not bare names. Taking the literal last word of that
+  // whole sentence grabs a stray word from the citation, not the player's
+  // actual surname \u2014 this pulls out just the name before " confirmed",
+  // the consistent pattern Stage 2 always uses.
+  const extractPlayerName = (confirmedNameString) => {
+    if (!confirmedNameString) return '';
+    const idx = confirmedNameString.toLowerCase().indexOf(' confirmed');
+    if (idx === -1) return confirmedNameString.trim();
+    return confirmedNameString.slice(0, idx).trim();
+  };
+
+  // ── Check 1: starting pitcher (automatic cancel, no judgment needed) ──
+  const pitcherStillMatches = (postedName) => {
+    if (!postedName) return true; // not posted for this side yet — can't say it changed
+    if (confirmedNames.length === 0) return true; // nothing to compare against
+    return confirmedNames.some(cn => lastWord(extractPlayerName(cn)) === lastWord(postedName));
+  };
+
+  const awayPitcherOk = pitcherStillMatches(awayStarter);
+  const homePitcherOk = pitcherStillMatches(homeStarter);
+
+  if (!awayPitcherOk || !homePitcherOk) {
+    const mismatchSide = !awayPitcherOk ? `away (${awayStarter})` : `home (${homeStarter})`;
+    return {
+      any_change_detected: true,
+      changes: [{
+        player: 'starting pitcher',
+        what_changed: `Posted boxscore starter for ${mismatchSide} does not match research-time confirmed_names: ${confirmedNames.join(', ') || '(none recorded)'}`,
+        source: 'MLB Stats API boxscore (structured, direct \u2014 not a search)',
+      }],
+      automatic_cancel_triggered: true,
+      automatic_cancel_reason: 'MLB starting pitcher confirmed at research time no longer matches the official posted boxscore.',
+      score_adjustment: -5.0,
+      adjustment_reasoning: 'Structured MLB boxscore check found a starting pitcher mismatch \u2014 automatic cancel per the load-bearing pitcher rule.',
+    };
+  }
+
+  // ── Check 2: other named participants still in the batting order ───
+  const pitcherLastWords = [lastWord(awayStarter), lastWord(homeStarter)].filter(Boolean);
+  const battersToCheck = confirmedNames.filter(cn => !pitcherLastWords.includes(lastWord(extractPlayerName(cn))));
+
+  const fullLineupNames = [...awayLineup, ...homeLineup];
+  const missingBatters = [];
+  for (const cn of battersToCheck) {
+    const found = fullLineupNames.some(name => lastWord(name) === lastWord(extractPlayerName(cn)));
+    if (!found && fullLineupNames.length > 0) {
+      missingBatters.push(cn);
+    }
+  }
+
+  if (missingBatters.length === 0) {
+    console.log(`MLB_STRUCTURED_LINEUP_OK: "${candidate.game}" \u2014 posted starters and lineup match research-time confirmation, no search needed.`);
+    return {
+      any_change_detected: false,
+      changes: [],
+      automatic_cancel_triggered: false,
+      automatic_cancel_reason: null,
+      score_adjustment: 0,
+      adjustment_reasoning: 'Structured MLB boxscore check: pitcher and all named participants confirmed still in the posted lineup.',
+    };
+  }
+
+  // Real weighted judgment on the missing batter(s) \u2014 NOT a flat guess.
+  // MILES: these three numbers are your call \u2014 tune freely. The model only
+  // picks a CATEGORY; your code decides the actual point value, so a
+  // low-impact player can never be assigned an open-ended, unpredictable hit.
+  const IMPACT_TIER_ADJUSTMENTS = {
+    bench_or_low_impact: 0,
+    regular_contributor: -0.5,
+    clear_focal_point: -1.5,
+  };
+
+  let weighting;
+  try {
+    weighting = await weighMissingBatters(candidate, missingBatters);
+  } catch (e) {
+    console.log(`MLB_STRUCTURED_WEIGHT_ERROR: ${e.message} — falling back to the most conservative tier (bench_or_low_impact) rather than over-penalizing on a failed call.`);
+    weighting = { impact_tier: 'bench_or_low_impact', adjustment_reasoning: `Weighting call failed (${e.message}) — defaulted to least-damaging tier.` };
+  }
+  const adjustment = IMPACT_TIER_ADJUSTMENTS[weighting.impact_tier] ?? IMPACT_TIER_ADJUSTMENTS.bench_or_low_impact;
+
+  console.log(`MLB_STRUCTURED_BATTER_MISSING: "${candidate.game}" \u2014 ${missingBatters.join(', ')} missing from posted lineup \u2014 weighted adjustment: ${adjustment} (${weighting.adjustment_reasoning})`);
+
+  return {
+    any_change_detected: true,
+    changes: missingBatters.map(name => ({
+      player: name,
+      what_changed: `Named participant not found in either team's posted starting batting order.`,
+      source: 'MLB Stats API boxscore (structured, direct \u2014 not a search)',
+    })),
+    automatic_cancel_triggered: false,
+    automatic_cancel_reason: null,
+    score_adjustment: adjustment,
+    adjustment_reasoning: weighting.adjustment_reasoning || `Structured check found ${missingBatters.length} named participant(s) missing: ${missingBatters.join(', ')}.`,
+  };
+}
+async function finalizePicks() {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const now = new Date();
+
+  const { data: candidates, error } = await supabase
+    .from('game_candidates')
+    .select('*')
+    .eq('date', today)
+    .eq('status', 'awaiting_confirmation')
+    .eq('research_status', 'researched')
+    .lte('publish_deadline_at', now.toISOString())
+    .order('publish_deadline_at', { ascending: true }); // first-come-first-served, matches the "unlock as confirmed" model, not end-of-day ranking
+
+  if (error) throw error;
+  if (!candidates || candidates.length === 0) {
+    console.log('No candidates have crossed their publish deadline this run.');
+    return;
+  }
+
+  console.log(`${candidates.length} candidate(s) crossed their publish deadline \u2014 finalizing.`);
+
+  for (const candidate of candidates) {
+    try {
+      // ── Final freshness re-check ──────────────────────────────────────
+      // Compares against fresh_moneyline/fresh_spread \u2014 the snapshot
+      // taken at Stage 2 research-submission time \u2014 not the morning's
+      // original snapshot, since that's the most recent honest baseline.
+      // Bet type is derived here now, BEFORE the freshness check (it used
+      // to be derived much later, after the freshness check had already
+      // run against the wrong market). Uses the ACTUAL researched pick
+      // text, not candidate.bet_type (Stage 1's guess, which Stage 2 can
+      // correctly override) — see inferBetTypeFromPickText() above.
+      const pick = candidate.research_log || {};
+      const betType = inferBetTypeFromPickText(pick.pick, pick.odds) || candidate.bet_type || 'unknown';
+
+      const liveOdds = await fetchLiveOddsForGame(candidate.game);
+      if (!liveOdds) {
+        console.log(`FINAL_STALE_VANISHED: "${candidate.game}" no longer in live odds feed \u2014 discarding.`);
+        await supabase.from('game_candidates').update({
+          status: 'discarded_stale_final',
+          notes: 'Game no longer found in live odds feed at final-confirmation time.',
+        }).eq('id', candidate.id);
+        continue;
+      }
+      const freshness = checkFreshness(
+        betType,
+        { moneyline: candidate.fresh_moneyline, spread: candidate.fresh_spread, total: candidate.fresh_total },
+        liveOdds
+      );
+      if (freshness.stale) {
+        console.log(`FINAL_STALE_LINE_MOVE: "${candidate.game}" \u2014 ${freshness.reason} \u2014 discarding rather than publishing a dead edge.`);
+        await supabase.from('game_candidates').update({
+          status: 'discarded_stale_final',
+          notes: `Discarded at final confirmation: ${freshness.reason}`,
+        }).eq('id', candidate.id);
+        continue;
+      }
+
+      // \u2500\u2500 Final lineup-currency check \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+      let currency = null;
+      if (candidate.sport_key === 'baseball_mlb') {
+        currency = await checkMLBLineupStructured(candidate);
+      }
+      if (!currency) {
+        currency = await checkLineupCurrency(candidate);
+      }
+
+      if (currency.automatic_cancel_triggered === true) {
+        console.log(`FINAL_LINEUP_AUTOCANCEL: "${candidate.game}" \u2014 ${currency.automatic_cancel_reason || 'key role changed'} (${JSON.stringify(currency.changes)}) \u2014 discarding outright, this is one of the three roles no adjustment can capture.`);
+        await supabase.from('game_candidates').update({
+          status: 'discarded_key_player_out',
+          notes: `Final lineup check \u2014 automatic cancel: ${currency.automatic_cancel_reason || currency.adjustment_reasoning || 'key role no longer confirmed'}`,
+        }).eq('id', candidate.id);
+        continue;
+      }
+
+      const adjustment = Math.max(-5.0, Math.min(0, currency.score_adjustment || 0)); // never allow a positive adjustment
+      const originalScore = candidate.score;
+      const score = Math.max(0, originalScore + adjustment);
+
+      if (currency.any_change_detected) {
+        console.log(`FINAL_LINEUP_ADJUSTED: "${candidate.game}" \u2014 ${originalScore} \u2192 ${score} (${adjustment}) \u2014 ${currency.adjustment_reasoning || 'no reasoning given'}`);
+      }
+
+      // pick/betType now computed earlier, before the freshness check —
+      // see there for why (needs the real bet type, not Stage 1's guess).
+      const isTotal = betType === 'total';
+      const effectiveThreshold = isTotal ? TOTAL_PUBLISH_THRESHOLD : PUBLISH_SCORE_THRESHOLD;
+
+      if (isTotal) {
+        const { data: totalsToday } = await supabase
+          .from('daily_picks')
+          .select('id', { count: 'exact' })
+          .eq('date', today)
+          .eq('bet_type', 'total');
+        if ((totalsToday || []).length >= MAX_TOTALS_PER_DAY) {
+          console.log(`FINAL_TOTALS_DAILY_CAP: "${candidate.game}" is a total but today's slate already has ${MAX_TOTALS_PER_DAY} totals published — discarding rather than adding another, regardless of this candidate's own score.`);
+          await supabase.from('game_candidates').update({
+            status: 'discarded_totals_daily_cap',
+          }).eq('id', candidate.id);
+          continue;
+        }
+      }
+
+      if (score < effectiveThreshold) {
+        console.log(`FINAL_BELOW_THRESHOLD: "${candidate.game}" (${betType}) scored ${score}, below ${effectiveThreshold} — not published.`);
+        await supabase.from('game_candidates').update({
+          status: 'discarded_low_score',
+        }).eq('id', candidate.id);
+        continue;
+      }
+
+      // Correlation cap — hard gate, checked before the daily cap/elite
+      // override. The elite override never bypasses this: correlation
+      // risk is a concentration guard, not a quality gate, so a strong
+      // score doesn't earn an exception here the way it does below.
+      const { data: sameTypeToday } = await supabase
+        .from('daily_picks')
+        .select('id', { count: 'exact' })
+        .eq('date', today)
+        .eq('sport', candidate.sport)
+        .eq('bet_type', betType);
+
+      if ((sameTypeToday || []).length >= CORRELATION_CAP_PER_SPORT_BETTYPE) {
+        console.log(`FINAL_CORRELATION_CAP: "${candidate.game}" scored ${score} but ${candidate.sport}/${betType} already has ${CORRELATION_CAP_PER_SPORT_BETTYPE} picks published today — discarding rather than adding another same-type pick to an already-concentrated slate.`);
+        await supabase.from('game_candidates').update({
+          status: 'discarded_correlation_cap',
+        }).eq('id', candidate.id);
+        continue;
+      }
+
+      const { data: picksToday } = await supabase
+        .from('daily_picks')
+        .select('id', { count: 'exact' })
+        .eq('date', today);
+
+      let publishNote = null;
+
+      if ((picksToday || []).length >= DAILY_PICK_CAP) {
+        if (score >= ELITE_OVERRIDE_THRESHOLD) {
+          publishNote = 'elite_override';
+          console.log(`FINAL_ELITE_OVERRIDE: "${candidate.game}" scored ${score} — today's cap of ${DAILY_PICK_CAP} was already full, but this cleared the ${ELITE_OVERRIDE_THRESHOLD} elite bar, so it publishes as an additional pick — too good to hold back.`);
+        } else {
+          console.log(`FINAL_DAILY_CAP: "${candidate.game}" scored ${score} but today's slate already has ${DAILY_PICK_CAP} picks and didn't clear the ${ELITE_OVERRIDE_THRESHOLD} elite override bar — discarding.`);
+          await supabase.from('game_candidates').update({
+            status: 'discarded_daily_cap',
+          }).eq('id', candidate.id);
+          continue;
+        }
+      }
+
+      const { data: inserted, error: insertErr } = await supabase.from('daily_picks').insert({
+        date: today,
+        sport: candidate.sport,
+        game: candidate.game,
+        bet_type: betType,
+        pick: pick.pick || null,
+        odds: candidate.odds || pick.odds || null,
+        units: candidate.units || pick.units || null,
+        confidence: pick.confidence || null,
+        insight: candidate.insight || pick.insight || null,
+        result: 'Pending',
+        status: 'active',
+        game_time: candidate.game_time,
+        tier: null, // deprecated with the single-list rebuild — column stays in schema, cleaned up during the production migration, not written to going forward
+        miss_reason: publishNote, // repurposed: null normally, 'elite_override' when this pick only got in via the 4th-pick rule — internal auditability, never shown to users
+        game_candidate_id: candidate.id,
+        score,
+        original_score: originalScore,
+        lineup_check_adjustment: adjustment,
+        lineup_check_notes: currency.any_change_detected ? (currency.adjustment_reasoning || null) : null,
+      }).select().single();
+
+      if (insertErr) throw insertErr;
+
+      await supabase.from('game_candidates').update({
+        status: 'published',
+      }).eq('id', candidate.id);
+
+      console.log(`FINAL_PUBLISHED: "${candidate.game}" — score=${score}${publishNote ? ` (${publishNote})` : ''}`);
+
+      await sendPickSMS(inserted);
+    } catch (err) {
+      console.error(`Error finalizing candidate ${candidate.id} (${candidate.game}):`, err.message);
+      // Left as awaiting_confirmation \u2014 will be retried next run. If this
+      // keeps failing past the game's actual start time, it'll just never
+      // publish, which is the safe failure direction.
+    }
+  }
+}
+
+export async function GET(request) {
+  const authHeader = request.headers.get('authorization');
+  const isVercelCron = request.headers.get('x-vercel-cron') === '1';
+  const cronSecret = request.headers.get('x-cron-secret');
+  if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}` && cronSecret !== process.env.CRON_SECRET) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  await finalizePicks().catch(err => console.error('finalizePicks error:', err));
+  return Response.json({ success: true, message: 'Finalize picks run complete' });
+}
+
+export async function POST(request) {
+  return GET(request);
+}

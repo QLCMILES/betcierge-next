@@ -1,9 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { waitUntil } from '@vercel/functions';
 
-// Stage 1 only — lightweight, no web search. Generous headroom, but this
-// should complete in a few seconds in practice.
-export const maxDuration = 60;
+// Stage 1 now includes a real, search-enabled verification pass per
+// candidate (added to fix a measured totals-quality problem), so this
+// genuinely needs real time — 300s gives comfortable room while staying
+// well under Pro's 800s general-availability ceiling.
+export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 const supabase = createClient(
@@ -11,7 +13,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const TIME_BUDGET_MS = 60000; // gates the Stage 1 candidate-pool retry only
+// TIME_BUDGET_MS removed — was only used by the old candidate-pool retry
+// logic, which no longer exists in this file.
 
 async function callClaude(body, retryCount = 0, timeoutMs = 60000) {
   const controller = new AbortController();
@@ -72,6 +75,226 @@ function cleanJson(text) {
   return JSON.parse(jsonMatch[0]);
 }
 
+// ── Game identity resolution (first-class `games` table) ─────────────────
+// Looks up (or creates) the one true row for a real-world game, so
+// downstream tables can point at a stable internal id instead of a
+// free-text string or a provider id that can silently change (the Odds
+// API's own id is a hash of sport+teams+commence_time, and shifts if
+// commence_time moves 8+ hours — e.g. a rain postponement).
+//
+// Non-fatal by design: this is additive infrastructure sitting alongside
+// game_candidates creation, not gating it. Any failure here logs and
+// returns null — the candidate row still gets written either way.
+//
+// BATCHED — takes every candidate for this run at once and resolves them
+// in a small, fixed number of DB round trips instead of one (or two) per
+// candidate. This is the fix for a flagged scaling risk: the original
+// per-candidate version was fine at MLB volume (10-15 games) but added
+// up to 100-200 sequential round trips at real college-football volume
+// (40-100+ games), stacking onto a function that already has a 300s
+// ceiling. Common case (brand-new game, or an exact repeat match with no
+// drift) now costs exactly 2 round trips total regardless of slate size:
+// one bulk fetch, one bulk insert. Only the rare case — a provider id
+// that drifted since we last saw this game (e.g. a postponement) — still
+// does individual work, and even those run concurrently via
+// Promise.all(), not sequentially.
+//
+// candidates: array of { _index, sportKey, homeTeam, awayTeam, commenceTime (Date), oddsApiGameId }
+// returns: Map of _index -> games.id (missing entries mean resolution
+// failed for that candidate — non-fatal, caller leaves game_ref_id null)
+// Football postponements can shift a game by days, not hours — flex
+// scheduling, weather, extreme cases (real historical precedent: the
+// 2022 Bills/Bengals postponement, multi-day COVID-era reschedules).
+// Time is not a safe identity signal for football the way it is for
+// daily sports with real doubleheaders (MLB/NBA/NHL) — see
+// resolveOrCreateGamesBatch's repair path below for how this is used.
+const FOOTBALL_SPORT_KEYS = new Set(['americanfootball_nfl', 'americanfootball_ncaaf']);
+
+// TEMPORARY (Aug 26, 2026) — pausing all soccer leagues while pre-revenue,
+// to cut Layer 1 evaluation cost. Soccer was driving real day-to-day cost
+// spikes (multiple leagues, 20-60+ games some days) with no test value
+// right now. Flip to false to bring soccer back once ready.
+const SKIP_SOCCER = true;
+
+// (Aug 27, 2026) — pin the odds snapshot taken here to a SPECIFIC named
+// book, instead of whichever book The Odds API happened to return first
+// (bookmakers[0]). research-scheduler's later freshness re-check pins to
+// this same book, so the two snapshots are actually comparable — before
+// this, a "line move" could just be two different sportsbooks disagreeing
+// at two different points in time, not the market actually moving.
+// KEEP IN SYNC with the same constant in research-scheduler/route.js.
+const PRIMARY_BOOKMAKER_KEY = 'draftkings';
+
+async function resolveOrCreateGamesBatch(candidates) {
+  const results = new Map();
+
+  const validCandidates = candidates.filter(c => {
+    if (!c.sportKey || !c.homeTeam || !c.awayTeam) {
+      console.log(`GAME_IDENTITY_SKIPPED: missing sportKey/homeTeam/awayTeam for "${c.awayTeam} @ ${c.homeTeam}" — leaving game_ref_id null.`);
+      return false;
+    }
+    return true;
+  });
+  if (validCandidates.length === 0) return results;
+
+  try {
+    // One bulk fetch covering every candidate's fast-path AND repair-path
+    // window at once — the same 18h buffer used per-candidate before,
+    // just applied to the whole batch's time span in a single query.
+    // Correct for MLB/NBA/NHL/MLS/MMA, where real doubleheaders/rematches
+    // within a day make a narrow window necessary to avoid false matches.
+    const allTimesMs = validCandidates.map(c => c.commenceTime.getTime());
+    const windowStart = new Date(Math.min(...allTimesMs) - 18 * 60 * 60 * 1000).toISOString();
+    const windowEnd = new Date(Math.max(...allTimesMs) + 18 * 60 * 60 * 1000).toISOString();
+
+    const { data: existingGames, error: fetchError } = await supabase
+      .from('games')
+      .select('id, sport, home_team, away_team, commence_time, odds_api_game_id')
+      .gte('commence_time', windowStart)
+      .lte('commence_time', windowEnd);
+
+    if (fetchError) {
+      console.log(`GAME_IDENTITY_BATCH_FETCH_ERROR: ${fetchError.message} — all candidates in this batch fall back to game_ref_id=null.`);
+      return results;
+    }
+
+    // Football gets a second, time-unrestricted fetch — see
+    // FOOTBALL_SPORT_KEYS comment above for why time isn't a safe
+    // identity signal there. One extra bulk fetch, only when the batch
+    // actually contains a football candidate — not per-candidate, so
+    // this doesn't reintroduce the scaling problem fixed earlier today.
+    const hasFootball = validCandidates.some(c => FOOTBALL_SPORT_KEYS.has(c.sportKey));
+    let footballGames = [];
+    if (hasFootball) {
+      const { data: fbGames, error: fbFetchError } = await supabase
+        .from('games')
+        .select('id, sport, home_team, away_team, commence_time, odds_api_game_id')
+        .in('sport', [...FOOTBALL_SPORT_KEYS]);
+      if (fbFetchError) {
+        console.log(`GAME_IDENTITY_FOOTBALL_FETCH_ERROR: ${fbFetchError.message}`);
+      } else {
+        footballGames = fbGames || [];
+      }
+    }
+
+    const byProviderId = new Map();
+    for (const g of existingGames || []) {
+      if (g.odds_api_game_id) byProviderId.set(g.odds_api_game_id, g);
+    }
+    // A football game postponed outside the normal time window might not
+    // be in existingGames at all — make sure the fast path can still
+    // find it by provider id via the unrestricted football set too.
+    for (const g of footballGames) {
+      if (g.odds_api_game_id && !byProviderId.has(g.odds_api_game_id)) byProviderId.set(g.odds_api_game_id, g);
+    }
+
+    const toInsert = [];
+    const insertKeyToIndex = new Map(); // keyed by home|away|epoch-ms, not raw ISO string, to avoid any Postgres round-trip formatting mismatch
+    const updatePromises = [];
+
+    for (const c of validCandidates) {
+      const commenceTimeIso = c.commenceTime.toISOString();
+      const isFootball = FOOTBALL_SPORT_KEYS.has(c.sportKey);
+
+      // Fast path: direct provider-id match.
+      if (c.oddsApiGameId && byProviderId.has(c.oddsApiGameId)) {
+        const existing = byProviderId.get(c.oddsApiGameId);
+        results.set(c._index, existing.id);
+        if (existing.commence_time !== commenceTimeIso) {
+          updatePromises.push(
+            supabase.from('games')
+              .update({ commence_time: commenceTimeIso, updated_at: new Date().toISOString() })
+              .eq('id', existing.id)
+              .then(({ error }) => { if (error) console.log(`GAME_IDENTITY_UPDATE_ERROR: ${error.message}`); })
+          );
+        }
+        continue;
+      }
+
+      // Repair path: provider id missed — either a new game, or this
+      // game's provider id drifted since we last saw it. In-memory match
+      // against the already-fetched batch instead of a DB round trip.
+      //
+      // Two things changed here (Aug 4, three-way review):
+      // 1. Football searches the unrestricted footballGames pool with NO
+      //    time constraint at all — two football teams essentially never
+      //    play each other twice in a season except a scheduled rematch
+      //    months apart, so identity alone (sport+teams) is safe. Every
+      //    other sport keeps the existing ±18h window, still needed to
+      //    correctly disambiguate same-day doubleheaders/rematches.
+      // 2. Swap-safe matching for every sport — neutral-site/
+      //    international games (NFL London/Germany, neutral-site NCAAF
+      //    openers) can have home/away swapped between provider updates,
+      //    so a real match must accept either orientation.
+      const searchPool = isFootball ? footballGames : (existingGames || []);
+      const repaired = searchPool.find(g => {
+        if (g.sport !== c.sportKey) return false;
+        const namesMatch =
+          (g.home_team === c.homeTeam && g.away_team === c.awayTeam) ||
+          (g.home_team === c.awayTeam && g.away_team === c.homeTeam);
+        if (!namesMatch) return false;
+        if (isFootball) return true;
+        return Math.abs(new Date(g.commence_time).getTime() - c.commenceTime.getTime()) <= 18 * 60 * 60 * 1000;
+      });
+      if (repaired) {
+        results.set(c._index, repaired.id);
+        console.log(`GAME_IDENTITY_REPAIRED: ${c.awayTeam} @ ${c.homeTeam} matched by ${isFootball ? 'teams only, no time constraint (football)' : 'teams+date (swap-safe)'}, healing odds_api_game_id -> ${c.oddsApiGameId || 'null'}`);
+        updatePromises.push(
+          supabase.from('games')
+            .update({
+              odds_api_game_id: c.oddsApiGameId || null,
+              odds_api_id_synced_at: new Date().toISOString(),
+              commence_time: commenceTimeIso,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', repaired.id)
+            .then(({ error }) => { if (error) console.log(`GAME_IDENTITY_UPDATE_ERROR: ${error.message}`); })
+        );
+        continue;
+      }
+
+      // Genuinely new game — queue for the single bulk insert below.
+      insertKeyToIndex.set(`${c.homeTeam}|${c.awayTeam}|${c.commenceTime.getTime()}`, c._index);
+      toInsert.push({
+        sport: c.sportKey,
+        home_team: c.homeTeam,
+        away_team: c.awayTeam,
+        commence_time: commenceTimeIso,
+        odds_api_game_id: c.oddsApiGameId || null,
+        odds_api_id_synced_at: c.oddsApiGameId ? new Date().toISOString() : null,
+      });
+    }
+
+    const work = [...updatePromises];
+
+    if (toInsert.length > 0) {
+      work.push(
+        supabase.from('games')
+          .insert(toInsert)
+          .select('id, home_team, away_team, commence_time')
+          .then(({ data: created, error: insertError }) => {
+            if (insertError) {
+              console.log(`GAME_IDENTITY_BATCH_INSERT_ERROR: ${insertError.message}`);
+              return;
+            }
+            console.log(`GAME_IDENTITY_CREATED: ${created.length} new games rows in one batch insert.`);
+            for (const row of created) {
+              const key = `${row.home_team}|${row.away_team}|${new Date(row.commence_time).getTime()}`;
+              const idx = insertKeyToIndex.get(key);
+              if (idx !== undefined) results.set(idx, row.id);
+            }
+          })
+      );
+    }
+
+    await Promise.all(work);
+    return results;
+  } catch (e) {
+    console.log(`GAME_IDENTITY_BATCH_UNEXPECTED_ERROR: ${e.message}`);
+    return results;
+  }
+}
+
 // ── Recent Picks Memory (unchanged from generate-picks) ─────────────────
 async function buildRecentPicksMemory() {
   const sevenDaysAgo = new Date();
@@ -121,71 +344,13 @@ async function buildRecentPicksMemory() {
   return summary;
 }
 
-// ── Stage 1: Candidate Pool (unchanged from generate-picks) ─────────────
-async function buildCandidatePool(gamesContext, today_display, recentPicksMemory, sportsAvailable) {
-  const multiSportNote = sportsAvailable.length > 1
-    ? `\n\nMULTIPLE SPORTS ARE LIVE TODAY: ${sportsAvailable.join(', ')}. Your candidate pool MUST include games from at least 2 different sports if games from 2+ sports are available in the feed. Do not let one sport dominate the pool just because it has more games listed.`
-    : '';
-
-  const system = `You are Hunter, an elite sports betting analyst. Today is ${today_display}.
-
-This is STAGE 1 of a two-stage process. Your ONLY job right now is to identify a diverse CANDIDATE POOL. Do NOT do deep research yet. Do NOT write insights yet. Just identify strong candidates worth researching further.
-
-REQUIREMENTS FOR THE CANDIDATE POOL:
-- Identify 8-10 candidates from the games feed below.
-- Candidates MUST span multiple bet types: moneyline, run line/spread, totals, AND at least one alternate market when available (first 5 innings for MLB, first half, player props). Do NOT return a pool that is all moneyline or all spread.
-- Do NOT propose a candidate on a team flagged in the repeat warning below unless you note specifically what is different this time.
-- Each candidate needs only a ONE-SENTENCE reason — save the deep research for stage 2.
-- Every game must come EXACTLY from the feed below. Never invent games.${multiSportNote}
-
-IMPORTANT — what this diversity requirement is actually for: this pool is material to RESEARCH, not a preview of your final picks. You are being asked to make sure F5, props, and totals get genuinely looked at before you commit to anything, not to guarantee a mix of bet types in your final picks. If a real F5 or prop edge doesn't exist in today's slate, that's fine — the requirement is that you checked, not that you force one in.
-
-${recentPicksMemory}
-
-Return ONLY this JSON, no other text:
-{"candidates":[{"sport":"...","game":"EXACT game name from feed","bet_type":"moneyline|spread|total|f5|first_half|prop","proposed_pick":"...","reason":"one sentence"}]}`;
-
-  const response = await callClaude({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2000,
-    system,
-    messages: [{
-      role: 'user',
-      content: `Today is ${today_display}. Available games with current lines:\n${gamesContext}\n\nReturn the candidate pool JSON now.`
-    }],
-  });
-
-  const text = extractText(response.content);
-  if (!text.trim()) throw new Error('Stage 1 returned no text');
-  return cleanJson(text);
-}
-
-function validateCandidatePool(pool) {
-  const problems = [];
-  const candidates = pool.candidates || [];
-
-  if (candidates.length < 5) {
-    problems.push(`Only ${candidates.length} candidates returned — need at least 5-8 for a real selection.`);
-  }
-
-  const betTypes = new Set(candidates.map(c => c.bet_type));
-  if (betTypes.size <= 1) {
-    problems.push(`All candidates are the same bet type (${[...betTypes].join(', ')}). Need diversity across moneyline/spread/total/F5/prop.`);
-  }
-  if (!candidates.some(c => ['f5', 'first_half', 'prop'].includes(c.bet_type))) {
-    problems.push(`No alternate-market candidate (F5, first half, or prop) included. At least one is required when the sport supports it.`);
-  }
-
-  return problems;
-}
-
 // ── Per-sport timing ──────────────────────────────────────────────────────
 // From Miles's refined timing table. UFC and Tennis are explicitly flagged
 // as not fitting the T-minus model — using conservative placeholder
 // defaults for now, to be revisited once Phase 3 is live and real timing
 // data exists to tune against.
 const SPORT_TIMING = {
-  mlb:    { researchMinutesBefore: 180, confirmationMinutesBefore: 90,  minLeadMinutes: 60 },
+  mlb:    { researchMinutesBefore: 300, confirmationMinutesBefore: 90,  minLeadMinutes: 60 },
   nhl:    { researchMinutesBefore: 120, confirmationMinutesBefore: 75,  minLeadMinutes: 45 },
   nba:    { researchMinutesBefore: 90,  confirmationMinutesBefore: 45,  minLeadMinutes: 30 },
   nfl:    { researchMinutesBefore: 180, confirmationMinutesBefore: 105, minLeadMinutes: 60 },
@@ -293,14 +458,25 @@ async function generateMorningTrigger() {
   const oddsRes = await fetch('https://betcierge-next.vercel.app/api/odds', { method: 'POST' });
   const oddsData = await oddsRes.json();
   const now = new Date();
+  // Lookahead window widened to 24 hours (was 14). Stage 1 has no
+  // staleness downside — it doesn't need fresh confirmed lineups the
+  // way Stage 2 does, just current lines to pick candidates from. This
+  // lets a single early run (see intended 3 AM ET cron) still catch the
+  // WHOLE day's slate — early Wednesday MLB matinees AND evening
+  // primetime games alike — without needing a second run per day.
   const cutoff = new Date(now.getTime() + 15 * 60 * 1000);
-  const upperBound = new Date(now.getTime() + 14 * 60 * 60 * 1000);
+  const upperBound = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
   const slimGames = (oddsData.games || [])
     .filter(g => new Date(g.commence_time) > cutoff && new Date(g.commence_time) < upperBound)
-    .slice(0, 20)
+    // NOTE: no slice/cap here by design — every game in today's window gets
+    // a real, research-based look (see evaluate-scheduler's evaluateGameForEdge). Revisit
+    // this once college football/basketball are back in season: at ~100+
+    // games in one day, this loop's wall-clock time could approach or
+    // exceed this function's 300s maxDuration. Fine for MLB-only days now.
+    .filter(g => !(SKIP_SOCCER && (g.sport_key || '').startsWith('soccer_')))
     .map(g => {
-      const bm = g.bookmakers?.[0];
+      const bm = g.bookmakers?.find(b => b.key === PRIMARY_BOOKMAKER_KEY) || g.bookmakers?.[0];
       const h2h = bm?.markets?.find(m => m.key === 'h2h');
       const spread = bm?.markets?.find(m => m.key === 'spreads');
       const total = bm?.markets?.find(m => m.key === 'totals');
@@ -312,6 +488,10 @@ async function generateMorningTrigger() {
         spread: spread?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', '),
         total: total?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', '),
         sport_key: g.sport_key,
+        // NEW — needed for games-table identity resolution below
+        home_team: g.home_team,
+        away_team: g.away_team,
+        odds_api_game_id: g.id,
       };
     });
 
@@ -345,36 +525,28 @@ async function generateMorningTrigger() {
     console.error('Pitcher enrichment error:', e.message);
   }
 
-  const gamesContext = JSON.stringify(slimGames);
-  const sportsAvailable = [...new Set(slimGames.map(g => g.sport))];
   const today_display = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
     timeZone: 'America/New_York'
   });
 
-  const recentPicksMemory = await buildRecentPicksMemory();
-  console.log('Recent picks memory built. Length:', recentPicksMemory.length);
+  console.log(`Queuing all ${slimGames.length} games in today's slate for evaluation — no research happens in this step, evaluate-scheduler picks these up next.`);
 
-  // ── STAGE 1: Candidate Pool ──────────────────────────────────────────
-  let candidatePool = await buildCandidatePool(gamesContext, today_display, recentPicksMemory, sportsAvailable);
-  let poolProblems = validateCandidatePool(candidatePool);
-
-  if (poolProblems.length > 0 && Date.now() - startTime < TIME_BUDGET_MS) {
-    console.log('Candidate pool validation failed, retrying once:', poolProblems);
-    const correctionNote = `\n\nYOUR PREVIOUS CANDIDATE POOL WAS REJECTED for these reasons:\n${poolProblems.map(p => `- ${p}`).join('\n')}\nFix these issues and return a corrected candidate pool.`;
-    const retryPool = await buildCandidatePool(gamesContext, today_display, recentPicksMemory + correctionNote, sportsAvailable);
-    const retryProblems = validateCandidatePool(retryPool);
-    if (retryProblems.length > 0) {
-      console.log('Candidate pool still imperfect after retry, proceeding anyway:', retryProblems);
-    }
-    candidatePool = retryPool;
-  } else if (poolProblems.length > 0) {
-    console.log('Candidate pool validation failed but time budget exceeded, proceeding anyway:', poolProblems);
-  }
+  // ── Every game becomes a candidate row immediately, unresearched ─────
+  // Real research (the two-call research+extract design) now happens in
+  // evaluate-scheduler, a few games at a time, on its own repeating cron —
+  // same pattern already proven with research-scheduler. This is what
+  // keeps morning-trigger itself fast and safe at any slate size (15
+  // games or 150), since it no longer does any LLM work at all.
+  const candidates = slimGames.map(g => ({ game: g.game, sport: g.sport }));
 
   // ── Write game_candidates rows, one per candidate, with timing ───────
-  const candidates = candidatePool.candidates || [];
+  // Games-table resolution is deliberately decoupled from this loop —
+  // collect the inputs here, resolve everything in one batch afterward.
+  // See resolveOrCreateGamesBatch for why (this is the fix for the
+  // flagged college-football scaling risk).
   const rows = [];
+  const gameRefInputs = [];
   let benchRank = 0;
 
   for (const c of candidates) {
@@ -396,25 +568,47 @@ async function generateMorningTrigger() {
     }
 
     benchRank += 1;
+    const rowIndex = rows.length;
     rows.push({
       date: today,
       sport: c.sport,
       game: c.game,
+      game_ref_id: null, // filled in below, after batch resolution
+      bet_type: null, // filled in later by evaluate-scheduler once this game is actually evaluated
       game_time: gameTime.toISOString(),
+      sport_key: matchedGame.sport_key || null,
+      original_moneyline: matchedGame.moneyline || null,
+      original_spread: matchedGame.spread || null,
+      original_total: matchedGame.total || null,
       research_trigger_at: timing.research_trigger_at.toISOString(),
       confirmation_deadline_at: timing.confirmation_deadline_at.toISOString(),
       publish_deadline_at: timing.publish_deadline_at.toISOString(),
       min_lead_time_minutes: timing.min_lead_time_minutes,
       bench_rank: benchRank,
-      research_status: 'pending_research',
-      status: 'pending_research',
+      research_status: 'pending_evaluation',
+      status: 'pending_evaluation',
       notes: timing.timing_note,
+    });
+    gameRefInputs.push({
+      _index: rowIndex,
+      sportKey: matchedGame.sport_key,
+      homeTeam: matchedGame.home_team,
+      awayTeam: matchedGame.away_team,
+      commenceTime: gameTime,
+      oddsApiGameId: matchedGame.odds_api_game_id,
     });
   }
 
   if (rows.length === 0) {
     console.log('No viable candidates survived game-matching and timing checks. Nothing written for today.');
     return;
+  }
+
+  // One batch resolution for every candidate in this run — 2-3 total DB
+  // round trips instead of one (or two) per candidate.
+  const gameRefResults = await resolveOrCreateGamesBatch(gameRefInputs);
+  for (const [idx, gameRefId] of gameRefResults) {
+    rows[idx].game_ref_id = gameRefId;
   }
 
   const { error: insertError } = await supabase.from('game_candidates').insert(rows);
