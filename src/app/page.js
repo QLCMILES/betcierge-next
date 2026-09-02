@@ -1018,8 +1018,53 @@ const { data } = await supabase
           await supabase.from('user_profiles').update({ hunter_intro_shown_at: new Date().toISOString() }).eq('user_id', userKey);
         }
       } else {
-        // Returning user, fresh day, intro already seen before
-        const welcome = { role: 'assistant', text: `Hey ${user.name.split(' ')[0]} 👋 What's on your mind today?` };
+        // Returning user, fresh day — personalized to this week's real numbers
+        // AND how far into the week it is (weekday / Saturday / Sunday), since
+        // the same dollar gap means something different on Wednesday vs Sunday.
+        // Order matters: goal-hit is checked first (can only be true once real
+        // bets exist), then nothing-logged, then the up/down split on what's left.
+        const isSaturday = dayOfWeek === 6;
+        const isSunday = dayOfWeek === 0;
+        const goalAmt = user.goal;
+        const upAmt = netPL.toFixed(0);
+        const downAmt = Math.abs(netPL).toFixed(0);
+        let welcomeText;
+
+        if (hasHitGoal) {
+          if (isSunday) {
+            welcomeText = `Last day of the week. You're up $${upAmt} and the week's already a win. Nothing to prove today, lock in those profits. If something worth betting shows up, we'll find it. What's caught your eye?`;
+          } else if (isSaturday) {
+            welcomeText = `Saturday slate. You're up $${upAmt} this week — goal's hit, and we're playing with a lead into the weekend. Protect it, or add to it if the right spot shows up. What are you looking at today?`;
+          } else {
+            welcomeText = `New day. New slate. You're up $${upAmt} this week — goal's hit, and we're playing with a lead now. Protect it, or keep building if the right spot shows up. What's on your radar today?`;
+          }
+        } else if (weekBets.length === 0) {
+          if (isSunday) {
+            welcomeText = `Last day of the week. Nothing logged yet. If something real shows up today, great. If not, we're not forcing a bet just to chase the goal. Anything you want me to dig into?`;
+          } else if (isSaturday) {
+            welcomeText = `Saturday slate. Nothing logged yet, with $${goalAmt} still the goal. Plenty of weekend ahead — let's see what's actually worth betting. What are you looking at today?`;
+          } else {
+            welcomeText = `New day. New slate. $${goalAmt} is the goal this week. We've got all week to get there — no need to force the first move. What's on your radar today?`;
+          }
+        } else if (netPL > 0) {
+          if (isSunday) {
+            welcomeText = `Last day of the week. You're up $${upAmt} with a $${goalAmt} goal. If the right plays are there, let's find them. If they're not, we take the winning week. What's caught your eye?`;
+          } else if (isSaturday) {
+            welcomeText = `Saturday slate. You're up $${upAmt} this week with $${goalAmt} still the goal. Plenty of opportunity left — but we're not forcing anything to get there. What are you looking at today?`;
+          } else {
+            welcomeText = `New day. New slate. You're up $${upAmt} this week, working toward that $${goalAmt} goal. Nice spot to be in. Let's see what's worth a look today. What's on your radar?`;
+          }
+        } else {
+          if (isSunday) {
+            welcomeText = `Last day of the week. We're down $${downAmt}. That doesn't mean we need to make it all back today. Let's find the right bets, not force a comeback. What do you want me to dig into?`;
+          } else if (isSaturday) {
+            welcomeText = `Saturday slate. We're down $${downAmt} this week with the weekend ahead. No chasing — let's see what's actually worth betting today. What are you looking at?`;
+          } else {
+            welcomeText = `New day. New slate. We're down $${downAmt} this week — no need to win it back today. Let's just find something worth betting. What's on your radar?`;
+          }
+        }
+
+        const welcome = { role: 'assistant', text: welcomeText };
         setMessages([welcome]);
         await supabase.from('user_conversations').insert({ user_id: userKey, role: 'assistant', content: welcome.text });
       }
@@ -1578,7 +1623,7 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
     <div style={S.screen}>
       <div style={S.hdr}>
         <div>
-          <div style={S.greeting}>{hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"}, {user.name.split(" ")[0]} 👋</div>
+          <div style={S.greeting}>{hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"}, {user.name.split(" ")[0]}</div>
           <div style={{ color: "#888", fontSize: 13, marginTop: 2 }}>{todayDisplay()}</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
