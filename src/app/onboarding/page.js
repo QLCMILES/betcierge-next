@@ -263,10 +263,10 @@ function SmsConsentStep({ userId, onBack, onAdvance }) {
 }
 
 const CAROUSEL_SLIDES = [
-  { icon: "🎯", headline: "Your personal betting coach,", sub: "on call 24/7.", body: "It's not AI. It's EI — Enhanced Intelligence, built from cloning the sports betting habits of our founders to create the ultimate sports betting tool.<br /><br />Most betting products optimize for today's bet. Betcierge optimizes for tomorrow's bettor.", primaryLabel: "Next" },
-  { icon: "💬", headline: "Ask Hunter anything.", sub: "The same research, on demand.", body: "Every pick starts with deep research — stats, trends, injuries, line movement, sharp money, weather &amp; more. Hunter Chat gives you that same depth for any game, any question, in seconds. You choose what you need answered.", primaryLabel: "Next" },
-  { icon: "🕐", headline: "Picks when they're ready.", sub: "Not on a fixed morning schedule.", body: "Every game gets researched on its own clock — lineups confirm at different times across sports, so picks land as the research clears, not a fixed morning batch. You'll always get at least one sharp play a day, with up to three when the edge is there.", primaryLabel: "Next" },
-  { icon: "🛡️", headline: "Watching your back — even from yourself.", sub: "Tilt recognition. Real check-ins.", body: "Down bad after a rough stretch? Hunter notices before you do — flags the pattern, checks in, and sizes every bet against what your bankroll can actually take. The guardrail every bettor needs but almost nobody has.", primaryLabel: "Let's go" },
+  { icon: "🎯", headline: "It's not AI. It's EI.", sub: "Enhanced Intelligence.", body: "The research of an analyst. The discipline of a professional handicapper. The patience to tell you when there's nothing there.<br /><br />Built around one goal: week-to-week profit, and the tools to get there.", primaryLabel: "Next" },
+  { icon: "💬", headline: "Ask Hunter anything.", sub: "Your sharpest betting friend.", body: "Got a bet you love? One you're talking yourself into? A game you can't get a read on? Bring it to Hunter. He'll dig into the numbers, challenge your take, back you when the data does, and tell you when it doesn't.<br /><br />No ego. No BS. Just a very sharp friend who's always down to talk sports.", primaryLabel: "Next" },
+  { icon: "🎯", headline: "Daily Picks. No edge? No bet.", sub: "Quality over quantity, always.", body: "Every game gets the full treatment. When there's a real edge, you'll get the play — up to three a day. When there isn't, we'll tell you that too.<br /><br />Because betting just to have action is how the sportsbooks win.", primaryLabel: "Next" },
+  { icon: "🛡️", headline: "Watching your back — even from yourself.", sub: "Real guardrails. Real talk.", body: "Emotion is what beats most bettors. Hunter has none. He keeps your bankroll, your goal, and your plan in view on every play and every message.", primaryLabel: "Let's go" },
 ];
 
 function WelcomeCarousel({ step, onBack, onNext, onSkip }) {
@@ -320,14 +320,14 @@ function BankrollGoalStep({ userId, onBack, onSaved }) {
 
   return (
     <ScreenChrome showBack={true} onBack={onBack} skipLabel={null} primaryLabel="Continue →" onPrimary={submit} primaryDisabled={!canSubmit || saving} primaryLoading={saving}>
-      <div style={S.h1}>Set your weekly targets.</div>
-      <div style={S.sub}>Hunter uses this to size every bet and flag you before you overdo it.</div>
+      <div style={S.h1}>Win the week. Then do it again.</div>
+      <div style={S.sub}>Every bet gets sized to your bankroll. Every week gets measured against your goal. Chasing unrealistic returns is exactly what Hunter coaches against.</div>
       {error && <div style={S.error}>{error}</div>}
       <label style={S.label}>Weekly bankroll ($)</label>
       <input style={S.input} type="number" placeholder="e.g. 2500" value={bankroll} onChange={e => setBankroll(e.target.value)} />
       <label style={S.label}>Weekly profit goal ($)</label>
       <input style={S.input} type="number" placeholder="e.g. 250" value={goal} onChange={e => setGoal(e.target.value)} />
-      {roi > 20 && (
+      {roi > 15 && (
         <div style={{ color: "#e74c3c", fontSize: 12, marginTop: 8 }}>
           ⚠️ Targeting {roi.toFixed(1)}% ROI weekly is aggressive. Sharpest bettors average 5–10%.
         </div>
