@@ -264,9 +264,9 @@ function SmsConsentStep({ userId, onBack, onAdvance }) {
 
 const CAROUSEL_SLIDES = [
   { icon: "🎯", headline: "It's not AI. It's EI.", sub: "Enhanced Intelligence.", body: "The research of an analyst. The discipline of a professional handicapper. The patience to tell you when there's nothing there.<br /><br />Built around one goal: week-to-week profit, and the tools to get there.", primaryLabel: "Next" },
-  { icon: "💬", headline: "Ask Hunter anything.", sub: "Your sharpest betting friend.", body: "Got a bet you love? One you're talking yourself into? A game you can't get a read on? Bring it to Hunter. He'll dig into the numbers, challenge your take, back you when the data does, and tell you when it doesn't.<br /><br />No ego. No BS. Just a very sharp friend who's always down to talk sports.", primaryLabel: "Next" },
-  { icon: "🎯", headline: "Daily Picks. No edge? No bet.", sub: "Quality over quantity, always.", body: "Every game gets the full treatment. When there's a real edge, you'll get the play — up to three a day. When there isn't, we'll tell you that too.<br /><br />Because betting just to have action is how the sportsbooks win.", primaryLabel: "Next" },
-  { icon: "🛡️", headline: "Watching your back — even from yourself.", sub: "Real guardrails. Real talk.", body: "Emotion is what beats most bettors. Hunter has none. He keeps your bankroll, your goal, and your plan in view on every play and every message.", primaryLabel: "Let's go" },
+  { icon: "💬", headline: "Ask Hunter anything.", sub: "For every bet, hunch, and ‘hear me out…’", body: "Got a bet you love? One you're talking yourself into? A game you can't get a read on? Bring it to Hunter. He'll dig into the numbers, challenge your take, back you when the data does, and tell you when it doesn't.<br /><br />No ego. No BS. Just a very sharp friend who's always down to talk sports.", primaryLabel: "Next" },
+  { icon: "🎯", headline: "Daily Picks. No edge? No bet.", sub: "We don’t make picks just to make picks.", body: "Every game gets the full treatment. When there's a real edge, you'll get the play — up to three a day. When there isn't, we'll tell you that too.<br /><br />Because betting just to have action is how the sportsbooks win.", primaryLabel: "Next" },
+  { icon: "🛡️", headline: "Watching your back — even from yourself.", sub: "Because “I’ll win it back” is not a strategy.", body: "Hunter never tilts. Lucky him. He keeps your bankroll, your goals, and your plan in view — especially when your gut is telling you to forget all three.", primaryLabel: "Let's go" },
 ];
 
 function WelcomeCarousel({ step, onBack, onNext, onSkip }) {
@@ -295,11 +295,16 @@ function BankrollGoalStep({ userId, onBack, onSaved }) {
   const [goal, setGoal] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [ackAggressive, setAckAggressive] = useState(false);
 
   const bankrollNum = parseFloat(bankroll);
   const goalNum = parseFloat(goal);
   const roi = bankrollNum > 0 && goalNum > 0 ? (goalNum / bankrollNum) * 100 : 0;
-  const canSubmit = bankroll && goal && bankrollNum > 0 && goalNum > 0;
+  const isAggressive = roi > 15;
+  // Aggressive targets don't block the user — but they must consciously
+  // acknowledge the target is aggressive before continuing. Informed choice,
+  // not a locked door.
+  const canSubmit = bankroll && goal && bankrollNum > 0 && goalNum > 0 && (!isAggressive || ackAggressive);
 
   const submit = async () => {
     setError("");
@@ -327,9 +332,12 @@ function BankrollGoalStep({ userId, onBack, onSaved }) {
       <input style={S.input} type="number" placeholder="e.g. 2500" value={bankroll} onChange={e => setBankroll(e.target.value)} />
       <label style={S.label}>Weekly profit goal ($)</label>
       <input style={S.input} type="number" placeholder="e.g. 250" value={goal} onChange={e => setGoal(e.target.value)} />
-      {roi > 15 && (
-        <div style={{ color: "#e74c3c", fontSize: 12, marginTop: 8 }}>
-          ⚠️ Targeting {roi.toFixed(1)}% ROI weekly is aggressive. Sharpest bettors average 5–10%.
+      {isAggressive && (
+        <div style={{ ...S.consentRow, borderColor: ackAggressive ? "#f5a623" : "#5a2a2a", background: ackAggressive ? "#1a1400" : "#1a1010" }} onClick={() => setAckAggressive(a => !a)}>
+          <div style={S.checkbox(ackAggressive)}>{ackAggressive ? "✓" : ""}</div>
+          <div style={{ ...S.consentText, color: "#d98a8a" }}>
+            Targeting {roi.toFixed(1)}% ROI weekly is aggressive — the sharpest bettors average 5–10%. I get that this is a high target and want to set it anyway.
+          </div>
         </div>
       )}
     </ScreenChrome>
