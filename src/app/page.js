@@ -1606,8 +1606,8 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
         </div>
       )}
 
-      {/* Compact Weekly Card */}
-      <div style={{ background: "#0f0f18", border: "1px solid #1e1e2e", borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
+      {/* This Week + Lifetime Record — one bordered section */}
+      <div style={{ background: "#0f0f18", border: "1px solid #333", borderRadius: 14, padding: "12px 14px", marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
           <div>
             <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>Bankroll</div>
@@ -1683,10 +1683,9 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
             </div>
           ))}
         </div>
-      </div>
 
-      {/* Lifetime Record Card */}
-      <div style={{ background: "#0f0f18", border: "1px solid #1e1e2e", borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
+        <div style={{ borderTop: "1px solid #2a2a3a", margin: "14px -14px 12px" }} />
+
         <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Lifetime Record</div>
         <div style={{ display: "flex", gap: 6 }}>
           <div style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "8px 0", textAlign: "center" }}>
