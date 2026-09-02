@@ -2895,8 +2895,8 @@ if (!user?.name) return null; // new users are redirected to /onboarding by the 
           { id: "gamecast", icon: "📡", lbl: "My Bets" },
           { id: "history", icon: "📊", lbl: "Bet History" },
         ].map(n => (
-          <button key={n.id} onClick={() => setScreen(n.id)} style={{ flex: 1, background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer", padding: "6px 0", opacity: screen === n.id ? 1 : 0.4 }}>
-            <span style={{ fontSize: 20 }}>{n.icon}</span>
+          <button key={n.id} onClick={() => setScreen(n.id)} style={{ flex: 1, background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer", padding: "6px 0" }}>
+            <span style={{ fontSize: 20, opacity: screen === n.id ? 1 : 0.5 }}>{n.icon}</span>
             <span style={{ color: screen === n.id ? "#f5a623" : "#888", fontSize: 11, fontWeight: screen === n.id ? 700 : 400 }}>{n.lbl}</span>
           </button>
         ))}
