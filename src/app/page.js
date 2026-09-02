@@ -1606,87 +1606,80 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
         </div>
       )}
 
-      {/* This Week Card */}
-      <div style={{ background: "#0f0f18", border: "1px solid #1e1e2e", borderRadius: 14, padding: "16px", marginBottom: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 1 }}>This Week · {weekLabel}</div>
-          <div style={{ fontSize: 11, color: "#888" }}>${currentBankroll.toFixed(0)} bankroll</div>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-          <div style={{ fontSize: 38, fontWeight: 700, fontFamily: "'Cormorant Garamond',serif", color: netPL >= 0 ? "#2ecc71" : "#e74c3c", letterSpacing: -0.5 }}>{netPL >= 0 ? "+$" : "-$"}{Math.abs(netPL).toFixed(0)}</div>
-          <button
-            onClick={() => { setPlInput(netPL.toFixed(0)); setEditingPL(true); }}
-            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, padding: 0, color: "#888" }}
-            aria-label="Edit weekly P&L"
-          >✏️</button>
-        </div>
-        <div style={{ fontSize: 11, color: "#888", marginBottom: 12 }}>{goalPct.toFixed(0)}% of ${user.goal} goal</div>
-
-        {editingPL && (
-          <div style={{ marginBottom: 12, display: "flex", gap: 6, alignItems: "center" }}>
-            <input
-              type="number"
-              value={plInput}
-              onChange={(e) => setPlInput(e.target.value)}
-              placeholder="Set total week P&L"
-              style={{ width: 110, background: "#13131a", border: "1px solid #2a2a3a", borderRadius: 6, color: "#fff", fontSize: 13, padding: "6px 8px", textAlign: "right" }}
-            />
-            <button
-              disabled={savingPL || plInput === ""}
-              onClick={async () => {
-                const target = parseFloat(plInput);
-                if (isNaN(target)) return;
-                const diff = target - netPL;
-                if (Math.abs(diff) < 0.01) { setEditingPL(false); return; }
-                setSavingPL(true);
-                const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-                await onAddBet({
-                  sport: "Other",
-                  game: "Manual Adjustment",
-                  betType: "manual_adjustment",
-                  pick: "Manual P&L Adjustment",
-                  odds: "+100",
-                  amount: Math.abs(diff),
-                  type: "Planned",
-                  result: diff >= 0 ? "Win" : "Loss",
-                  isToday: true,
-                  gameDate: todayStr,
-                  gameTime: null,
-                  gameId: null,
-                  toWin: diff >= 0 ? diff : null,
-                });
-                setSavingPL(false);
-                setEditingPL(false);
-              }}
-              style={{ background: "#f5a623", border: "none", borderRadius: 6, color: "#0a0a0f", fontSize: 12, fontWeight: 700, padding: "6px 10px", cursor: "pointer", opacity: savingPL ? 0.6 : 1 }}
-            >{savingPL ? "..." : "Save"}</button>
-            <button
-              onClick={() => setEditingPL(false)}
-              style={{ background: "none", border: "none", color: "#888", fontSize: 12, cursor: "pointer" }}
-            >Cancel</button>
+      {/* Compact Weekly Card */}
+      <div style={{ background: "#0f0f18", border: "1px solid #1e1e2e", borderRadius: 14, padding: "14px 16px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>Bankroll</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: "#f5a623", letterSpacing: -0.5 }}>${currentBankroll.toFixed(0)}</div>
           </div>
-        )}
-
-        {weekBets.length === 0 && (
-          <button
-            onClick={() => onNav('logger')}
-            style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#13131a", border: "none", borderRadius: 8, padding: "10px 12px", cursor: "pointer", marginBottom: 12 }}
-          >
-            <span style={{ color: "#888", fontSize: 12 }}>No bets logged this week yet</span>
-            <span style={{ color: "#fff", fontSize: 12, fontWeight: 700 }}>Log one →</span>
-          </button>
-        )}
-
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>This Week · {weekLabel}</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
+              <div style={{ fontSize: 26, fontWeight: 800, color: netPL >= 0 ? "#2ecc71" : "#e74c3c" }}>{netPL >= 0 ? "+$" :"-$"}{Math.abs(netPL).toFixed(0)}</div>
+              <button
+                onClick={() => { setPlInput(netPL.toFixed(0)); setEditingPL(true); }}
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, padding: 0, color: "#888" }}
+                aria-label="Edit weekly P&L"
+              >✏️</button>
+            </div>
+            <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>Week P&L · {goalPct.toFixed(0)}% of ${user.goal} goal</div>
+            {editingPL && (
+              <div style={{ marginTop: 8, display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
+                <input
+                  type="number"
+                  value={plInput}
+                  onChange={(e) => setPlInput(e.target.value)}
+                  placeholder="Set total week P&L"
+                  style={{ width: 110, background: "#13131a", border: "1px solid #2a2a3a", borderRadius: 6, color: "#fff", fontSize: 13, padding: "6px 8px", textAlign: "right" }}
+                />
+                <button
+                  disabled={savingPL || plInput === ""}
+                  onClick={async () => {
+                    const target = parseFloat(plInput);
+                    if (isNaN(target)) return;
+                    const diff = target - netPL;
+                    if (Math.abs(diff) < 0.01) { setEditingPL(false); return; }
+                    setSavingPL(true);
+                    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+                    await onAddBet({
+                      sport: "Other",
+                      game: "Manual Adjustment",
+                      betType: "manual_adjustment",
+                      pick: "Manual P&L Adjustment",
+                      odds: "+100",
+                      amount: Math.abs(diff),
+                      type: "Planned",
+                      result: diff >= 0 ? "Win" : "Loss",
+                      isToday: true,
+                      gameDate: todayStr,
+                      gameTime: null,
+                      gameId: null,
+                      toWin: diff >= 0 ? diff : null,
+                    });
+                    setSavingPL(false);
+                    setEditingPL(false);
+                  }}
+                  style={{ background: "#f5a623", border: "none", borderRadius: 6, color: "#0a0a0f", fontSize: 12, fontWeight: 700, padding: "6px 10px", cursor: "pointer", opacity: savingPL ? 0.6 : 1 }}
+                >{savingPL ? "..." : "Save"}</button>
+                <button
+                  onClick={() => setEditingPL(false)}
+                  style={{ background: "none", border: "none", color: "#888", fontSize: 12, cursor: "pointer" }}
+                >Cancel</button>
+              </div>
+            )}
+          </div>
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
           {[
-            { val: `${wins.length}W-${losses.length}L`, lbl: "Record" },
-            { val: atRisk > 0 ? `$${atRisk}` : "—", lbl: "At Risk" },
-            { val: `$${weekBets.reduce((s, b) => s + b.amount, 0)}`, lbl: "Wagered" },
+            { val: wins.length, lbl: "W", color: "#2ecc71" },
+            { val: losses.length, lbl: "L", color: "#e74c3c" },
+            { val: atRisk > 0 ? `$${atRisk}` : "—", lbl: "At Risk", color: "#f5a623" },
+            { val: `$${weekBets.reduce((s, b) => s + b.amount, 0)}`, lbl: "Wagered", color: "#888" },
           ].map((s, i) => (
-            <div key={i} style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "10px 0", textAlign: "center" }}>
-              <div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{s.val}</div>
-              <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>{s.lbl}</div>
+            <div key={i} style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "8px 0", textAlign: "center" }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: s.color }}>{s.val}</div>
+              <div style={{ fontSize: 10, color: "#888", marginTop: 1 }}>{s.lbl}</div>
             </div>
           ))}
         </div>
