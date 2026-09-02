@@ -2086,7 +2086,7 @@ function Gamecast({ bets, parlays = [], onNav }) {
   const [lastUpdated, setLastUpdated] = useState(null);
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-  const activeBets = bets.filter(b => !b.isParlay && b.gameDate === today);
+  const activeBets = bets.filter(b => !b.isParlay && b.gameDate === today && b.betType !== 'manual_adjustment');
   const parlayGameIds = bets.filter(b => b.isParlay && b.gameDate === today).flatMap(p => (p.legs || []).map(l => l.gameId).filter(Boolean));
   const gameIds = [...new Set([...activeBets.map(b => b.gameId).filter(Boolean), ...parlayGameIds])];
 
