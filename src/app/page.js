@@ -2087,7 +2087,8 @@ function Gamecast({ bets, parlays = [], onNav }) {
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
   const activeBets = bets.filter(b => !b.isParlay && b.gameDate === today && b.betType !== 'manual_adjustment');
-  const parlayGameIds = bets.filter(b => b.isParlay && b.gameDate === today).flatMap(p => (p.legs || []).map(l => l.gameId).filter(Boolean));
+  const todayParlays = bets.filter(b => b.isParlay && b.gameDate === today);
+  const parlayGameIds = todayParlays.flatMap(p => (p.legs || []).map(l => l.gameId).filter(Boolean));
   const gameIds = [...new Set([...activeBets.map(b => b.gameId).filter(Boolean), ...parlayGameIds])];
 
   const fetchScores = async () => {
@@ -2148,12 +2149,12 @@ function Gamecast({ bets, parlays = [], onNav }) {
 
       {loading ? (
         <div style={{ color: '#888', textAlign: 'center', padding: 40 }}>Loading scores...</div>
-      ) : activeBets.length === 0 ? (
+      ) : activeBets.length === 0 && todayParlays.length === 0 ? (
         <div style={{ color: '#888', textAlign: 'center', padding: 40, fontSize: 14 }}>No active bets today.</div>
       ) : (
         <>
         {/* Parlay Cards — full parlay as one card */}
-        {bets.filter(b => b.isParlay && b.gameDate === today).map(parlay => {
+        {todayParlays.map(parlay => {
           const oddsDisplay = String(parlay.odds).startsWith('+') ? String(parlay.odds) : Number(parlay.odds) > 0 ? `+${parlay.odds}` : `${parlay.odds}`;
           const resultColor = parlay.result === 'Win' ? '#2ecc71' : parlay.result === 'Loss' ? '#e74c3c' : '#f5a623';
           return (
