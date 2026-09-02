@@ -1234,7 +1234,7 @@ return (
               )}
             </div>
           ))}
-        {loading && <div style={{ maxWidth: "88%", padding: "10px 14px", borderRadius: 16, fontSize: 13, background: "#1e1e2e", color: "#555", fontStyle: "italic", alignSelf: "flex-start" }}>Hunter is thinking...</div>}
+        {loading && <div style={{ maxWidth: "88%", padding: "10px 14px", borderRadius: 16, fontSize: 13, background: "#1e1e2e", color: "#888", fontStyle: "italic", alignSelf: "flex-start" }}>Hunter is thinking...</div>}
         <div ref={bottomRef} />
       </div>
 
@@ -1348,14 +1348,14 @@ function PicksTab({ userKey, user, session, onNav }) {
   const dayColor = (dayPicks) => {
     const w = dayPicks.filter(p => p.result === 'Win').length;
     const l = dayPicks.filter(p => p.result === 'Loss').length;
-    if (!w && !l) return '#555';
+    if (!w && !l) return '#888';
     if (w > l) return '#2ecc71';
     if (l > w) return '#f5a623';
     return '#f5a623';
   };
 
   const resultBadge = (result) => {
-    if (!result || result === 'Pending') return <span style={{ background: '#1a1a1a', color: '#555', padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>PENDING</span>;
+    if (!result || result === 'Pending') return <span style={{ background: '#1a1a1a', color: '#888', padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>PENDING</span>;
     const c = { Win: { bg: '#0a2e0a', color: '#2ecc71' }, Loss: { bg: '#2e0a0a', color: '#e74c3c' }, Push: { bg: '#0a1a2e', color: '#3498db' }, Void: { bg: '#1a0a2e', color: '#9b59b6' } }[result] || { bg: '#1a1a1a', color: '#888' };
     return <span style={{ background: c.bg, color: c.color, padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>{result.toUpperCase()}</span>;
   };
@@ -1369,28 +1369,28 @@ function PicksTab({ userKey, user, session, onNav }) {
 
       {/* TRACKER */}
       <div style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>Hunter's Record · Since Jun 11</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>Hunter's Record · Since Jun 11</div>
 
         {!historyLoading && (
           <>
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
               <div style={{ flex: 1, background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 10, padding: '10px 0', textAlign: 'center' }}>
                 <div style={{ fontSize: 17, fontWeight: 800, color: '#fff' }}>{wins}W-{losses}L</div>
-                <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>Record</div>
+                <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>Record</div>
               </div>
               <div style={{ flex: 1, background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 10, padding: '10px 0', textAlign: 'center' }}>
                 <div style={{ fontSize: 17, fontWeight: 800, color: winRate >= 55 ? '#2ecc71' : '#fff' }}>{winRate}%</div>
-                <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>Win Rate</div>
+                <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>Win Rate</div>
               </div>
               <div style={{ flex: 1, background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 10, padding: '10px 0', textAlign: 'center' }}>
                 <div style={{ fontSize: 17, fontWeight: 800, color: unitsPnl >= 0 ? '#2ecc71' : '#e74c3c' }}>{unitsPnl >= 0 ? '+' : ''}{unitsPnl.toFixed(1)}u</div>
-                <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>Units</div>
+                <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>Units</div>
               </div>
               <div style={{ flex: 1, background: '#0f0f18', border: '1px solid #2a2a38', borderRadius: 10, padding: '10px 0', textAlign: 'center' }}>
                 <div style={{ fontSize: 17, fontWeight: 800, color: parseFloat(roi) >= 0 ? '#2ecc71' : '#e74c3c' }}>
                   {parseFloat(roi) >= 0 ? '+' : ''}{roi}%
                 </div>
-                <div style={{ fontSize: 10, color: '#555', marginTop: 2 }}>ROI</div>
+                <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>ROI</div>
               </div>
             </div>
 
@@ -1411,7 +1411,7 @@ function PicksTab({ userKey, user, session, onNav }) {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
                         <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{formatDate(date)}</span>
-                        <span style={{ fontSize: 11, color: '#555' }}>{dayPicks.length} picks</span>
+                        <span style={{ fontSize: 11, color: '#888' }}>{dayPicks.length} picks</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontSize: 12, fontWeight: 700, color }}>{rec}</span>
@@ -1426,12 +1426,12 @@ function PicksTab({ userKey, user, session, onNav }) {
                               <div style={{ flex: 1 }}>
                                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 3 }}>
                                   <span style={{ fontSize: 9, background: '#1a1a00', color: '#f5a623', padding: '1px 6px', borderRadius: 4, fontWeight: 700, textTransform: 'uppercase' }}>{pick.sport}</span>
-                                  {pick.game_time && <span style={{ fontSize: 10, color: '#555' }}>{pick.game_time}</span>}
+                                  {pick.game_time && <span style={{ fontSize: 10, color: '#888' }}>{pick.game_time}</span>}
                                 </div>
                                 <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>{pick.game}</div>
                                 <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{pick.pick}</div>
                                 <div style={{ fontSize: 10, color: '#f5a623', marginTop: 3 }}>{pick.units || 1}U</div>
-                                {pick.insight && !pick.insight.startsWith('**') && <div style={{ fontSize: 11, color: '#555', marginTop: 4, lineHeight: 1.4 }}>{pick.insight}</div>}
+                                {pick.insight && !pick.insight.startsWith('**') && <div style={{ fontSize: 11, color: '#888', marginTop: 4, lineHeight: 1.4 }}>{pick.insight}</div>}
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 10 }}>
                                 {resultBadge(pick.result)}
@@ -1453,10 +1453,10 @@ function PicksTab({ userKey, user, session, onNav }) {
       </div>
 
       <div style={{ borderTop: '1px solid #1a1a28', marginBottom: 20 }} />
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Today's Picks</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Today's Picks</div>
 
       {lastUpdated && (
-        <div style={{ color: "#555", fontSize: 12, marginBottom: 14 }}>
+        <div style={{ color: "#888", fontSize: 12, marginBottom: 14 }}>
           Updated {new Date(lastUpdated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })} ET · {new Date(lastUpdated).toLocaleDateString()}
         </div>
       )}
@@ -1465,7 +1465,7 @@ function PicksTab({ userKey, user, session, onNav }) {
         <div style={{ padding: "40px 0", textAlign: "center" }}>
           <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
           <div style={{ width: 28, height: 28, border: "3px solid #2a2a38", borderTopColor: "#f5a623", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px" }} />
-          <div style={{ color: "#555", fontSize: 13 }}>Loading today's picks...</div>
+          <div style={{ color: "#888", fontSize: 13 }}>Loading today's picks...</div>
         </div>
       )}
 
@@ -1473,7 +1473,7 @@ function PicksTab({ userKey, user, session, onNav }) {
         <div style={{ textAlign: "center", padding: 40 }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🕐</div>
           <div style={{ color: "#fff", fontSize: 16, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginBottom: 8 }}>Still hunting</div>
-          <div style={{ color: "#555", fontSize: 13 }}>Lineups aren't locked yet — Hunter won't call a play until they are.</div>
+          <div style={{ color: "#888", fontSize: 13 }}>Lineups aren't locked yet — Hunter won't call a play until they are.</div>
         </div>
       )}
 
@@ -1579,7 +1579,7 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
       <div style={S.hdr}>
         <div>
           <div style={S.greeting}>{hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"}, {user.name.split(" ")[0]} 👋</div>
-          <div style={{ color: "#555", fontSize: 13, marginTop: 2 }}>{todayDisplay()}</div>
+          <div style={{ color: "#888", fontSize: 13, marginTop: 2 }}>{todayDisplay()}</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1589,7 +1589,7 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
       {unreadCount > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: "#e74c3c", color: "#fff", borderRadius: "50%", fontSize: 9, fontWeight: 700, width: 14, height: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>{unreadCount}</span>}
     </button>
   </div>
-  <button onClick={() => supabase.auth.signOut()} style={{ background: "none", border: "none", color: "#555", fontSize: 11, cursor: "pointer", padding: 0 }}>Sign out</button>
+  <button onClick={() => supabase.auth.signOut()} style={{ background: "none", border: "none", color: "#888", fontSize: 11, cursor: "pointer", padding: 0 }}>Sign out</button>
 </div>
       </div>
 
@@ -1606,80 +1606,87 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
         </div>
       )}
 
-      {/* Compact Weekly Card */}
-      <div style={{ background: "#0f0f18", border: "1px solid #1e1e2e", borderRadius: 14, padding: "14px 16px", marginBottom: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-          <div>
-            <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>Bankroll</div>
-            <div style={{ fontSize: 26, fontWeight: 800, color: "#f5a623", letterSpacing: -0.5 }}>${currentBankroll.toFixed(0)}</div>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>This Week · {weekLabel}</div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
-              <div style={{ fontSize: 26, fontWeight: 800, color: netPL >= 0 ? "#2ecc71" : "#e74c3c" }}>{netPL >= 0 ? "+$" :"-$"}{Math.abs(netPL).toFixed(0)}</div>
-              <button
-                onClick={() => { setPlInput(netPL.toFixed(0)); setEditingPL(true); }}
-                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, padding: 0, color: "#555" }}
-                aria-label="Edit weekly P&L"
-              >✏️</button>
-            </div>
-            <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>Week P&L · {goalPct.toFixed(0)}% of ${user.goal} goal</div>
-            {editingPL && (
-              <div style={{ marginTop: 8, display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
-                <input
-                  type="number"
-                  value={plInput}
-                  onChange={(e) => setPlInput(e.target.value)}
-                  placeholder="Set total week P&L"
-                  style={{ width: 110, background: "#13131a", border: "1px solid #2a2a3a", borderRadius: 6, color: "#fff", fontSize: 13, padding: "6px 8px", textAlign: "right" }}
-                />
-                <button
-                  disabled={savingPL || plInput === ""}
-                  onClick={async () => {
-                    const target = parseFloat(plInput);
-                    if (isNaN(target)) return;
-                    const diff = target - netPL;
-                    if (Math.abs(diff) < 0.01) { setEditingPL(false); return; }
-                    setSavingPL(true);
-                    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-                    await onAddBet({
-                      sport: "Other",
-                      game: "Manual Adjustment",
-                      betType: "manual_adjustment",
-                      pick: "Manual P&L Adjustment",
-                      odds: "+100",
-                      amount: Math.abs(diff),
-                      type: "Planned",
-                      result: diff >= 0 ? "Win" : "Loss",
-                      isToday: true,
-                      gameDate: todayStr,
-                      gameTime: null,
-                      gameId: null,
-                      toWin: diff >= 0 ? diff : null,
-                    });
-                    setSavingPL(false);
-                    setEditingPL(false);
-                  }}
-                  style={{ background: "#f5a623", border: "none", borderRadius: 6, color: "#0a0a0f", fontSize: 12, fontWeight: 700, padding: "6px 10px", cursor: "pointer", opacity: savingPL ? 0.6 : 1 }}
-                >{savingPL ? "..." : "Save"}</button>
-                <button
-                  onClick={() => setEditingPL(false)}
-                  style={{ background: "none", border: "none", color: "#555", fontSize: 12, cursor: "pointer" }}
-                >Cancel</button>
-              </div>
-            )}
-          </div>
+      {/* This Week Card */}
+      <div style={{ background: "#0f0f18", border: "1px solid #1e1e2e", borderRadius: 14, padding: "16px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 1 }}>This Week · {weekLabel}</div>
+          <div style={{ fontSize: 11, color: "#888" }}>${currentBankroll.toFixed(0)} bankroll</div>
         </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <div style={{ fontSize: 38, fontWeight: 700, fontFamily: "'Cormorant Garamond',serif", color: netPL >= 0 ? "#2ecc71" : "#e74c3c", letterSpacing: -0.5 }}>{netPL >= 0 ? "+$" : "-$"}{Math.abs(netPL).toFixed(0)}</div>
+          <button
+            onClick={() => { setPlInput(netPL.toFixed(0)); setEditingPL(true); }}
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, padding: 0, color: "#888" }}
+            aria-label="Edit weekly P&L"
+          >✏️</button>
+        </div>
+        <div style={{ fontSize: 11, color: "#888", marginBottom: 12 }}>{goalPct.toFixed(0)}% of ${user.goal} goal</div>
+
+        {editingPL && (
+          <div style={{ marginBottom: 12, display: "flex", gap: 6, alignItems: "center" }}>
+            <input
+              type="number"
+              value={plInput}
+              onChange={(e) => setPlInput(e.target.value)}
+              placeholder="Set total week P&L"
+              style={{ width: 110, background: "#13131a", border: "1px solid #2a2a3a", borderRadius: 6, color: "#fff", fontSize: 13, padding: "6px 8px", textAlign: "right" }}
+            />
+            <button
+              disabled={savingPL || plInput === ""}
+              onClick={async () => {
+                const target = parseFloat(plInput);
+                if (isNaN(target)) return;
+                const diff = target - netPL;
+                if (Math.abs(diff) < 0.01) { setEditingPL(false); return; }
+                setSavingPL(true);
+                const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+                await onAddBet({
+                  sport: "Other",
+                  game: "Manual Adjustment",
+                  betType: "manual_adjustment",
+                  pick: "Manual P&L Adjustment",
+                  odds: "+100",
+                  amount: Math.abs(diff),
+                  type: "Planned",
+                  result: diff >= 0 ? "Win" : "Loss",
+                  isToday: true,
+                  gameDate: todayStr,
+                  gameTime: null,
+                  gameId: null,
+                  toWin: diff >= 0 ? diff : null,
+                });
+                setSavingPL(false);
+                setEditingPL(false);
+              }}
+              style={{ background: "#f5a623", border: "none", borderRadius: 6, color: "#0a0a0f", fontSize: 12, fontWeight: 700, padding: "6px 10px", cursor: "pointer", opacity: savingPL ? 0.6 : 1 }}
+            >{savingPL ? "..." : "Save"}</button>
+            <button
+              onClick={() => setEditingPL(false)}
+              style={{ background: "none", border: "none", color: "#888", fontSize: 12, cursor: "pointer" }}
+            >Cancel</button>
+          </div>
+        )}
+
+        {weekBets.length === 0 && (
+          <button
+            onClick={() => onNav('logger')}
+            style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#13131a", border: "none", borderRadius: 8, padding: "10px 12px", cursor: "pointer", marginBottom: 12 }}
+          >
+            <span style={{ color: "#888", fontSize: 12 }}>No bets logged this week yet</span>
+            <span style={{ color: "#fff", fontSize: 12, fontWeight: 700 }}>Log one →</span>
+          </button>
+        )}
+
         <div style={{ display: "flex", gap: 8 }}>
           {[
-            { val: wins.length, lbl: "W", color: "#2ecc71" },
-            { val: losses.length, lbl: "L", color: "#e74c3c" },
-            { val: atRisk > 0 ? `$${atRisk}` : "—", lbl: "At Risk", color: "#f5a623" },
-            { val: `$${weekBets.reduce((s, b) => s + b.amount, 0)}`, lbl: "Wagered", color: "#888" },
+            { val: `${wins.length}W-${losses.length}L`, lbl: "Record" },
+            { val: atRisk > 0 ? `$${atRisk}` : "—", lbl: "At Risk" },
+            { val: `$${weekBets.reduce((s, b) => s + b.amount, 0)}`, lbl: "Wagered" },
           ].map((s, i) => (
-            <div key={i} style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "8px 0", textAlign: "center" }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: s.color }}>{s.val}</div>
-              <div style={{ fontSize: 10, color: "#555", marginTop: 1 }}>{s.lbl}</div>
+            <div key={i} style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "10px 0", textAlign: "center" }}>
+              <div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{s.val}</div>
+              <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>{s.lbl}</div>
             </div>
           ))}
         </div>
@@ -1687,19 +1694,19 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
 
       {/* Lifetime Record Card */}
       <div style={{ background: "#0f0f18", border: "1px solid #1e1e2e", borderRadius: 14, padding: "14px 16px", marginBottom: 16 }}>
-        <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Lifetime Record</div>
+        <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Lifetime Record</div>
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "10px 0", textAlign: "center" }}>
             <div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{lifetimeWins}W-{lifetimeLosses}L</div>
-            <div style={{ fontSize: 10, color: "#555", marginTop: 2 }}>Record</div>
+            <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>Record</div>
           </div>
           <div style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "10px 0", textAlign: "center" }}>
             <div style={{ fontSize: 17, fontWeight: 800, color: lifetimePL >= 0 ? "#2ecc71" : "#e74c3c" }}>{lifetimePL >= 0 ? "+$" : "-$"}{Math.abs(lifetimePL).toFixed(0)}</div>
-            <div style={{ fontSize: 10, color: "#555", marginTop: 2 }}>P&L</div>
+            <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>P&L</div>
           </div>
           <div style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "10px 0", textAlign: "center" }}>
             <div style={{ fontSize: 17, fontWeight: 800, color: lifetimeRoi >= 0 ? "#2ecc71" : "#e74c3c" }}>{lifetimeRoi >= 0 ? "+" : ""}{lifetimeRoi.toFixed(1)}%</div>
-            <div style={{ fontSize: 10, color: "#555", marginTop: 2 }}>ROI</div>
+            <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>ROI</div>
           </div>
         </div>
       </div>
@@ -1758,12 +1765,12 @@ function UpgradeScreen({ user, userKey, onNav }) {
               <span style={{ color: '#f5a623', fontWeight: 700, fontSize: 14 }}>⚡ {FOUNDING_SPOTS_LEFT} of {FOUNDING_TOTAL} founding spots remaining</span>
             </div>
             <div style={{ color: '#aaa', fontSize: 13, marginBottom: 4 }}>Lock in this price forever — it never goes up</div>
-            <div style={{ color: '#555', fontSize: 12 }}>3-day free trial · Cancel anytime</div>
+            <div style={{ color: '#888', fontSize: 12 }}>3-day free trial · Cancel anytime</div>
           </>
         ) : (
           <>
             <div style={{ color: '#f5a623', fontSize: 14, marginBottom: 4 }}>3-day free trial</div>
-            <div style={{ color: '#555', fontSize: 13 }}>Cancel anytime. No commitment.</div>
+            <div style={{ color: '#888', fontSize: 13 }}>Cancel anytime. No commitment.</div>
           </>
         )}
       </div>
@@ -1782,16 +1789,16 @@ function UpgradeScreen({ user, userKey, onNav }) {
             <div style={{ color: '#f5a623', fontSize: 12, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>BETCIERGE</div>
             {FOUNDING_ACTIVE ? (
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$24.99<span style={{ fontSize: 13, color: '#555', fontWeight: 400 }}>/mo</span></div>
-                <div style={{ color: '#555', fontSize: 13, textDecoration: 'line-through' }}>$29.99</div>
+                <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$24.99<span style={{ fontSize: 13, color: '#888', fontWeight: 400 }}>/mo</span></div>
+                <div style={{ color: '#888', fontSize: 13, textDecoration: 'line-through' }}>$29.99</div>
               </div>
             ) : (
-              <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$29.99<span style={{ fontSize: 13, color: '#555', fontWeight: 400 }}>/mo</span></div>
+              <div style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>$29.99<span style={{ fontSize: 13, color: '#888', fontWeight: 400 }}>/mo</span></div>
             )}
             {FOUNDING_ACTIVE ? (
               <div style={{ color: '#2ecc71', fontSize: 12, marginTop: 2 }}>🔒 Locked for life</div>
             ) : (
-              <div style={{ color: '#555', fontSize: 12, marginTop: 2 }}>Cancel anytime</div>
+              <div style={{ color: '#888', fontSize: 12, marginTop: 2 }}>Cancel anytime</div>
             )}
           </div>
           <div style={{ fontSize: 32 }}>🎯</div>
@@ -1809,7 +1816,7 @@ function UpgradeScreen({ user, userKey, onNav }) {
 
       {/* Price comparison note */}
       {FOUNDING_ACTIVE && (
-        <div style={{ textAlign: 'center', color: '#555', fontSize: 12, marginBottom: 32 }}>
+        <div style={{ textAlign: 'center', color: '#888', fontSize: 12, marginBottom: 32 }}>
           CaptainPicks Discord is $600/mo. Betcierge gives you everything that has plus AI + tracking for {FOUNDING_SPOTS_LEFT} more founding members at $24.99/mo.
         </div>
       )}
@@ -2143,13 +2150,13 @@ function Gamecast({ bets, parlays = [], onNav }) {
 
       <div style={{ marginBottom: 20 }}>
         <div style={{ color: '#fff', fontFamily: "'Cormorant Garamond',serif", fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Gamecast</div>
-        {lastUpdated && <div style={{ color: '#555', fontSize: 11 }}>Updated {lastUpdated.toLocaleTimeString()}</div>}
+        {lastUpdated && <div style={{ color: '#888', fontSize: 11 }}>Updated {lastUpdated.toLocaleTimeString()}</div>}
       </div>
 
       {loading ? (
-        <div style={{ color: '#555', textAlign: 'center', padding: 40 }}>Loading scores...</div>
+        <div style={{ color: '#888', textAlign: 'center', padding: 40 }}>Loading scores...</div>
       ) : activeBets.length === 0 ? (
-        <div style={{ color: '#555', textAlign: 'center', padding: 40, fontSize: 14 }}>No active bets today.</div>
+        <div style={{ color: '#888', textAlign: 'center', padding: 40, fontSize: 14 }}>No active bets today.</div>
       ) : (
         <>
         {/* Parlay Cards — full parlay as one card */}
@@ -2176,7 +2183,7 @@ function Gamecast({ bets, parlays = [], onNav }) {
                   <div key={leg.id} style={{ borderTop: i === 0 ? '1px solid #1e1e2e' : '1px solid #1a1a2e', padding: '10px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>{leg.pick}</div>
-                      <div style={{ color: '#555', fontSize: 11, marginTop: 2 }}>{leg.game} · {leg.sport}</div>
+                      <div style={{ color: '#888', fontSize: 11, marginTop: 2 }}>{leg.game} · {leg.sport}</div>
                       {legScore && (legScore.status === 'live' || legScore.status === 'final') ? (
                         <div style={{ color: '#f5a623', fontSize: 11, marginTop: 2 }}>
                           {legScore.away_team} {legScore.away_score} @ {legScore.home_team} {legScore.home_score}{legScore.status === 'live' ? ' 🔴' : ' · Final'}
@@ -2194,7 +2201,7 @@ function Gamecast({ bets, parlays = [], onNav }) {
               })}
               {/* Parlay Footer */}
               <div style={{ borderTop: '1px solid #1e1e2e', marginTop: 8, paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ color: '#555', fontSize: 12 }}>{oddsDisplay} · <span style={{ color: '#fff' }}>${parlay.amount}</span> to win</div>
+                <div style={{ color: '#888', fontSize: 12 }}>{oddsDisplay} · <span style={{ color: '#fff' }}>${parlay.amount}</span> to win</div>
                 <div style={{ color: '#f5a623', fontSize: 16, fontWeight: 700, fontFamily: "'Cormorant Garamond',serif" }}>${parlay.toWin}</div>
               </div>
             </div>
@@ -2214,7 +2221,7 @@ function Gamecast({ bets, parlays = [], onNav }) {
               </div>
               <div style={{ background: '#0f0f18', borderRadius: 12, padding: '14px 16px', marginBottom: 16, textAlign: 'center' }}>
                 <div style={{ color: '#fff', fontSize: 14, fontWeight: 600 }}>{bet.game}</div>
-                <div style={{ color: '#555', fontSize: 12, marginTop: 4 }}>{bet.gameTime || 'Time TBD'}</div>
+                <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>{bet.gameTime || 'Time TBD'}</div>
               </div>
               <div style={{ color: '#666', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Your Bets</div>
               <div style={{ background: '#0a0a0f', borderRadius: 10, padding: '10px 12px', border: `1px solid ${bet.result === 'Win' ? '#2ecc7130' : bet.result === 'Loss' ? '#e74c3c30' : '#1e1e2e'}` }}>
@@ -2224,7 +2231,7 @@ function Gamecast({ bets, parlays = [], onNav }) {
                     {bet.result === 'Win' ? '✓ WIN' : bet.result === 'Loss' ? '✗ LOSS' : 'PENDING'}
                   </div>
                 </div>
-                <div style={{ color: '#555', fontSize: 11, marginTop: 4 }}>{bet.betType} · {oddsDisplay} · ${bet.amount} to win ${toWin}</div>
+                <div style={{ color: '#888', fontSize: 11, marginTop: 4 }}>{bet.betType} · {oddsDisplay} · ${bet.amount} to win ${toWin}</div>
               </div>
             </div>
           );
@@ -2261,7 +2268,7 @@ function Gamecast({ bets, parlays = [], onNav }) {
               ) : (
                 <div style={{ background: '#0f0f18', borderRadius: 12, padding: '14px 16px', marginBottom: 16, textAlign: 'center' }}>
                   <div style={{ color: '#fff', fontSize: 14, fontWeight: 600 }}>{firstBet?.game}</div>
-                  <div style={{ color: '#555', fontSize: 12, marginTop: 4 }}>{firstBet?.gameTime || 'Time TBD'}</div>
+                  <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>{firstBet?.gameTime || 'Time TBD'}</div>
                 </div>
               )}
 
@@ -2284,7 +2291,7 @@ function Gamecast({ bets, parlays = [], onNav }) {
                         {bet.result === 'Win' ? '✓ WIN' : bet.result === 'Loss' ? '✗ LOSS' : isWinning ? '↑ WINNING' : 'PENDING'}
                       </div>
                     </div>
-                    <div style={{ color: '#555', fontSize: 11, marginTop: 4 }}>{bet.betType} · {oddsDisplay} · ${bet.amount} to win ${toWin}</div>
+                    <div style={{ color: '#888', fontSize: 11, marginTop: 4 }}>{bet.betType} · {oddsDisplay} · ${bet.amount} to win ${toWin}</div>
                   </div>
                 );
               })}
@@ -2406,7 +2413,7 @@ function History({ bets, onUpdate, onDelete, onNav }) {
               <div style={{ color: "#f5a623", fontWeight: 700, fontSize: 13 }}>{leg.pick}</div>
               <div style={{ color: "#888", fontSize: 12 }}>{leg.game}</div>
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
-                <span style={{ color: "#555", fontSize: 11 }}>{leg.odds}</span>
+                <span style={{ color: "#888", fontSize: 11 }}>{leg.odds}</span>
                 <span style={{ color: leg.result === "Win" ? "#2ecc71" : leg.result === "Loss" ? "#e74c3c" : "#666", fontSize: 11, fontWeight: 700 }}>
                   {leg.result === "Win" ? "✓ WIN" : leg.result === "Loss" ? "✗ LOSS" : leg.result === "Push" ? "PUSH" : "PENDING"}
                 </span>
@@ -2446,13 +2453,13 @@ function History({ bets, onUpdate, onDelete, onNav }) {
         <div onClick={() => toggleGroup(dateStr)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#1a1a1a", borderRadius: 8, cursor: "pointer", marginBottom: isExpanded ? 8 : 0 }}>
           <div>
             <span style={{ color: "#fff", fontWeight: 600, fontSize: 14 }}>{formatDateLabel(dateStr)}</span>
-            <span style={{ color: "#555", fontSize: 12, marginLeft: 8 }}>{dayBets.length} bet{dayBets.length !== 1 ? "s" : ""}</span>
+            <span style={{ color: "#888", fontSize: 12, marginLeft: 8 }}>{dayBets.length} bet{dayBets.length !== 1 ? "s" : ""}</span>
           </div>
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <span style={{ fontSize: 12, color: "#2ecc71", minWidth: 28, textAlign: "right" }}>{dayWins}W</span>
             <span style={{ fontSize: 12, color: "#e74c3c", minWidth: 28, textAlign: "right" }}>{dayLosses}L</span>
             <span style={{ fontSize: 12, color: dayPL >= 0 ? "#2ecc71" : "#e74c3c", minWidth: 60, textAlign: "right" }}>{dayPL >= 0 ? "+" : ""}{fmt(dayPL)}</span>
-            <span style={{ color: "#555", fontSize: 12 }}>{isExpanded ? "▲" : "▼"}</span>
+            <span style={{ color: "#888", fontSize: 12 }}>{isExpanded ? "▲" : "▼"}</span>
           </div>
         </div>
         {isExpanded && dayBets.map(bet => <BetCard key={bet.id} bet={bet} onUpdate={onUpdate} onDelete={onDelete} />)}
@@ -2502,7 +2509,7 @@ function History({ bets, onUpdate, onDelete, onNav }) {
           {/* This week — expanded by default, collapsible by day */}
           {thisWeekDates.length > 0 && (
             <div>
-              <div style={{ color: "#555", fontSize: 11, fontWeight: 600, letterSpacing: 1, marginBottom: 8, textTransform: "uppercase" }}>This Week</div>
+              <div style={{ color: "#888", fontSize: 11, fontWeight: 600, letterSpacing: 1, marginBottom: 8, textTransform: "uppercase" }}>This Week</div>
               {thisWeekDates.map(dateStr => <DaySection key={dateStr} dateStr={dateStr} />)}
             </div>
           )}
@@ -2515,8 +2522,8 @@ function History({ bets, onUpdate, onDelete, onNav }) {
                 <div onClick={() => toggleGroup(monthKey)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#111", borderRadius: 8, cursor: "pointer", marginBottom: isMonthExpanded ? 8 : 0, border: "1px solid #222" }}>
                   <span style={{ color: "#888", fontWeight: 600, fontSize: 13 }}>{monthKey}</span>
                   <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                    <span style={{ color: "#555", fontSize: 12 }}>{olderByMonth[monthKey].reduce((s, d) => s + groups[d].length, 0)} bets</span>
-                    <span style={{ color: "#555", fontSize: 12 }}>{isMonthExpanded ? "▲" : "▼"}</span>
+                    <span style={{ color: "#888", fontSize: 12 }}>{olderByMonth[monthKey].reduce((s, d) => s + groups[d].length, 0)} bets</span>
+                    <span style={{ color: "#888", fontSize: 12 }}>{isMonthExpanded ? "▲" : "▼"}</span>
                   </div>
                 </div>
                 {isMonthExpanded && olderByMonth[monthKey].map(dateStr => <DaySection key={dateStr} dateStr={dateStr} />)}
@@ -2865,12 +2872,12 @@ if (!user?.name) return null; // new users are redirected to /onboarding by the 
             <button onClick={() => setShowNotifs(false)} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer" }}>✕</button>
           </div>
           {notifications.length === 0 ? (
-            <div style={{ color: "#555", fontSize: 13, textAlign: "center", marginTop: 40 }}>No notifications yet</div>
+            <div style={{ color: "#888", fontSize: 13, textAlign: "center", marginTop: 40 }}>No notifications yet</div>
           ) : (
             notifications.map(n => (
               <div key={n.id} style={{ background: n.read ? "#0f0f18" : "#111128", border: `1px solid ${n.read ? "#1e1e2e" : "#3a3a5e"}`, borderRadius: 10, padding: 14, marginBottom: 10 }}>
                 <div style={{ fontSize: 13, color: "#fff", lineHeight: 1.5 }}>{n.notifications?.message}</div>
-                <div style={{ fontSize: 11, color: "#555", marginTop: 6 }}>{new Date(n.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>{new Date(n.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                 {!n.read && <div style={{ width: 6, height: 6, background: "#f5a623", borderRadius: "50%", marginTop: 6 }} />}
               </div>
             ))
@@ -2897,7 +2904,7 @@ if (!user?.name) return null; // new users are redirected to /onboarding by the 
         ].map(n => (
           <button key={n.id} onClick={() => setScreen(n.id)} style={{ flex: 1, background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer", padding: "6px 0", opacity: screen === n.id ? 1 : 0.4 }}>
             <span style={{ fontSize: 20 }}>{n.icon}</span>
-            <span style={{ color: screen === n.id ? "#f5a623" : "#555", fontSize: 11, fontWeight: screen === n.id ? 700 : 400 }}>{n.lbl}</span>
+            <span style={{ color: screen === n.id ? "#f5a623" : "#888", fontSize: 11, fontWeight: screen === n.id ? 700 : 400 }}>{n.lbl}</span>
           </button>
         ))}
       </div>
@@ -2920,11 +2927,11 @@ const S = {
   statsRow: { display: "flex", gap: 8, marginTop: 14 },
   statBox: { flex: 1, background: "#0f0f18", borderRadius: 10, padding: "10px 8px", textAlign: "center" },
   statVal: { color: "#f5a623", fontSize: 16, fontWeight: 700, fontFamily: "'Cormorant Garamond',serif" },
-  statLbl: { color: "#555", fontSize: 10, marginTop: 2, textTransform: "uppercase", letterSpacing: 0.5 },
+  statLbl: { color: "#888", fontSize: 10, marginTop: 2, textTransform: "uppercase", letterSpacing: 0.5 },
   betCard: { background: "#13131a", border: "1px solid #1e1e2e", borderRadius: 14, padding: 14, marginBottom: 10 },
   betSport: { background: "#1a1a00", color: "#f5a623", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6 },
   tag: { fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6 },
-  empty: { color: "#555", textAlign: "center", padding: 40, fontSize: 14 },
+  empty: { color: "#888", textAlign: "center", padding: 40, fontSize: 14 },
   input: { width: "100%", background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 15, boxSizing: "border-box", outline: "none", marginBottom: 4 },
   select: { width: "100%", background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 14, boxSizing: "border-box", outline: "none", marginBottom: 4 },
   label: { display: "block", color: "#666", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, marginTop: 12 },
@@ -2957,18 +2964,18 @@ const S = {
     snapBadge: { position: "absolute", top: 14, right: 14, background: "#f5a623", color: "#000", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 20 },
     manual: { width: "100%", background: "#13131a", border: "1px solid #333", borderRadius: 20, padding: 20, textAlign: "center", cursor: "pointer" },
     manualTitle: { color: "#ccc", fontSize: 16, fontWeight: 700, marginBottom: 6, fontFamily: "'Cormorant Garamond',serif" },
-    manualSub: { color: "#555", fontSize: 13 },
+    manualSub: { color: "#888", fontSize: 13 },
   },
   ob: {
     wrap: { background: "#0a0a0f", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
     card: { background: "#13131a", border: "1px solid #222", borderRadius: 24, padding: 28, width: "100%", maxWidth: 400 },
     logo: { textAlign: "center", fontFamily: "'Cormorant Garamond',serif", fontSize: 36, fontWeight: 700, color: "#f5a623", letterSpacing: 3, marginBottom: 4 },
-    tagline: { textAlign: "center", color: "#555", fontSize: 13, marginBottom: 24 },
+    tagline: { textAlign: "center", color: "#888", fontSize: 13, marginBottom: 24 },
     stepRow: { display: "flex", gap: 6, justifyContent: "center", marginBottom: 6 },
     dot: { width: 8, height: 8, borderRadius: "50%", background: "#333" },
     dotActive: { background: "#f5a623", width: 24, borderRadius: 4 },
     dotDone: { background: "#f5a623", opacity: 0.5 },
-    stepLbl: { textAlign: "center", color: "#555", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 },
+    stepLbl: { textAlign: "center", color: "#888", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 },
     title: { color: "#fff", fontFamily: "'Cormorant Garamond',serif", fontSize: 24, fontWeight: 700, margin: "0 0 8px" },
     sub: { color: "#666", fontSize: 14, margin: "0 0 16px" },
     sportsGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 },
