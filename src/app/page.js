@@ -1607,16 +1607,16 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
       )}
 
       {/* Compact Weekly Card */}
-      <div style={{ background: "#0f0f18", border: "1px solid #1e1e2e", borderRadius: 14, padding: "14px 16px", marginBottom: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+      <div style={{ background: "#0f0f18", border: "1px solid #1e1e2e", borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
           <div>
             <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>Bankroll</div>
-            <div style={{ fontSize: 26, fontWeight: 800, color: "#f5a623", letterSpacing: -0.5 }}>${currentBankroll.toFixed(0)}</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#f5a623", letterSpacing: -0.5 }}>${currentBankroll.toFixed(0)}</div>
           </div>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>This Week · {weekLabel}</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
-              <div style={{ fontSize: 26, fontWeight: 800, color: netPL >= 0 ? "#2ecc71" : "#e74c3c" }}>{netPL >= 0 ? "+$" :"-$"}{Math.abs(netPL).toFixed(0)}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: netPL >= 0 ? "#2ecc71" : "#e74c3c" }}>{netPL >= 0 ? "+$" :"-$"}{Math.abs(netPL).toFixed(0)}</div>
               <button
                 onClick={() => { setPlInput(netPL.toFixed(0)); setEditingPL(true); }}
                 style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, padding: 0, color: "#888" }}
@@ -1670,14 +1670,14 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
             )}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 6 }}>
           {[
             { val: wins.length, lbl: "W", color: "#2ecc71" },
             { val: losses.length, lbl: "L", color: "#e74c3c" },
             { val: atRisk > 0 ? `$${atRisk}` : "—", lbl: "At Risk", color: "#f5a623" },
             { val: `$${weekBets.reduce((s, b) => s + b.amount, 0)}`, lbl: "Wagered", color: "#888" },
           ].map((s, i) => (
-            <div key={i} style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "8px 0", textAlign: "center" }}>
+            <div key={i} style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "6px 0", textAlign: "center" }}>
               <div style={{ fontSize: 16, fontWeight: 800, color: s.color }}>{s.val}</div>
               <div style={{ fontSize: 10, color: "#888", marginTop: 1 }}>{s.lbl}</div>
             </div>
@@ -1686,19 +1686,19 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
       </div>
 
       {/* Lifetime Record Card */}
-      <div style={{ background: "#0f0f18", border: "1px solid #1e1e2e", borderRadius: 14, padding: "14px 16px", marginBottom: 16 }}>
-        <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Lifetime Record</div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <div style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "10px 0", textAlign: "center" }}>
-            <div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{lifetimeWins}W-{lifetimeLosses}L</div>
+      <div style={{ background: "#0f0f18", border: "1px solid #1e1e2e", borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
+        <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Lifetime Record</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <div style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "8px 0", textAlign: "center" }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>{lifetimeWins}W-{lifetimeLosses}L</div>
             <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>Record</div>
           </div>
-          <div style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "10px 0", textAlign: "center" }}>
-            <div style={{ fontSize: 17, fontWeight: 800, color: lifetimePL >= 0 ? "#2ecc71" : "#e74c3c" }}>{lifetimePL >= 0 ? "+$" : "-$"}{Math.abs(lifetimePL).toFixed(0)}</div>
+          <div style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "8px 0", textAlign: "center" }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: lifetimePL >= 0 ? "#2ecc71" : "#e74c3c" }}>{lifetimePL >= 0 ? "+$" : "-$"}{Math.abs(lifetimePL).toFixed(0)}</div>
             <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>P&L</div>
           </div>
-          <div style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "10px 0", textAlign: "center" }}>
-            <div style={{ fontSize: 17, fontWeight: 800, color: lifetimeRoi >= 0 ? "#2ecc71" : "#e74c3c" }}>{lifetimeRoi >= 0 ? "+" : ""}{lifetimeRoi.toFixed(1)}%</div>
+          <div style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "8px 0", textAlign: "center" }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: lifetimeRoi >= 0 ? "#2ecc71" : "#e74c3c" }}>{lifetimeRoi >= 0 ? "+" : ""}{lifetimeRoi.toFixed(1)}%</div>
             <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>ROI</div>
           </div>
         </div>
