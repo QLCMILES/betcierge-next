@@ -1555,6 +1555,18 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
   const goalPct = user.goal > 0 ? (netPL / user.goal) * 100 : 0;
   const sliderPct = Math.min(98, Math.max(2, 50 + (netPL / (user.goal * 2)) * 50));
   const atRisk = pending.reduce((s, b) => s + b.amount, 0);
+
+  // Lifetime record (all settled bets, no date filter)
+  const settledLifetime = bets.filter(b => b.result === "Win" || b.result === "Loss");
+  const lifetimeWins = settledLifetime.filter(b => b.result === "Win").length;
+  const lifetimeLosses = settledLifetime.filter(b => b.result === "Loss").length;
+  const lifetimePL = settledLifetime.reduce((s, b) => {
+    if (b.result === "Win") return s + (calcProfit(b.amount, b.odds) || 0);
+    return s - b.amount;
+  }, 0);
+  const lifetimeRisked = settledLifetime.reduce((s, b) => s + (b.amount || 0), 0);
+  const lifetimeRoi = lifetimeRisked > 0 ? (lifetimePL / lifetimeRisked) * 100 : 0;
+
   const alerts = [];
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
   const todayBets = bets.filter(b => b.gameDate === today).length;
@@ -1670,6 +1682,25 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
               <div style={{ fontSize: 10, color: "#555", marginTop: 1 }}>{s.lbl}</div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Lifetime Record Card */}
+      <div style={{ background: "#0f0f18", border: "1px solid #1e1e2e", borderRadius: 14, padding: "14px 16px", marginBottom: 16 }}>
+        <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Lifetime Record</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "10px 0", textAlign: "center" }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{lifetimeWins}W-{lifetimeLosses}L</div>
+            <div style={{ fontSize: 10, color: "#555", marginTop: 2 }}>Record</div>
+          </div>
+          <div style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "10px 0", textAlign: "center" }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: lifetimePL >= 0 ? "#2ecc71" : "#e74c3c" }}>{lifetimePL >= 0 ? "+$" : "-$"}{Math.abs(lifetimePL).toFixed(0)}</div>
+            <div style={{ fontSize: 10, color: "#555", marginTop: 2 }}>P&L</div>
+          </div>
+          <div style={{ flex: 1, background: "#13131a", borderRadius: 8, padding: "10px 0", textAlign: "center" }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: lifetimeRoi >= 0 ? "#2ecc71" : "#e74c3c" }}>{lifetimeRoi >= 0 ? "+" : ""}{lifetimeRoi.toFixed(1)}%</div>
+            <div style={{ fontSize: 10, color: "#555", marginTop: 2 }}>ROI</div>
+          </div>
         </div>
       </div>
 
