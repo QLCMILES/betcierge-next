@@ -1729,7 +1729,14 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
           ))}
         </div>
 
-        <div style={{ borderTop: "1px solid #2a2a3a", margin: "14px -14px 12px" }} />
+        <div style={{ display: "flex", alignItems: "center", margin: "14px 0 12px" }}>
+          <div style={{ flex: 1, borderTop: "1px solid #2a2a3a" }} />
+          <button
+            onClick={() => onNav('logger')}
+            style={{ background: "#1a1500", border: "1px solid #f5a623", borderRadius: 6, padding: "3px 10px", margin: "0 10px", color: "#f5a623", fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap", cursor: "pointer" }}
+          >📸 Log your bets</button>
+          <div style={{ flex: 1, borderTop: "1px solid #2a2a3a" }} />
+        </div>
 
         <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Lifetime Record</div>
         <div style={{ display: "flex", gap: 6 }}>
