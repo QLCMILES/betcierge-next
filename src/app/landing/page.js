@@ -44,13 +44,13 @@ export default function Landing({ onGetStarted, onSignIn, source = "general" }) 
   // Falls back to a hard navigation when this component is rendered as its
   // own route (e.g. /captain, which Next.js invokes with no custom props —
   // onGetStarted/onSignIn are only ever real functions when Landing is
-  // imported directly, as the root page.js does for /). Fixes a real bug:
-  // captain's Sign In button and "claim yours" text previously called an
-  // onGetStarted that was always undefined on that route, so they did
-  // nothing when clicked.
+  // imported directly, as the root page.js does for /). Goes straight to
+  // /onboarding — same destination the general page's real onGetStarted
+  // already uses — so claiming a founding spot on /captain doesn't detour
+  // through the sign-in screen first.
   const go = () => {
     if (onGetStarted) onGetStarted();
-    else window.location.href = '/';
+    else window.location.href = '/onboarding';
   };
   const signIn = () => {
     if (onSignIn) onSignIn();
