@@ -159,34 +159,38 @@ export default function Landing({ onGetStarted, onSignIn, source = "general" }) 
             <div style={{ color: GRAY, fontSize: 12, marginTop: 2 }}>After {FOUNDING_TOTAL} members, price goes to $29.99/mo</div>
           </div>
         )}
-        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-          <button onClick={claimFounding} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
-            Claim Founding Spot — {CURRENT_PRICE_DISPLAY}
-          </button>
+        <div style={{ display: "inline-block", background: CARD, border: `1px solid ${BORDER}`, borderRadius: 16, padding: "20px 28px" }}>
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+            <button onClick={claimFounding} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+              Claim Founding Spot — {CURRENT_PRICE_DISPLAY}
+            </button>
+          </div>
+          <p style={{ fontSize: 12, color: GRAY, marginTop: 12, marginBottom: 0 }}>
+            <strong style={{ color: GOLD, fontSize: 17, fontWeight: 700 }}>3-day free trial</strong>{" "}
+            · Rate holds while subscribed · Cancel anytime
+          </p>
         </div>
-        <p style={{ fontSize: 12, color: GRAY, marginTop: 12 }}>
-          <strong style={{ color: GOLD, fontSize: 17, fontWeight: 700 }}>3-day free trial</strong>{" "}
-          · Rate holds while subscribed · Cancel anytime
-        </p>
       </section>
 
       {/* Features */}
       <section style={{ maxWidth: 700, margin: "0 auto 60px", padding: "0 24px" }}>
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>WHAT'S INSIDE</div>
-          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>This isn't another picks service.<br />It's a better way to bet.</h2>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {features.map((f, i) => (
-            <div key={i} style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 12, padding: "16px 20px", display: "flex", gap: 16, alignItems: "flex-start" }}>
-              <span style={{ fontSize: 22, flexShrink: 0 }}>{f.icon}</span>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>{f.name}</div>
-                <div style={{ color: GOLD, fontSize: 13, fontStyle: "italic", marginBottom: 4 }}>{f.kicker}</div>
-                <div style={{ color: LIGHT, fontSize: 14, fontWeight: 500, lineHeight: 1.5 }}>{f.desc}</div>
+        <div style={{ border: `1px solid ${BORDER}`, borderRadius: 20, padding: "32px 24px" }}>
+          <div style={{ textAlign: "center", marginBottom: 32 }}>
+            <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>WHAT'S INSIDE</div>
+            <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>This isn't another picks service.<br />It's a better way to bet.</h2>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {features.map((f, i) => (
+              <div key={i} style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 12, padding: "16px 20px", display: "flex", gap: 16, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 22, flexShrink: 0 }}>{f.icon}</span>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>{f.name}</div>
+                  <div style={{ color: GOLD, fontSize: 13, fontStyle: "italic", marginBottom: 4 }}>{f.kicker}</div>
+                  <div style={{ color: LIGHT, fontSize: 14, fontWeight: 500, lineHeight: 1.5 }}>{f.desc}</div>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </section>
 
