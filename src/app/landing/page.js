@@ -18,7 +18,7 @@ const GRAY = "#9ca3af";
 const LIGHT = "#d1d5db";
 
 const features = [
-  { icon: "🤖", name: "Hunter — your betting coach", kicker: "Bring the hunch. Hunter brings the homework.", desc: "Ask about any game, bet, line, or idea. Hunter digs into the numbers, challenges your take, and tells you what he actually thinks — even when you don't want to hear it." },
+  { icon: "🤖", name: "Ask Hunter — Your 24/7 Betting War Room", kicker: "Bring the hunch. Hunter brings the homework.", desc: "Ask about any game, bet, line, or idea. Hunter digs into the numbers, challenges your take, and tells you what he actually thinks — even when you don't want to hear it." },
   { icon: "🎯", name: "Daily Picks", kicker: "No edge? No bet.", desc: "Every game gets researched. When there's a play worth making, you get it. No picks forced just because you want action." },
   { icon: "🛡️", name: "Bankroll Guardrails", kicker: "Because \"I'll win it back\" is not a strategy.", desc: "Hunter keeps your bankroll, weekly goal, and bigger picture in view — especially when your gut is telling you to forget all three." },
   { icon: "📸", name: "Snap to Log + Bet Tracker", kicker: "Your bets. Logged in seconds. Remembered forever.", desc: "Snap a photo of your bet slip and Betcierge does the rest. Every bet gets added to your history, giving you one place to see what you've bet, how you've performed, and your lifetime P&L." },
