@@ -23,7 +23,7 @@ const features = [
   { icon: "🛡️", name: "Bankroll Guardrails", kicker: "Because \"I'll win it back\" is not a strategy.", desc: "Hunter keeps your bankroll, weekly goal, and bigger picture in view — especially when your gut is telling you to forget all three." },
 ];
 
-const faqs = [
+const sharedFaqs = [
   { q: "Is this betting advice?", a: "Betcierge is a research and discipline tool. We help you find edges, size bets, and track your record — we don't take bets. Always bet responsibly." },
   { q: "Do you show losses?", a: "Every single one. A record that hides losses is a lie. Ours does not." },
   { q: "What happens to my founding price if I cancel?", a: "Your $24.99/mo rate holds for as long as you stay subscribed. If you cancel and resubscribe after founding spots are gone, you'd rejoin at the standard rate." },
@@ -31,11 +31,31 @@ const faqs = [
   { q: "What do free accounts get?", a: "Our full record is public, no account needed. Daily Picks and full Hunter chat are for subscribers." },
 ];
 
-export default function Landing({ onGetStarted, onSignIn }) {
+const captainOnlyFaqs = [
+  { q: "How is this different from the CaptainPicks Discord?", a: "The Discord gives you the picks. Betcierge gives you the picks plus the full reasoning behind every one, Hunter chat for any game at any hour, and your entire record tracked automatically." },
+];
+
+export default function Landing({ onGetStarted, onSignIn, source = "general" }) {
+  const isCaptain = source === "captain";
   const [openFaq, setOpenFaq] = useState(null);
   const [picks, setPicks] = useState([]);
   const [record, setRecord] = useState({ wins: 0, losses: 0, units: 0, roi: 0, winRate: 0 });
-  const go = () => { if (onGetStarted) onGetStarted(); };
+
+  // Falls back to a hard navigation when this component is rendered as its
+  // own route (e.g. /captain, which Next.js invokes with no custom props —
+  // onGetStarted/onSignIn are only ever real functions when Landing is
+  // imported directly, as the root page.js does for /). Fixes a real bug:
+  // captain's Sign In button and "claim yours" text previously called an
+  // onGetStarted that was always undefined on that route, so they did
+  // nothing when clicked.
+  const go = () => {
+    if (onGetStarted) onGetStarted();
+    else window.location.href = '/';
+  };
+  const signIn = () => {
+    if (onSignIn) onSignIn();
+    else window.location.href = '/';
+  };
   const claimFounding = () => {
     localStorage.setItem('founding_price_id', STRIPE_PRICE_CURRENT);
     localStorage.setItem('founding_plan_name', 'Founding Member');
@@ -43,17 +63,20 @@ export default function Landing({ onGetStarted, onSignIn }) {
   };
 
   useEffect(() => {
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-    supabase
-      .from('daily_picks')
-      .select('sport, game, pick, odds, game_time, confidence')
-      .eq('date', today)
-      .eq('status', 'active')
-      .limit(3)
-      .then(({ data }) => { if (data) setPicks(data); });
+    // Slate preview only renders for the general page — /captain never had it.
+    if (!isCaptain) {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      supabase
+        .from('daily_picks')
+        .select('sport, game, pick, odds, game_time, confidence')
+        .eq('date', today)
+        .eq('status', 'active')
+        .limit(3)
+        .then(({ data }) => { if (data) setPicks(data); });
+    }
 
-    // Live record — same query captain/page.js uses, so the number is
-    // never allowed to drift from what's actually in the database again.
+    // Live record — single source of truth now. Both / and /captain read
+    // this exact query, so the number can never drift between them again.
     supabase
       .from('daily_picks')
       .select('result, units, odds')
@@ -80,7 +103,9 @@ export default function Landing({ onGetStarted, onSignIn }) {
         const roi = totalRisked > 0 ? (unitsPnl / totalRisked) * 100 : 0;
         setRecord({ wins, losses, units: unitsPnl, roi, winRate });
       });
-  }, []);
+  }, [isCaptain]);
+
+  const faqs = isCaptain ? [...captainOnlyFaqs, ...sharedFaqs] : sharedFaqs;
 
   return (
     <div style={{ background: DARK, minHeight: "100vh", fontFamily: "'Outfit', sans-serif", color: "#fff" }}>
@@ -98,24 +123,38 @@ export default function Landing({ onGetStarted, onSignIn }) {
       {/* Nav */}
       <nav style={{ padding: "16px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 900, margin: "0 auto" }}>
         <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, fontWeight: 700, color: GOLD, letterSpacing: 2 }}>BETCIERGE</div>
-                <button onClick={() => onSignIn && onSignIn()} style={{ background: "none", border: "1px solid #1e1e2e", color: LIGHT, padding: "8px 18px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>Sign in</button>
+        <button onClick={signIn} style={{ background: "none", border: "1px solid #1e1e2e", color: LIGHT, padding: "8px 18px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>Sign in</button>
       </nav>
 
       {/* Hero */}
       <section style={{ maxWidth: 680, margin: "0 auto", padding: "60px 24px 40px", textAlign: "center" }}>
         <div style={{ display: "inline-block", background: "#1a1200", border: "1px solid #f5a62344", borderRadius: 20, padding: "4px 14px", fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 20 }}>
-          AI is the engine. EI is the edge.
+          {isCaptain ? "From the team behind CaptainPicks" : "AI is the engine. EI is the edge."}
         </div>
         <h1 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "clamp(36px, 8vw, 58px)", fontWeight: 700, lineHeight: 1.1, marginBottom: 16, color: "#fff" }}>
           The research of an analyst.<br /><em style={{ color: GOLD, fontStyle: "italic" }}>The discipline of a pro.</em>
         </h1>
         <div style={{ color: GOLD, fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Bet smarter. Stay disciplined. Win the week.</div>
         <p style={{ fontSize: 17, color: LIGHT, lineHeight: 1.7, maxWidth: 520, margin: "0 auto 12px" }}>
-          Hunter researches the games, challenges your takes, finds the spots worth betting, and keeps your bankroll and goals in view while you do it.
+          {isCaptain
+            ? "Hunter is built from six years of CaptainPicks research and systems — the same rigor, now researching every game, challenging your takes, and keeping your bankroll and goals in view while you do it."
+            : "Hunter researches the games, challenges your takes, finds the spots worth betting, and keeps your bankroll and goals in view while you do it."}
         </p>
-        <p style={{ fontSize: 14, color: "#555", lineHeight: 1.7, maxWidth: 520, margin: "0 auto 32px", borderTop: "1px solid #1e1e2e", paddingTop: 16 }}>
-          NFL · NBA · MLB · Soccer · NHL · UFC · Golf · Tennis — every sport, every day.
-        </p>
+        {isCaptain ? (
+          <p style={{ fontSize: 15, color: LIGHT, lineHeight: 1.7, maxWidth: 520, margin: "0 auto 32px", borderTop: "1px solid #1e1e2e", paddingTop: 16 }}>
+            The Discord was <strong style={{ color: "#fff" }}>$600/mo</strong>. Founding members get all of this for <strong style={{ color: GOLD }}>{CURRENT_PRICE_DISPLAY} — rate holds while you stay subscribed.</strong>
+          </p>
+        ) : (
+          <p style={{ fontSize: 14, color: "#555", lineHeight: 1.7, maxWidth: 520, margin: "0 auto 32px", borderTop: "1px solid #1e1e2e", paddingTop: 16 }}>
+            NFL · NBA · MLB · Soccer · NHL · UFC · Golf · Tennis — every sport, every day.
+          </p>
+        )}
+        {isCaptain && (
+          <div style={{ background: "#1a0f00", border: "1px solid #f5a62344", borderRadius: 12, padding: "12px 20px", marginBottom: 24, display: "inline-block" }}>
+            <div style={{ color: GOLD, fontWeight: 700, fontSize: 15 }}>⚡ {FOUNDING_SPOTS_LEFT} founding spots left</div>
+            <div style={{ color: GRAY, fontSize: 12, marginTop: 2 }}>After {FOUNDING_TOTAL} members, price goes to $29.99/mo</div>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
           <button onClick={claimFounding} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
             Claim Founding Spot — {CURRENT_PRICE_DISPLAY}
@@ -124,38 +163,40 @@ export default function Landing({ onGetStarted, onSignIn }) {
         <p style={{ fontSize: 12, color: GRAY, marginTop: 12 }}>3-day free trial · Rate holds while subscribed · Cancel anytime</p>
       </section>
 
-      {/* Slate Preview */}
-      <section style={{ maxWidth: 480, margin: "0 auto 60px", padding: "0 24px" }}>
-        <div style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 16, overflow: "hidden" }}>
-          <div style={{ padding: "14px 18px", borderBottom: "1px solid #1e1e2e", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontWeight: 700, fontSize: 14 }}>Today's Slate</span>
-            <span style={{ color: GRAY, fontSize: 12 }}>{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' })}</span>
-          </div>
-          {picks.length === 0 ? (
-            <div style={{ padding: "20px", textAlign: "center", color: GRAY, fontSize: 13 }}>Today's picks loading...</div>
-          ) : picks.map((p, i) => (
-            <div key={i} style={{ padding: "14px 18px", borderBottom: i < picks.length - 1 ? "1px solid #1e1e2e" : "none", display: "flex", justifyContent: "space-between", alignItems: "center", opacity: i === 0 ? 1 : 0.5 }}>
-              <div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
-                  <span style={{ background: "#1a1a00", color: GOLD, fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4 }}>{p.sport}</span>
-                  {i === 0 && <span style={{ color: GRAY, fontSize: 11 }}>{p.game_time} · {p.confidence} confidence</span>}
-                </div>
-                <div style={{ fontWeight: 700, fontSize: 14, filter: i > 0 ? "blur(4px)" : "none", userSelect: i > 0 ? "none" : "auto" }}>{p.pick}</div>
-              </div>
-              {i === 0
-                ? <span style={{ background: "#0a2e0a", color: GREEN, fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6 }}>FREE</span>
-                : <span style={{ color: GRAY, fontSize: 12, fontWeight: 600 }}>🔒 Locked</span>
-              }
+      {/* Slate Preview — general only */}
+      {!isCaptain && (
+        <section style={{ maxWidth: 480, margin: "0 auto 60px", padding: "0 24px" }}>
+          <div style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 16, overflow: "hidden" }}>
+            <div style={{ padding: "14px 18px", borderBottom: "1px solid #1e1e2e", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>Today's Slate</span>
+              <span style={{ color: GRAY, fontSize: 12 }}>{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' })}</span>
             </div>
-          ))}
-          <div style={{ padding: "12px 18px", background: "#0d0d18", textAlign: "center", fontSize: 12, color: GRAY }}>
-            <strong style={{ color: "#fff" }}>1 play</strong> unlocked ·{" "}
-            <span style={{ color: GOLD, cursor: "pointer" }} onClick={go}>Join</span> to see the full slate
+            {picks.length === 0 ? (
+              <div style={{ padding: "20px", textAlign: "center", color: GRAY, fontSize: 13 }}>Today's picks loading...</div>
+            ) : picks.map((p, i) => (
+              <div key={i} style={{ padding: "14px 18px", borderBottom: i < picks.length - 1 ? "1px solid #1e1e2e" : "none", display: "flex", justifyContent: "space-between", alignItems: "center", opacity: i === 0 ? 1 : 0.5 }}>
+                <div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
+                    <span style={{ background: "#1a1a00", color: GOLD, fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4 }}>{p.sport}</span>
+                    {i === 0 && <span style={{ color: GRAY, fontSize: 11 }}>{p.game_time} · {p.confidence} confidence</span>}
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: 14, filter: i > 0 ? "blur(4px)" : "none", userSelect: i > 0 ? "none" : "auto" }}>{p.pick}</div>
+                </div>
+                {i === 0
+                  ? <span style={{ background: "#0a2e0a", color: GREEN, fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6 }}>FREE</span>
+                  : <span style={{ color: GRAY, fontSize: 12, fontWeight: 600 }}>🔒 Locked</span>
+                }
+              </div>
+            ))}
+            <div style={{ padding: "12px 18px", background: "#0d0d18", textAlign: "center", fontSize: 12, color: GRAY }}>
+              <strong style={{ color: "#fff" }}>1 play</strong> unlocked ·{" "}
+              <span style={{ color: GOLD, cursor: "pointer" }} onClick={go}>Join</span> to see the full slate
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
-      {/* Credibility — now a single live-fetched record, matching captain/page.js exactly */}
+      {/* Credibility */}
       <section style={{ maxWidth: 600, margin: "0 auto 60px", padding: "0 24px", textAlign: "center" }}>
         <div style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 14, padding: "24px 28px" }}>
           <div style={{ fontSize: 17, fontWeight: 600, color: "#fff", marginBottom: 8 }}>
@@ -199,13 +240,28 @@ export default function Landing({ onGetStarted, onSignIn }) {
         </div>
       </section>
 
-      {/* Pricing — single tier, replacing the old 4-tier Lookout/Team/Edge/Capital structure */}
+      {/* Pricing — single tier */}
       <section style={{ maxWidth: 700, margin: "0 auto 60px", padding: "0 24px" }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>FOUNDING MEMBER PRICING</div>
           <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>Lock it in before it's gone</h2>
           <p style={{ color: GRAY, fontSize: 14, marginTop: 8 }}>This price disappears when the {FOUNDING_TOTAL} founding spots are filled.</p>
         </div>
+
+        {isCaptain && (
+          <div style={{ background: "#1a0f00", border: "1px solid #f5a62333", borderRadius: 12, padding: "16px 20px", marginBottom: 20, display: "flex", justifyContent: "space-around", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ color: GRAY, fontSize: 12, textDecoration: "line-through" }}>CaptainPicks Discord</div>
+              <div style={{ color: "#e74c3c", fontSize: 22, fontWeight: 800 }}>$600/mo</div>
+            </div>
+            <div style={{ color: GOLD, fontSize: 24, fontWeight: 700 }}>→</div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ color: GRAY, fontSize: 12 }}>Betcierge Founding Member</div>
+              <div style={{ color: GREEN, fontSize: 22, fontWeight: 800 }}>{CURRENT_PRICE_DISPLAY}</div>
+              <div style={{ color: GOLD, fontSize: 11, fontWeight: 700 }}>🔒 RATE HOLDS WHILE SUBSCRIBED</div>
+            </div>
+          </div>
+        )}
 
         <div style={{ background: "#0d0a00", border: "2px solid #f5a623", borderRadius: 16, padding: "24px", marginBottom: 16, position: "relative" }}>
           <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", background: GOLD, color: "#000", fontSize: 11, fontWeight: 700, padding: "3px 14px", borderRadius: 20, whiteSpace: "nowrap" }}>
@@ -247,7 +303,7 @@ export default function Landing({ onGetStarted, onSignIn }) {
         {faqs.map((f, i) => (
           <div key={i} style={{ borderBottom: "1px solid #1e1e2e" }}>
             <button onClick={() => setOpenFaq(openFaq === i ? null : i)} style={{ width: "100%", background: "none", border: "none", padding: "18px 0", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", color: "#fff", fontSize: 14, fontWeight: 600, textAlign: "left" }}>
-              {f.q}<span style={{ color: GOLD, fontSize: 20, flexShrink: 0 }}>{openFaq === i ? "−" : "+"}</span>
+              {f.q}<span style={{ color: GOLD, fontSize: 20, flexShrink: 0, marginLeft: 12 }}>{openFaq === i ? "−" : "+"}</span>
             </button>
             {openFaq === i && <div style={{ color: GRAY, fontSize: 13, lineHeight: 1.7, paddingBottom: 16 }}>{f.a}</div>}
           </div>
