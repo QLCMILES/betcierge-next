@@ -54,7 +54,7 @@ export default function Landing({ onGetStarted, onSignIn, source = "general" }) 
   };
   const signIn = () => {
     if (onSignIn) onSignIn();
-    else window.location.href = '/';
+    else window.location.href = '/?login=1';
   };
   const claimFounding = () => {
     localStorage.setItem('founding_price_id', STRIPE_PRICE_CURRENT);
@@ -63,17 +63,14 @@ export default function Landing({ onGetStarted, onSignIn, source = "general" }) 
   };
 
   useEffect(() => {
-    // Slate preview only renders for the general page — /captain never had it.
-    if (!isCaptain) {
-      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-      supabase
-        .from('daily_picks')
-        .select('sport, game, pick, odds, game_time, confidence')
-        .eq('date', today)
-        .eq('status', 'active')
-        .limit(3)
-        .then(({ data }) => { if (data) setPicks(data); });
-    }
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    supabase
+      .from('daily_picks')
+      .select('sport, game, pick, odds, game_time, confidence')
+      .eq('date', today)
+      .eq('status', 'active')
+      .limit(3)
+      .then(({ data }) => { if (data) setPicks(data); });
 
     // Live record — single source of truth now. Both / and /captain read
     // this exact query, so the number can never drift between them again.
@@ -163,9 +160,8 @@ export default function Landing({ onGetStarted, onSignIn, source = "general" }) 
         <p style={{ fontSize: 12, color: GRAY, marginTop: 12 }}>3-day free trial · Rate holds while subscribed · Cancel anytime</p>
       </section>
 
-      {/* Slate Preview — general only */}
-      {!isCaptain && (
-        <section style={{ maxWidth: 480, margin: "0 auto 60px", padding: "0 24px" }}>
+      {/* Slate Preview */}
+      <section style={{ maxWidth: 480, margin: "0 auto 60px", padding: "0 24px" }}>
           <div style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 16, overflow: "hidden" }}>
             <div style={{ padding: "14px 18px", borderBottom: "1px solid #1e1e2e", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontWeight: 700, fontSize: 14 }}>Today's Slate</span>
@@ -194,7 +190,6 @@ export default function Landing({ onGetStarted, onSignIn, source = "general" }) 
             </div>
           </div>
         </section>
-      )}
 
       {/* Credibility */}
       <section style={{ maxWidth: 600, margin: "0 auto 60px", padding: "0 24px", textAlign: "center" }}>

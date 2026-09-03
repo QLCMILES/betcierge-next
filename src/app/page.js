@@ -2901,7 +2901,13 @@ const deleteBet = async (id, isParlay) => {
 if (showLogin) return <LoginScreen onAuth={(s) => { setSession(s); setShowLogin(false); }} />;
 if (!session) {
   const hasFoundingPrice = typeof window !== 'undefined' && localStorage.getItem('founding_price_id');
-  if (showLogin || hasFoundingPrice) return <LoginScreen onAuth={(s) => { setSession(s); setShowLogin(false); }} />;
+  // Lets /captain's Sign In button (which has no client-side onSignIn
+  // callback to call, since Next.js invokes that route with no custom
+  // props) force the real login screen deterministically via a hard
+  // navigation to /?login=1, instead of depending on hasFoundingPrice
+  // happening to already be set from an unrelated prior click.
+  const hasLoginParam = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('login') === '1';
+  if (showLogin || hasFoundingPrice || hasLoginParam) return <LoginScreen onAuth={(s) => { setSession(s); setShowLogin(false); }} />;
   return <Landing onGetStarted={() => { window.location.href = "/onboarding"; }} onSignIn={() => setShowLogin(true)} />;
 }
 if (!user?.name) return null; // new users are redirected to /onboarding by the effect above
