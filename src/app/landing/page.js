@@ -18,23 +18,17 @@ const GRAY = "#6b7280";
 const LIGHT = "#d1d5db";
 
 const features = [
-  { icon: "🤖", name: "Hunter — your betting brain", desc: "Text it like a friend. Ask about any game and get a clear, honest answer in seconds — day or night." },
-  { icon: "🎯", name: "The Morning 3", desc: "Three best plays, every day at 11 AM. You get them early — before the lines move and the crowd piles in." },
-  { icon: "🛡️", name: "The guardrails", desc: "Tell us your budget once. We make sure you never blow past it — no more 1 AM chasing." },
-  { icon: "⚡", name: "Smart bet sizing", desc: "We tell you how much to put on each play, so one bad night can't wipe you out." },
-  { icon: "🧠", name: "Tilt protection", desc: "Down bad? Hunter jumps in and helps you slow down before you do something you'll regret." },
-  { icon: "📋", name: "The receipts", desc: "We track every pick — wins and losses. Nothing hidden. You always see the real record." },
-  { icon: "📡", name: "Live Gamecast", desc: "Watch your games and your money move in real time, all on one screen." },
-  { icon: "📸", name: "Snap & log", desc: "Screenshot your bet slip and we log it for you. No typing." },
+  { icon: "🤖", name: "Hunter — your betting coach", kicker: "Bring the hunch. Hunter brings the homework.", desc: "Ask about any game, bet, line, or idea. Hunter digs into the numbers, challenges your take, and tells you what he actually thinks — even when you don't want to hear it." },
+  { icon: "🎯", name: "Daily Picks", kicker: "No edge? No bet.", desc: "Every game gets researched. When there's a play worth making, you get it. No picks forced just because you want action." },
+  { icon: "🛡️", name: "Bankroll Guardrails", kicker: "Because \"I'll win it back\" is not a strategy.", desc: "Hunter keeps your bankroll, weekly goal, and bigger picture in view — especially when your gut is telling you to forget all three." },
 ];
 
 const faqs = [
-  { q: "What makes this different from a generic AI chatbot?", a: "A chatbot answers questions. Betcierge is a full system built around one goal — research, bankroll guardrails, bet tracking, and a real public record, all working together to help you bet well, not just get an answer." },
-  { q: "Can I cancel anytime?", a: "Yes. Cancel from your account settings — no calls, no hoops. No fees, no questions asked." },
-  { q: "Is this betting advice?", a: "Betcierge is an information and discipline tool. We help you research, size bets, and track your record. We do not take bets. Always bet responsibly." },
-  { q: "Will it really stop me overspending?", a: "Hunter monitors your weekly P&L and flags when you're approaching your limits. It won't stop you — but it will make sure you see what you're doing before you do it." },
-  { q: "What if I'm brand new to this?", a: "Perfect. Hunter explains everything in plain English. No jargon, no assumptions. Just honest, clear analysis built for real bettors at every level." },
-  { q: "What do free accounts get?", a: "Our record is fully public and transparent — anyone can see it, no account needed. Our premium research, including full daily picks and Lean Machine, is reserved for subscribers." },
+  { q: "Is this betting advice?", a: "Betcierge is a research and discipline tool. We help you find edges, size bets, and track your record — we don't take bets. Always bet responsibly." },
+  { q: "Do you show losses?", a: "Every single one. A record that hides losses is a lie. Ours does not." },
+  { q: "What happens to my founding price if I cancel?", a: "Your $24.99/mo rate holds for as long as you stay subscribed. If you cancel and resubscribe after founding spots are gone, you'd rejoin at the standard rate." },
+  { q: "Can I cancel anytime?", a: "Yes — from your account settings, no calls, no hoops." },
+  { q: "What do free accounts get?", a: "Our full record is public, no account needed. Daily Picks and full Hunter chat are for subscribers." },
 ];
 
 export default function Landing({ onGetStarted, onSignIn }) {
@@ -96,7 +90,7 @@ export default function Landing({ onGetStarted, onSignIn }) {
       <div style={{ background: "#1a1200", borderBottom: "1px solid #f5a62333", padding: "10px 20px", textAlign: "center", fontSize: 13 }}>
         <span style={{ color: GOLD, fontWeight: 700 }}>⚡ {FOUNDING_SPOTS_LEFT} of {FOUNDING_TOTAL} founding spots remaining</span>
         <span style={{ color: LIGHT, marginLeft: 8 }}>
-          · Lock in {CURRENT_PRICE_DISPLAY} forever ·{" "}
+          · {CURRENT_PRICE_DISPLAY}, rate holds while subscribed ·{" "}
           <span style={{ color: GOLD, cursor: "pointer", textDecoration: "underline" }} onClick={claimFounding}>claim yours</span>
         </span>
       </div>
@@ -110,14 +104,14 @@ export default function Landing({ onGetStarted, onSignIn }) {
       {/* Hero */}
       <section style={{ maxWidth: 680, margin: "0 auto", padding: "60px 24px 40px", textAlign: "center" }}>
         <div style={{ display: "inline-block", background: "#1a1200", border: "1px solid #f5a62344", borderRadius: 20, padding: "4px 14px", fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 20 }}>
-          It's not AI. It's EI.
+          AI is the engine. EI is the edge.
         </div>
         <h1 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "clamp(36px, 8vw, 58px)", fontWeight: 700, lineHeight: 1.1, marginBottom: 16, color: "#fff" }}>
-          Your personal betting coach,<br /><em style={{ color: GOLD, fontStyle: "italic" }}>on call 24/7.</em>
+          The research of an analyst.<br /><em style={{ color: GOLD, fontStyle: "italic" }}>The discipline of a pro.</em>
         </h1>
-        <div style={{ color: GOLD, fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Change the way you bet.</div>
+        <div style={{ color: GOLD, fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Bet smarter. Stay disciplined. Win the week.</div>
         <p style={{ fontSize: 17, color: LIGHT, lineHeight: 1.7, maxWidth: 520, margin: "0 auto 12px" }}>
-          Enhanced Intelligence — cloned from real sports betting habits, built to research every game the way the pros do, around the clock. Hunter gives you the picks with full reasoning, coaches you through every bet, and answers any question, any hour.
+          Hunter researches the games, challenges your takes, finds the spots worth betting, and keeps your bankroll and goals in view while you do it.
         </p>
         <p style={{ fontSize: 14, color: "#555", lineHeight: 1.7, maxWidth: 520, margin: "0 auto 32px", borderTop: "1px solid #1e1e2e", paddingTop: 16 }}>
           NFL · NBA · MLB · Soccer · NHL · UFC · Golf · Tennis — every sport, every day.
@@ -127,7 +121,7 @@ export default function Landing({ onGetStarted, onSignIn }) {
             Claim Founding Spot — {CURRENT_PRICE_DISPLAY}
           </button>
         </div>
-        <p style={{ fontSize: 12, color: GRAY, marginTop: 12 }}>3-day free trial · Price locked forever · Cancel anytime</p>
+        <p style={{ fontSize: 12, color: GRAY, marginTop: 12 }}>3-day free trial · Rate holds while subscribed · Cancel anytime</p>
       </section>
 
       {/* Slate Preview */}
@@ -155,8 +149,8 @@ export default function Landing({ onGetStarted, onSignIn }) {
             </div>
           ))}
           <div style={{ padding: "12px 18px", background: "#0d0d18", textAlign: "center", fontSize: 12, color: GRAY }}>
-            You're seeing <strong style={{ color: "#fff" }}>1 of 3</strong> plays — plus Lean Machine.{" "}
-            <span style={{ color: GOLD, cursor: "pointer" }} onClick={go}>Subscribe</span> unlocks everything.
+            <strong style={{ color: "#fff" }}>1 play</strong> unlocked ·{" "}
+            <span style={{ color: GOLD, cursor: "pointer" }} onClick={go}>Join</span> to see the full slate
           </div>
         </div>
       </section>
@@ -165,9 +159,9 @@ export default function Landing({ onGetStarted, onSignIn }) {
       <section style={{ maxWidth: 600, margin: "0 auto 60px", padding: "0 24px", textAlign: "center" }}>
         <div style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 14, padding: "24px 28px" }}>
           <div style={{ fontSize: 17, fontWeight: 600, color: "#fff", marginBottom: 8 }}>
-            We never promise wins.<br />We show <em style={{ color: GOLD }}>every result</em> — wins and losses.
+            No cherry-picking. No deleted losses.<br />Just <em style={{ color: GOLD }}>the record</em>.
           </div>
-          <div style={{ color: GRAY, fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>A record that hides losses is a lie. Ours does not. Built by bettors, tracked in public.</div>
+          <div style={{ color: GRAY, fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>Every official Betcierge pick. Every win. Every loss. All of it, right here.</div>
           <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
             {[
               [`${record.wins}W-${record.losses}L`, "Since Jun 11"],
@@ -181,6 +175,7 @@ export default function Landing({ onGetStarted, onSignIn }) {
               </div>
             ))}
           </div>
+          <div style={{ color: GRAY, fontSize: 12, marginTop: 16 }}>The record is live. It speaks for itself.</div>
         </div>
       </section>
 
@@ -188,8 +183,7 @@ export default function Landing({ onGetStarted, onSignIn }) {
       <section style={{ maxWidth: 700, margin: "0 auto 60px", padding: "0 24px" }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>WHAT'S INSIDE</div>
-          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>Research, tracking, discipline. One system.</h2>
-          <p style={{ color: GRAY, fontSize: 14, marginTop: 8, maxWidth: 500, margin: "8px auto 0" }}>Most betting products give you picks. Betcierge gives you the whole operation behind them.</p>
+          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>This isn't another picks service.<br />It's a better way to bet.</h2>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {features.map((f, i) => (
@@ -197,6 +191,7 @@ export default function Landing({ onGetStarted, onSignIn }) {
               <span style={{ fontSize: 22, flexShrink: 0 }}>{f.icon}</span>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>{f.name}</div>
+                <div style={{ color: GOLD, fontSize: 13, fontStyle: "italic", marginBottom: 4 }}>{f.kicker}</div>
                 <div style={{ color: GRAY, fontSize: 13, lineHeight: 1.5 }}>{f.desc}</div>
               </div>
             </div>
@@ -223,7 +218,7 @@ export default function Landing({ onGetStarted, onSignIn }) {
                 <div style={{ fontSize: 36, fontWeight: 800, color: "#fff" }}>$24.99<span style={{ fontSize: 14, color: GRAY, fontWeight: 400 }}>/mo</span></div>
                 <div style={{ fontSize: 16, color: GRAY, textDecoration: "line-through" }}>$29.99</div>
               </div>
-              <div style={{ color: GREEN, fontSize: 13, marginTop: 4 }}>🔒 Price locked for life</div>
+              <div style={{ color: GREEN, fontSize: 13, marginTop: 4 }}>🔒 Rate locked while subscribed</div>
               <div style={{ color: GRAY, fontSize: 12, marginTop: 2 }}>3-day free trial · Cancel anytime</div>
             </div>
             <div style={{ fontSize: 32 }}>🎯</div>
@@ -262,12 +257,13 @@ export default function Landing({ onGetStarted, onSignIn }) {
       {/* CTA */}
       <section style={{ maxWidth: 600, margin: "0 auto 80px", padding: "0 24px" }}>
         <div style={{ background: "#0d0a00", border: "1px solid #f5a62344", borderRadius: 16, padding: "32px 28px", textAlign: "center" }}>
-          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 28, fontWeight: 700, color: "#fff", marginBottom: 12 }}>Start your free trial today</h2>
-          <p style={{ color: GRAY, fontSize: 14, marginBottom: 8 }}>3 days free. Full access. No commitment.</p>
-          <p style={{ color: GRAY, fontSize: 13, marginBottom: 24 }}>Cancel anytime from your account settings — <strong style={{ color: GOLD }}>no hoops, no calls.</strong></p>
+          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 28, fontWeight: 700, color: "#fff", marginBottom: 12 }}>You don't need more bets.<br />You need a better way to bet.</h2>
+          <p style={{ color: GRAY, fontSize: 14, marginBottom: 24 }}>Join the first {FOUNDING_TOTAL} Betcierge members and lock in your {CURRENT_PRICE_DISPLAY} founding rate for as long as you stay subscribed.</p>
           <button onClick={claimFounding} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 40px", fontSize: 15, fontWeight: 700, cursor: "pointer", width: "100%" }}>
-            Claim Founding Spot — {CURRENT_PRICE_DISPLAY}
+            Start My 3-Day Free Trial
           </button>
+          <p style={{ color: GRAY, fontSize: 12, marginTop: 12 }}>{CURRENT_PRICE_DISPLAY} after trial · Rate holds while subscribed · Cancel anytime</p>
+          <p style={{ color: GOLD, fontSize: 13, fontWeight: 700, marginTop: 8 }}>{FOUNDING_SPOTS_LEFT} founding spots remaining</p>
         </div>
       </section>
 
