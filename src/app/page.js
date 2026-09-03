@@ -2749,7 +2749,29 @@ function History({ bets, onUpdate, onDelete, onNav }) {
         </div>
       </div>
 
-      {bet.isParlay ? (
+      {(() => {
+        // Loud-backstop prompt: a bet that's still Pending and whose game date
+        // has passed needs the user's call. Show a clear "Settle this bet"
+        // banner with one-tap W/L/P (the buttons above already write via
+        // onUpdate — this just draws attention to it).
+        const gd = bet.gameDate;
+        const needsSettle = bet.result === "Pending" && gd && gd < today;
+        if (!needsSettle) return null;
+        return (
+          <div style={{ background: "#1a1500", border: "1px solid #5a4a1e", borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>
+            <div style={{ color: "#f5a623", fontSize: 12, fontWeight: 700, marginBottom: 8 }}>⏳ This bet needs settling</div>
+            <div style={{ color: "#888", fontSize: 11, marginBottom: 8, lineHeight: 1.4 }}>Hunter couldn't auto-settle this one. Tap the result:</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {["Win", "Loss", "Push"].map(r => (
+                <button key={r} onClick={() => onUpdate(bet.id, r)} style={{ flex: 1, background: r === "Win" ? "#0a2e0a" : r === "Loss" ? "#2e0a0a" : "#0a1a2e", color: r === "Win" ? "#2ecc71" : r === "Loss" ? "#e74c3c" : "#3498db", border: `1px solid ${r === "Win" ? "#2ecc71" : r === "Loss" ? "#e74c3c" : "#3498db"}`, borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                  {r === "Win" ? "Won" : r === "Loss" ? "Lost" : "Push"}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
         <div>
           {(bet.legs || []).map((leg, i) => (
             <div key={i} style={{ borderBottom: "1px solid #1a1a24", padding: "8px 0" }}>

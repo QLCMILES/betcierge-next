@@ -1002,6 +1002,68 @@ async function settleDailyPicks() {
   return { settled, log };
 }
 
+// ─── LOUD BACKSTOP: notify on bets that couldn't auto-settle ──────────────
+// After normal settlement runs, any bet that is (a) still Pending, (b) past
+// its game date (so the game should be over), and (c) not yet notified gets a
+// ONE-TIME in-app notification asking the user to settle it manually. The
+// settle_notified_at timestamp prevents re-notifying on every cron run.
+// This is the review's "loud, not silent" backstop — the system never leaves a
+// bet in un-settled limbo without telling the user.
+async function flagUnsettleableBets() {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  let notified = 0;
+
+  // Collect (user_id, label) pairs for straight bets and parlays that need a nudge.
+  const toNotify = []; // { table, id, user_id, label }
+
+  const { data: staleBets } = await supabase
+    .from('user_bets')
+    .select('id, user_id, pick, game_date')
+    .eq('result', 'Pending')
+    .is('settle_notified_at', null)
+    .lt('game_date', today);
+  for (const b of (staleBets || [])) {
+    toNotify.push({ table: 'user_bets', id: b.id, user_id: b.user_id, label: b.pick || 'your bet' });
+  }
+
+  const { data: staleParlays } = await supabase
+    .from('parlays')
+    .select('id, user_id, game_date, num_legs')
+    .eq('result', 'Pending')
+    .is('settle_notified_at', null)
+    .lt('game_date', today);
+  for (const p of (staleParlays || [])) {
+    toNotify.push({ table: 'parlays', id: p.id, user_id: p.user_id, label: `your ${p.num_legs || ''}-leg parlay`.replace('  ', ' ') });
+  }
+
+  for (const item of toNotify) {
+    try {
+      // One notification row, one user_notifications delivery row — same pattern
+      // the admin/notify route uses.
+      const { data: notif } = await supabase.from('notifications').insert({
+        message: `${item.label} couldn't be auto-settled — tap to settle it in Bet History.`,
+        target: 'single',
+        channel: 'in_app',
+        sent_by: 'system:settle-bets',
+      }).select().single();
+      if (notif) {
+        await supabase.from('user_notifications').insert({
+          user_id: item.user_id,
+          notification_id: notif.id,
+          read: false,
+        });
+      }
+      // Mark as notified so we never nudge this bet again.
+      await supabase.from(item.table).update({ settle_notified_at: new Date().toISOString() }).eq('id', item.id);
+      notified++;
+    } catch (e) {
+      console.error('[settle-bets] notify error:', e.message);
+    }
+  }
+
+  return { notified };
+}
+
 // ─── USER BET SETTLEMENT ─────────────────────────────────────
 
 export async function GET(request) {
@@ -1020,7 +1082,8 @@ export async function GET(request) {
     if (fetchError) throw fetchError;
     if (!pendingBets || pendingBets.length === 0) {
       const { settled: picksSettled, log: picksLog } = await settleDailyPicks();
-      return Response.json({ message: 'No pending user bets', picksSettled, picksLog });
+      const { notified } = await flagUnsettleableBets();
+      return Response.json({ message: 'No pending user bets', picksSettled, picksLog, notified });
     }
 
     const sportsNeeded = buildSportsNeeded(pendingBets.map(b => ({ sport: b.sport })));
@@ -1095,6 +1158,8 @@ export async function GET(request) {
 
     const { settled: picksSettled, log: picksLog } = await settleDailyPicks();
 
+    const { notified } = await flagUnsettleableBets();
+
     return Response.json({
       success: true,
       settled,
@@ -1104,6 +1169,7 @@ export async function GET(request) {
       parlayLog,
       picksSettled,
       picksLog,
+      notified,
     });
 
   } catch (error) {
