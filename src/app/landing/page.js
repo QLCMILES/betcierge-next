@@ -145,7 +145,7 @@ export default function Landing({ onGetStarted, onSignIn, source = "general" }) 
           </p>
         ) : (
           <p style={{ fontSize: 14, color: "#555", lineHeight: 1.7, maxWidth: 520, margin: "0 auto 32px", borderTop: "1px solid #1e1e2e", paddingTop: 16 }}>
-            NFL · NBA · MLB · Soccer · NHL · UFC · Golf · Tennis — every sport, every day.
+            NFL · NBA · MLB · Soccer · NHL · UFC · Golf · Tennis · College · Fantasy - DFS · International — every sport, every day.
           </p>
         )}
         {isCaptain && (
@@ -159,7 +159,10 @@ export default function Landing({ onGetStarted, onSignIn, source = "general" }) 
             Claim Founding Spot — {CURRENT_PRICE_DISPLAY}
           </button>
         </div>
-        <p style={{ fontSize: 12, color: GRAY, marginTop: 12 }}>3-day free trial · Rate holds while subscribed · Cancel anytime</p>
+        <p style={{ fontSize: 12, color: GRAY, marginTop: 12 }}>
+          <strong style={{ color: GOLD, fontSize: 17, fontWeight: 700 }}>3-day free trial</strong>{" "}
+          · Rate holds while subscribed · Cancel anytime
+        </p>
       </section>
 
       {/* Features */}
