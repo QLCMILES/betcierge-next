@@ -211,11 +211,99 @@ const criticalIssues = (bet) => {
   const issues = [];
   if (prov.game === "ambiguous") issues.push({ field: "game", kind: "ambiguous", label: "Which game is this?" });
   else if (prov.game === "unmatched") issues.push({ field: "game", kind: "unmatched", label: "Couldn't match this to a scheduled game" });
-  if (prov.date === "inferred" && prov.game !== "matched" && prov.game !== "read") issues.push({ field: "date", kind: "inferred", label: "No date on the slip — confirm the date" });
+  if (prov.date === "inferred" && !["matched", "read", "user_confirmed"].includes(prov.game)) issues.push({ field: "date", kind: "inferred", label: "No date on the slip — confirm the date" });
   return issues;
 };
 
 // One editable row. Read fields show plain; flagged fields show amber + tappable.
+// Smart resolver for a game that couldn't be auto-matched (team name only, no
+// date, etc). Flow: confirm/enter a date → search the REAL schedule for that
+// team on that date → pick a real matchup (gets a real game_id) → or, if none
+// found, confirm as-is and settle manually later. This is the "option 3" the
+// founder chose: date-first, search, honest fallback.
+function GameResolver({ teamText, sport, initialDate, onResolve, onCancel }) {
+  const [date, setDate] = useState(initialDate || "");
+  const [searching, setSearching] = useState(false);
+  const [results, setResults] = useState(null); // null=not searched, []=none found
+  const [searched, setSearched] = useState(false);
+
+  const teamWords = (teamText || "").toLowerCase().split(/\s+/).filter(w => w.length > 3);
+
+  const runSearch = async () => {
+    if (!date) return;
+    setSearching(true);
+    setSearched(false);
+    setResults(null);
+    try {
+      const oddsRes = await fetch("/api/odds", { method: "POST" });
+      const oddsData = await oddsRes.json();
+      const games = (oddsData.games || []).filter(g => {
+        const gDate = g.commence_time ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) : null;
+        if (gDate !== date) return false;
+        const home = (g.home_team || "").toLowerCase();
+        const away = (g.away_team || "").toLowerCase();
+        return teamWords.some(w => home.includes(w) || away.includes(w));
+      }).map(g => ({
+        gameId: g.id,
+        game: `${g.away_team} @ ${g.home_team}`,
+        gameDate: new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+        gameTime: new Date(g.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }),
+      }));
+      setResults(games);
+    } catch (e) {
+      setResults([]);
+    }
+    setSearching(false);
+    setSearched(true);
+  };
+
+  return (
+    <div>
+      <div style={{ color: "#888", fontSize: 12, marginBottom: 10 }}>
+        Hunter couldn't match "{teamText}" to a scheduled game. Set the date and we'll find the real matchup.
+      </div>
+      <label style={{ color: "#666", fontSize: 11, fontWeight: 700, letterSpacing: 0.5 }}>GAME DATE</label>
+      <input
+        type="date" value={date}
+        onChange={e => { setDate(e.target.value); setSearched(false); setResults(null); }}
+        style={{ width: "100%", boxSizing: "border-box", background: "#0f0f18", border: "1px solid #3a3a48", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 15, margin: "6px 0 12px" }}
+      />
+      {!searched && (
+        <button onClick={runSearch} disabled={!date || searching}
+          style={{ width: "100%", background: date ? "#f5a623" : "#3a3a2a", border: "none", borderRadius: 10, padding: "12px 0", color: "#0a0a0f", fontSize: 14, fontWeight: 700, cursor: date ? "pointer" : "not-allowed", marginBottom: 10 }}>
+          {searching ? "Searching schedule…" : "Find the game"}
+        </button>
+      )}
+      {searched && results && results.length > 0 && (
+        <>
+          <div style={{ color: "#2ecc71", fontSize: 12, marginBottom: 8 }}>Found {results.length === 1 ? "the game" : `${results.length} possible games`} — tap to confirm:</div>
+          {results.map((c, k) => (
+            <button key={k} onClick={() => onResolve({ game: c.game, gameId: c.gameId, gameDate: c.gameDate, gameTime: c.gameTime, grounded: true })}
+              style={{ width: "100%", textAlign: "left", background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 10, padding: "12px 14px", marginBottom: 8, color: "#fff", fontSize: 14, cursor: "pointer" }}>
+              <div style={{ fontWeight: 600 }}>{c.game}</div>
+              <div style={{ color: "#888", fontSize: 12, marginTop: 2 }}>{c.gameDate}{c.gameTime ? ` · ${c.gameTime}` : ""}</div>
+            </button>
+          ))}
+        </>
+      )}
+      {searched && results && results.length === 0 && (
+        <div style={{ color: "#f5a623", fontSize: 12, marginBottom: 10, lineHeight: 1.5 }}>
+          No scheduled game found for "{teamText}" on {date}. You can still log it with this date — Hunter will ask you the result after the game.
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+        <button onClick={onCancel} style={{ flex: 1, background: "#1a1a24", border: "1px solid #2a2a38", borderRadius: 10, padding: "12px 0", color: "#888", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+        {searched && results && results.length === 0 && date && (
+          <button onClick={() => onResolve({ gameDate: date, grounded: false })}
+            style={{ flex: 1, background: "#f5a623", border: "none", borderRadius: 10, padding: "12px 0", color: "#0a0a0f", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+            Log with this date
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Small controlled input for the inline editor (text / date / number).
 function EditField({ initial, type, onSave, onCancel }) {
   const [val, setVal] = useState(initial ?? "");
@@ -692,9 +780,20 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
         const tgt = editingTarget();
         const field = editing.field;
         const isGame = field === "game";
+        const gameIssue = isGame && criticalIssues(tgt || {}).some(i => i.field === "game");
         const candidates = isGame ? (tgt?.provenance?.candidates || []) : [];
         const curVal = field === "gameDate" ? (tgt?.gameDate || "") : (tgt?.[field] ?? "");
         const labelMap = { game: "Game", gameDate: "Date", gameTime: "Time", pick: "Pick", odds: "Odds", amount: "Wager", toWin: "To Win", sport: "Sport" };
+        // A resolved game edit patches game fields and marks provenance so the
+        // gate clears — grounded:true means we attached a real game_id.
+        const resolveGame = (r) => {
+          const patch = {};
+          if (r.game) patch.game = r.game;
+          if (r.gameId) patch.gameId = r.gameId;
+          if (r.gameDate) patch.gameDate = r.gameDate;
+          if (r.gameTime) patch.gameTime = r.gameTime;
+          applyFieldEdit(patch, { markGame: true, confirmField: "date", autoSettleable: !!r.grounded });
+        };
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 50, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={() => setEditing(null)}>
             <div onClick={e => e.stopPropagation()} style={{ background: "#12121a", border: "1px solid #2a2a38", borderRadius: "16px 16px 0 0", padding: 18, width: "100%", maxWidth: 480 }}>
@@ -704,10 +803,7 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
                   <div style={{ color: "#888", fontSize: 12, marginBottom: 10 }}>Which game did you bet? Hunter found more than one match.</div>
                   {candidates.map((c, k) => (
                     <button key={k}
-                      onClick={() => applyFieldEdit(
-                        { game: c.game, gameId: c.gameId, gameDate: c.gameDate, gameTime: c.gameTime },
-                        { markGame: true, confirmField: "date", autoSettleable: true }
-                      )}
+                      onClick={() => resolveGame({ ...c, grounded: true })}
                       style={{ width: "100%", textAlign: "left", background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 10, padding: "12px 14px", marginBottom: 8, color: "#fff", fontSize: 14, cursor: "pointer" }}
                     >
                       <div style={{ fontWeight: 600 }}>{c.game}</div>
@@ -715,6 +811,14 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
                     </button>
                   ))}
                 </>
+              ) : isGame && gameIssue ? (
+                <GameResolver
+                  teamText={tgt?.game}
+                  sport={tgt?.sport}
+                  initialDate={tgt?.gameDate || ""}
+                  onResolve={resolveGame}
+                  onCancel={() => setEditing(null)}
+                />
               ) : (
                 <EditField
                   initial={curVal}
@@ -2965,7 +3069,13 @@ useEffect(() => {
         odds: bet.odds,
         num_legs: bet.legs?.length || 0,
         result: 'Pending',
-        game_date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+        // Derive the parlay's date from the earliest leg (not today) so Bet
+        // History files it on the day the games actually happen. Falls back to
+        // today only if no leg has a date.
+        game_date: (() => {
+          const legDates = (bet.legs || []).map(l => l.gameDate).filter(Boolean).sort();
+          return legDates[0] || bet.gameDate || new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+        })(),
         teaser_points: bet.teaserPoints ?? null,
       }).select().single();
       if (parlayError) throw parlayError;
