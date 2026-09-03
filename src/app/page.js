@@ -183,6 +183,81 @@ function Alert({ msg, type }) {
   );
 }
 
+// ── Shared verify-and-fix card ────────────────────────────────────────────
+// One component for single bets, parlay legs, and batch-queue items. Reads the
+// provenance produced by groundBet() and: (1) always shows the read, (2) flags
+// only settlement-critical fields that were inferred/ambiguous/unmatched, and
+// (3) tells the caller whether the save should be gated. "Always show,
+// selectively block" — the three-way-review outcome.
+//
+// Settlement-critical fields = date, game, bet-type qualifier (F5/1H/team-total).
+// Those are the only ones that, if wrong, settle a bet incorrectly. Odds/stake
+// are shown but never gate.
+
+// Does this pick carry a partial-game qualifier that must be confirmed?
+const pickQualifier = (pick) => {
+  const p = (pick || "").toLowerCase();
+  if (/\bf5\b|first 5/.test(p)) return "F5 (first 5 innings)";
+  if (/\b1h\b|first half/.test(p)) return "1H (first half)";
+  if (/\b1q\b|first quarter/.test(p)) return "1Q (first quarter)";
+  if (/team total/.test(p)) return "Team Total";
+  return null;
+};
+
+// Given a grounded bet (single or one leg), return the list of settlement-
+// critical problems the user must resolve before this is safe to auto-settle.
+const criticalIssues = (bet) => {
+  const prov = bet.provenance || {};
+  const issues = [];
+  if (prov.game === "ambiguous") issues.push({ field: "game", kind: "ambiguous", label: "Which game is this?" });
+  else if (prov.game === "unmatched") issues.push({ field: "game", kind: "unmatched", label: "Couldn't match this to a scheduled game" });
+  if (prov.date === "inferred" && prov.game !== "matched" && prov.game !== "read") issues.push({ field: "date", kind: "inferred", label: "No date on the slip — confirm the date" });
+  return issues;
+};
+
+// One editable row. Read fields show plain; flagged fields show amber + tappable.
+// Small controlled input for the inline editor (text / date / number).
+function EditField({ initial, type, onSave, onCancel }) {
+  const [val, setVal] = useState(initial ?? "");
+  return (
+    <div>
+      <input
+        autoFocus
+        type={type || "text"}
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") onSave(val); }}
+        style={{ width: "100%", boxSizing: "border-box", background: "#0f0f18", border: "1px solid #3a3a48", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 15, marginBottom: 12 }}
+      />
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={onCancel} style={{ flex: 1, background: "#1a1a24", border: "1px solid #2a2a38", borderRadius: 10, padding: "12px 0", color: "#888", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+        <button onClick={() => onSave(val)} style={{ flex: 1, background: "#f5a623", border: "none", borderRadius: 10, padding: "12px 0", color: "#0a0a0f", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Save</button>
+      </div>
+    </div>
+  );
+}
+
+function VerifyRow({ label, value, flagged, onEdit }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: "1px solid #1a1a24" }}>
+      <span style={{ color: "#666", fontSize: 13 }}>{label}</span>
+      <button
+        onClick={onEdit}
+        style={{
+          background: "none", border: "none", padding: 0, cursor: "pointer",
+          color: flagged ? "#f5a623" : "#fff", fontSize: 13, fontWeight: 600,
+          textAlign: "right", maxWidth: "62%", display: "flex", alignItems: "center", gap: 6,
+        }}
+      >
+        {flagged && <span style={{ fontSize: 12 }}>⚠️</span>}
+        <span style={{ textDecoration: onEdit ? "underline dotted" : "none", textUnderlineOffset: 3 }}>
+          {value || "—"}
+        </span>
+      </button>
+    </div>
+  );
+}
+
 // ── Snap to Log ────────────────────────────────────────────────────────────
 function SnapToLog({ onConfirm, onCancel, onDone }) {
   const [stage, setStage] = useState("upload");
@@ -195,6 +270,9 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
   const [processingIndex, setProcessingIndex] = useState(0);
   const fileRef = useRef(null);
   const [logging, setLogging] = useState(false);
+  // Inline field-edit state for the verify card. editing = { target, field } where
+  // target is 'single' | 'queue' | a leg index; field is 'game'|'date'|'pick'|etc.
+  const [editing, setEditing] = useState(null);
 
   // Shared by both handleFile (single slip) and handleFiles (multi slip) —
   // previously duplicated-but-missing in handleFiles, which silently broke
@@ -569,8 +647,94 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
     }
   };
 
+  // Apply an inline edit. `patch` merges into the target bet/leg, and any field
+  // the user sets by hand gets provenance 'user_confirmed' so it stops gating.
+  const applyFieldEdit = (patch, meta) => {
+    const withProv = (bet) => {
+      const prov = { ...(bet.provenance || {}) };
+      if (meta?.confirmField) prov[meta.confirmField] = "user_confirmed";
+      if (meta?.markGame) prov.game = "user_confirmed";
+      if (meta?.autoSettleable !== undefined) prov.autoSettleable = meta.autoSettleable;
+      return { ...bet, ...patch, provenance: prov };
+    };
+    if (editing?.target === "single") {
+      setExtractedBet(prev => withProv(prev));
+    } else if (editing?.target === "queue") {
+      setSlips(prev => prev.map((s, i) => i === currentSlip ? { ...s, parsed: withProv(s.parsed) } : s));
+    } else if (typeof editing?.target === "number") {
+      const legIdx = editing.target;
+      const upd = (bet) => ({ ...bet, legs: bet.legs.map((l, i) => i === legIdx ? withProv(l) : l) });
+      setExtractedBet(prev => upd(prev));
+    }
+    setEditing(null);
+  };
+
+  // A bet is safe to log without gating when it has no unresolved critical
+  // issues. Parlays: every leg must be clear.
+  const betIsClear = (bet) => {
+    if (!bet) return true;
+    if (bet.legs && bet.legs.length) return bet.legs.every(l => criticalIssues(l).length === 0);
+    return criticalIssues(bet).length === 0;
+  };
+
+  // Resolve the bet/leg currently being edited and its live value.
+  const editingTarget = () => {
+    if (!editing) return null;
+    if (editing.target === "single") return extractedBet;
+    if (editing.target === "queue") return slips[currentSlip]?.parsed;
+    if (typeof editing.target === "number") return extractedBet?.legs?.[editing.target];
+    return null;
+  };
+
   return (
     <div style={S.snap.wrap}>
+      {editing && (() => {
+        const tgt = editingTarget();
+        const field = editing.field;
+        const isGame = field === "game";
+        const candidates = isGame ? (tgt?.provenance?.candidates || []) : [];
+        const curVal = field === "gameDate" ? (tgt?.gameDate || "") : (tgt?.[field] ?? "");
+        const labelMap = { game: "Game", gameDate: "Date", gameTime: "Time", pick: "Pick", odds: "Odds", amount: "Wager", toWin: "To Win", sport: "Sport" };
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 50, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={() => setEditing(null)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "#12121a", border: "1px solid #2a2a38", borderRadius: "16px 16px 0 0", padding: 18, width: "100%", maxWidth: 480 }}>
+              <div style={{ color: "#f5a623", fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Edit {labelMap[field] || field}</div>
+              {isGame && candidates.length > 0 ? (
+                <>
+                  <div style={{ color: "#888", fontSize: 12, marginBottom: 10 }}>Which game did you bet? Hunter found more than one match.</div>
+                  {candidates.map((c, k) => (
+                    <button key={k}
+                      onClick={() => applyFieldEdit(
+                        { game: c.game, gameId: c.gameId, gameDate: c.gameDate, gameTime: c.gameTime },
+                        { markGame: true, confirmField: "date", autoSettleable: true }
+                      )}
+                      style={{ width: "100%", textAlign: "left", background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 10, padding: "12px 14px", marginBottom: 8, color: "#fff", fontSize: 14, cursor: "pointer" }}
+                    >
+                      <div style={{ fontWeight: 600 }}>{c.game}</div>
+                      <div style={{ color: "#888", fontSize: 12, marginTop: 2 }}>{c.gameDate}{c.gameTime ? ` · ${c.gameTime}` : ""}</div>
+                    </button>
+                  ))}
+                </>
+              ) : (
+                <EditField
+                  initial={curVal}
+                  type={field === "gameDate" ? "date" : (field === "amount" || field === "toWin" ? "number" : "text")}
+                  onSave={(val) => {
+                    const patch = field === "amount" ? { amount: parseFloat(val) || 0 }
+                                : field === "toWin" ? { toWin: parseFloat(val) || 0 }
+                                : { [field]: val };
+                    const meta = field === "gameDate" ? { confirmField: "date" }
+                               : field === "game" ? { markGame: true }
+                               : {};
+                    applyFieldEdit(patch, meta);
+                  }}
+                  onCancel={() => setEditing(null)}
+                />
+              )}
+            </div>
+          </div>
+        );
+      })()}
       <div style={S.snap.header}>
         <div style={S.snap.title}>📸 Snap to Log</div>
         <button onClick={onCancel} style={S.snap.closeBtn}>×</button>
@@ -592,53 +756,101 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
           </div>
         </div>
       )}
-      {stage === "confirm" && extractedBet && (
+      {stage === "confirm" && extractedBet && (() => {
+        const issues = criticalIssues(extractedBet);
+        const clear = issues.length === 0;
+        const q = pickQualifier(extractedBet.pick);
+        return (
         <div style={{ padding: 16 }}>
-          <div style={{ color: "#2ecc71", fontSize: 17, fontWeight: 700, marginBottom: 12 }}>✅ Hunter read your slip</div>
-          <div style={{ color: "#888", fontSize: 12, marginBottom: 8 }}>Review the details below — tap Edit Manually if anything needs correcting.</div>
-          {imagePreview && <img src={imagePreview} alt="slip" style={{ width: "100%", maxHeight: 160, objectFit: "contain", marginBottom: 12 }} />}
-          <div style={{ background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 14, padding: 16, marginBottom: 14 }}>
-            {[["Sport", extractedBet.sport], ["Game", extractedBet.game], ["Pick", extractedBet.pick], ["Odds", extractedBet.odds], ["Wager", `$${extractedBet.amount}`], ["To Win", `$${extractedBet.toWin}`], ["Game Date", extractedBet.gameDate || ""], ["Game Time", extractedBet.gameTime || ""]].map(([l, v]) => (
-              <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #1a1a24" }}>
-                <span style={{ color: "#666", fontSize: 13 }}>{l}</span>
-                <span style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{v}</span>
-              </div>
-            ))}
+          <div style={{ color: "#2ecc71", fontSize: 17, fontWeight: 700, marginBottom: 6 }}>✅ Hunter read your slip</div>
+          <div style={{ color: clear ? "#888" : "#f5a623", fontSize: 12, marginBottom: 10 }}>
+            {clear
+              ? "Everything checks out — tap any field to change it, or log the bet."
+              : "Hunter needs you to confirm a detail before this can settle automatically. Tap the highlighted field."}
           </div>
+          {imagePreview && <img src={imagePreview} alt="slip" style={{ width: "100%", maxHeight: 150, objectFit: "contain", marginBottom: 12 }} />}
+          <div style={{ background: "#0f0f18", border: `1px solid ${clear ? "#2a2a38" : "#5a4a1e"}`, borderRadius: 14, padding: "6px 16px", marginBottom: 14 }}>
+            <VerifyRow label="Sport" value={extractedBet.sport} onEdit={() => setEditing({ target: "single", field: "sport" })} />
+            <VerifyRow label="Game" value={extractedBet.game} flagged={issues.some(i => i.field === "game")} onEdit={() => setEditing({ target: "single", field: "game" })} />
+            <VerifyRow label="Pick" value={extractedBet.pick} onEdit={() => setEditing({ target: "single", field: "pick" })} />
+            {q && <VerifyRow label="Bet type" value={q} onEdit={() => setEditing({ target: "single", field: "pick" })} />}
+            <VerifyRow label="Odds" value={extractedBet.odds} onEdit={() => setEditing({ target: "single", field: "odds" })} />
+            <VerifyRow label="Wager" value={`$${extractedBet.amount}`} onEdit={() => setEditing({ target: "single", field: "amount" })} />
+            <VerifyRow label="To Win" value={`$${extractedBet.toWin}`} onEdit={() => setEditing({ target: "single", field: "toWin" })} />
+            <VerifyRow label="Date" value={extractedBet.gameDate} flagged={issues.some(i => i.field === "date")} onEdit={() => setEditing({ target: "single", field: "gameDate" })} />
+            <VerifyRow label="Time" value={extractedBet.gameTime} onEdit={() => setEditing({ target: "single", field: "gameTime" })} />
+          </div>
+          {!clear && (
+            <div style={{ color: "#f5a623", fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
+              {issues.map((iss, k) => <div key={k}>⚠️ {iss.label}</div>)}
+            </div>
+          )}
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={() => onCancel(extractedBet)} style={S.snap.editBtn}>Edit Manually</button>
-            <button onClick={() => { if (!logging) { setLogging(true); onConfirm(extractedBet).then(() => onDone && onDone()); }}} style={S.snap.confirmBtn}>Log This Bet</button>
+            <button
+              disabled={!clear || logging}
+              onClick={() => { if (clear && !logging) { setLogging(true); onConfirm(extractedBet).then(() => onDone && onDone()); }}}
+              style={{ ...S.snap.confirmBtn, opacity: clear ? 1 : 0.4, cursor: clear ? "pointer" : "not-allowed" }}
+            >
+              {clear ? "Log This Bet" : "Confirm to Log"}
+            </button>
           </div>
         </div>
-      )}
-      {stage === "confirmParlay" && extractedBet && (
+        );
+      })()}
+      {stage === "confirmParlay" && extractedBet && (() => {
+        const legIssues = (extractedBet.legs || []).map(l => criticalIssues(l));
+        const clear = legIssues.every(li => li.length === 0);
+        return (
         <div style={{ padding: 16 }}>
           <div style={{ color: "#2ecc71", fontSize: 17, fontWeight: 700, marginBottom: 4 }}>✅ Hunter read your slip</div>
-          <div style={{ color: "#f5a623", fontSize: 13, fontWeight: 700, marginBottom: 12 }}>
+          <div style={{ color: "#f5a623", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
             {extractedBet.betType?.toUpperCase()} · {extractedBet.legs?.length} Legs · {extractedBet.odds} · ${extractedBet.amount} to win ${extractedBet.toWin}
             {extractedBet.teaserPoints ? ` · ${extractedBet.teaserPoints} pts` : ""}
           </div>
-          {imagePreview && <img src={imagePreview} alt="slip" style={{ width: "100%", maxHeight: 120, objectFit: "contain", marginBottom: 12 }} />}
-          <div style={{ background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 14, padding: 16, marginBottom: 14 }}>
-            {extractedBet.legs?.map((leg, i) => (
-              <div key={i} style={{ padding: "10px 0", borderBottom: "1px solid #1a1a24" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ color: "#f5a623", fontSize: 11, fontWeight: 700 }}>LEG {i + 1}</span>
-                  <span style={{ color: "#888", fontSize: 11 }}>{leg.gameTime || ""}</span>
+          <div style={{ color: clear ? "#888" : "#f5a623", fontSize: 12, marginBottom: 10 }}>
+            {clear ? "All legs check out — tap any field to change it, or log the bet." : "One or more legs need a detail confirmed before this can settle automatically."}
+          </div>
+          {imagePreview && <img src={imagePreview} alt="slip" style={{ width: "100%", maxHeight: 110, objectFit: "contain", marginBottom: 12 }} />}
+          <div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+            {extractedBet.legs?.map((leg, i) => {
+              const li = legIssues[i];
+              const legClear = li.length === 0;
+              const q = pickQualifier(leg.pick);
+              return (
+                <div key={i} style={{ background: "#0f0f18", border: `1px solid ${legClear ? "#2a2a38" : "#5a4a1e"}`, borderRadius: 12, padding: "4px 14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0" }}>
+                    <span style={{ color: legClear ? "#2ecc71" : "#f5a623", fontSize: 11, fontWeight: 700 }}>LEG {i + 1} {legClear ? "✓" : "⚠️"}</span>
+                    <span style={{ color: "#888", fontSize: 11 }}>{leg.sport} · {leg.odds}</span>
+                  </div>
+                  <VerifyRow label="Pick" value={leg.pick} onEdit={() => setEditing({ target: i, field: "pick" })} />
+                  {q && <VerifyRow label="Bet type" value={q} onEdit={() => setEditing({ target: i, field: "pick" })} />}
+                  <VerifyRow label="Game" value={leg.game} flagged={li.some(x => x.field === "game")} onEdit={() => setEditing({ target: i, field: "game" })} />
+                  <VerifyRow label="Date" value={leg.gameDate} flagged={li.some(x => x.field === "date")} onEdit={() => setEditing({ target: i, field: "gameDate" })} />
+                  {!legClear && <div style={{ color: "#f5a623", fontSize: 11, padding: "4px 0 8px", lineHeight: 1.5 }}>{li.map((x, k) => <div key={k}>⚠️ {x.label}</div>)}</div>}
                 </div>
-                <div style={{ color: "#fff", fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{leg.pick}</div>
-                <div style={{ color: "#666", fontSize: 12 }}>{leg.game}</div>
-                <div style={{ color: "#888", fontSize: 11, marginTop: 2 }}>{leg.sport} · {leg.odds}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={() => onCancel(extractedBet)} style={S.snap.editBtn}>Edit Manually</button>
-            <button onClick={() => { if (!logging) { setLogging(true); onConfirm(extractedBet).then(() => onDone && onDone()); }}} style={S.snap.confirmBtn}>Log This Bet</button>
+            <button
+              disabled={!clear || logging}
+              onClick={() => { if (clear && !logging) { setLogging(true); onConfirm(extractedBet).then(() => onDone && onDone()); }}}
+              style={{ ...S.snap.confirmBtn, opacity: clear ? 1 : 0.4, cursor: clear ? "pointer" : "not-allowed" }}
+            >
+              {clear ? "Log This Bet" : "Confirm to Log"}
+            </button>
           </div>
         </div>
-      )}
-      {stage === "queue" && slips[currentSlip] && (
+        );
+      })()}
+      {stage === "queue" && slips[currentSlip] && (() => {
+        const p = slips[currentSlip].parsed;
+        const issues = p ? criticalIssues(p) : [];
+        const clear = !p || issues.length === 0;
+        const q = p ? pickQualifier(p.pick) : null;
+        return (
         <div style={{ padding: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div style={{ color: "#2ecc71", fontSize: 15, fontWeight: 700 }}>✅ Slip {currentSlip + 1} of {slips.length}</div>
@@ -655,26 +867,36 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
             </div>
           ) : (
             <>
-              <div style={{ color: "#888", fontSize: 12, marginBottom: 8 }}>Review the details — tap Skip to move on or Log It to save.</div>
-              {slips[currentSlip].preview && <img src={slips[currentSlip].preview} alt="slip" style={{ width: "100%", maxHeight: 140, objectFit: "contain", marginBottom: 12 }} />}
-              <div style={{ background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 14, padding: 16, marginBottom: 14 }}>
-                {[["Sport", slips[currentSlip].parsed.sport], ["Game", slips[currentSlip].parsed.game], ["Pick", slips[currentSlip].parsed.pick], ["Odds", slips[currentSlip].parsed.odds], ["Wager", `$${slips[currentSlip].parsed.amount}`], ["To Win", `$${slips[currentSlip].parsed.toWin}`], ["Date", slips[currentSlip].parsed.gameDate || ""], ["Time", slips[currentSlip].parsed.gameTime || ""]].map(([l, v]) => (
-                  <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #1a1a24" }}>
-                    <span style={{ color: "#666", fontSize: 13 }}>{l}</span>
-                    <span style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{v}</span>
-                  </div>
-                ))}
+              <div style={{ color: clear ? "#888" : "#f5a623", fontSize: 12, marginBottom: 8 }}>
+                {clear ? "Tap any field to change it, then Log It — or Skip." : "Confirm the highlighted detail before this slip can settle automatically."}
               </div>
+              {slips[currentSlip].preview && <img src={slips[currentSlip].preview} alt="slip" style={{ width: "100%", maxHeight: 130, objectFit: "contain", marginBottom: 12 }} />}
+              <div style={{ background: "#0f0f18", border: `1px solid ${clear ? "#2a2a38" : "#5a4a1e"}`, borderRadius: 14, padding: "6px 16px", marginBottom: 14 }}>
+                <VerifyRow label="Sport" value={p.sport} onEdit={() => setEditing({ target: "queue", field: "sport" })} />
+                <VerifyRow label="Game" value={p.game} flagged={issues.some(i => i.field === "game")} onEdit={() => setEditing({ target: "queue", field: "game" })} />
+                <VerifyRow label="Pick" value={p.pick} onEdit={() => setEditing({ target: "queue", field: "pick" })} />
+                {q && <VerifyRow label="Bet type" value={q} onEdit={() => setEditing({ target: "queue", field: "pick" })} />}
+                <VerifyRow label="Odds" value={p.odds} onEdit={() => setEditing({ target: "queue", field: "odds" })} />
+                <VerifyRow label="Wager" value={`$${p.amount}`} onEdit={() => setEditing({ target: "queue", field: "amount" })} />
+                <VerifyRow label="Date" value={p.gameDate} flagged={issues.some(i => i.field === "date")} onEdit={() => setEditing({ target: "queue", field: "gameDate" })} />
+                <VerifyRow label="Time" value={p.gameTime} onEdit={() => setEditing({ target: "queue", field: "gameTime" })} />
+              </div>
+              {!clear && <div style={{ color: "#f5a623", fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>{issues.map((iss, k) => <div key={k}>⚠️ {iss.label}</div>)}</div>}
               <div style={{ display: "flex", gap: 10 }}>
                 <button onClick={skipSlip} style={S.snap.editBtn}>Skip</button>
-                <button onClick={confirmSlip} style={S.snap.confirmBtn}>
-                  {currentSlip < slips.length - 1 ? `Log It (${slips.length - currentSlip - 1} more)` : "Log It"}
+                <button
+                  disabled={!clear}
+                  onClick={confirmSlip}
+                  style={{ ...S.snap.confirmBtn, opacity: clear ? 1 : 0.4, cursor: clear ? "pointer" : "not-allowed" }}
+                >
+                  {!clear ? "Confirm to Log" : currentSlip < slips.length - 1 ? `Log It (${slips.length - currentSlip - 1} more)` : "Log It"}
                 </button>
               </div>
             </>
           )}
         </div>
-      )}
+        );
+      })()}
       {stage === "error" && (
         <div style={{ padding: 20, textAlign: "center" }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>😕</div>
