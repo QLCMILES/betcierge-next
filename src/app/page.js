@@ -2772,6 +2772,7 @@ function History({ bets, onUpdate, onDelete, onNav }) {
         );
       })()}
 
+      {bet.isParlay ? (
         <div>
           {(bet.legs || []).map((leg, i) => (
             <div key={i} style={{ borderBottom: "1px solid #1a1a24", padding: "8px 0" }}>
