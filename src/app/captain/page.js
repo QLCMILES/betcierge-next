@@ -17,19 +17,17 @@ const GRAY = "#6b7280";
 const LIGHT = "#d1d5db";
 
 const features = [
-  { icon: "🤖", name: "Ask Hunter anything", desc: "The same research behind every pick, for any game, any question, in seconds." },
-  { icon: "🕐", name: "Picks when they're ready", desc: "At least one sharp play daily, up to three when the edge is there — never on a fixed clock." },
-  { icon: "🛡️", name: "Guardrails built in", desc: "Tilt recognition and real check-ins, not just a P&L tracker." },
-  { icon: "📸", name: "Snap to Log", desc: "Screenshot any bet slip — Hunter reads and logs it automatically." },
-  { icon: "📡", name: "Live Gamecast", desc: "Watch your games and your money move in real time on one screen." },
-  { icon: "📋", name: "Your real record — always visible", desc: "Every pick tracked and auto-settled after every game, every sport. Your true win rate, units, and ROI — always current, never massaged. Wins and losses both shown. The receipts are always there." },
+  { icon: "🤖", name: "Hunter — your betting coach", kicker: "Bring the hunch. Hunter brings the homework.", desc: "Ask about any game, bet, line, or idea. Hunter digs into the numbers, challenges your take, and tells you what he actually thinks — even when you don't want to hear it." },
+  { icon: "🎯", name: "Daily Picks", kicker: "No edge? No bet.", desc: "Every game gets researched. When there's a play worth making, you get it. No picks forced just because you want action." },
+  { icon: "🛡️", name: "Bankroll Guardrails", kicker: "Because \"I'll win it back\" is not a strategy.", desc: "Hunter keeps your bankroll, weekly goal, and bigger picture in view — especially when your gut is telling you to forget all three." },
 ];
 
 const sharedFaqs = [
-  { q: "Can I cancel anytime?", a: "Yes — from your account settings, no calls, no hoops." },
+  { q: "Is this betting advice?", a: "Betcierge is a research and discipline tool. We help you find edges, size bets, and track your record — we don't take bets. Always bet responsibly." },
   { q: "Do you show losses?", a: "Every single one. A record that hides losses is a lie. Ours does not." },
-  { q: "What's included?", a: "Everything — daily picks, full unlimited Hunter chat, Lean Machine, Snap to Log, Live Gamecast, and bankroll guardrails. One price, no tiers to choose between." },
-  { q: "What do free accounts get?", a: "Our record is fully public and transparent — anyone can see it, no account needed. Our premium research, including full daily picks and Lean Machine, is reserved for subscribers." },
+  { q: "What happens to my founding price if I cancel?", a: "Your $24.99/mo rate holds for as long as you stay subscribed. If you cancel and resubscribe after founding spots are gone, you'd rejoin at the standard rate." },
+  { q: "Can I cancel anytime?", a: "Yes — from your account settings, no calls, no hoops." },
+  { q: "What do free accounts get?", a: "Our full record is public, no account needed. Daily Picks and full Hunter chat are for subscribers." },
 ];
 
 const captainFaqs = [
@@ -86,7 +84,7 @@ export default function CaptainPage({ onGetStarted }) {
       {/* Urgency Banner */}
       <div style={{ background: "#1a0f00", borderBottom: "1px solid #f5a62333", padding: "10px 20px", textAlign: "center", fontSize: 13 }}>
         <span style={{ color: GOLD, fontWeight: 700 }}>⚡ {FOUNDING_SPOTS_LEFT} of {FOUNDING_TOTAL} founding spots remaining</span>
-        <span style={{ color: LIGHT, marginLeft: 8 }}>· Lock in $24.99/mo forever ·{" "}
+        <span style={{ color: LIGHT, marginLeft: 8 }}>· $24.99/mo, rate holds while subscribed ·{" "}
           <span style={{ color: GOLD, cursor: "pointer", textDecoration: "underline" }} onClick={go}>claim yours</span>
         </span>
       </div>
@@ -103,14 +101,14 @@ export default function CaptainPage({ onGetStarted }) {
           From the team behind CaptainPicks
         </div>
         <h1 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "clamp(34px, 8vw, 54px)", fontWeight: 700, lineHeight: 1.1, marginBottom: 16, color: "#fff" }}>
-          Your personal betting coach,<br /><em style={{ color: GOLD, fontStyle: "italic" }}>on call 24/7.</em>
+          The research of an analyst.<br /><em style={{ color: GOLD, fontStyle: "italic" }}>The discipline of a pro.</em>
         </h1>
-        <div style={{ color: GOLD, fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Change the way you bet.</div>
+        <div style={{ color: GOLD, fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Bet smarter. Stay disciplined. Win the week.</div>
         <p style={{ fontSize: 17, color: LIGHT, lineHeight: 1.7, maxWidth: 540, margin: "0 auto 12px" }}>
-          Enhanced Intelligence — cloned from six years of CaptainPicks research and systems, built to research every game the way the pros do, around the clock. Hunter gives you the picks with full reasoning, coaches you through every bet, and answers any question, any hour.
+          Hunter is built from six years of CaptainPicks research and systems — the same rigor, now researching every game, challenging your takes, and keeping your bankroll and goals in view while you do it.
         </p>
         <p style={{ fontSize: 15, color: LIGHT, lineHeight: 1.7, maxWidth: 520, margin: "0 auto 32px", borderTop: "1px solid #1e1e2e", paddingTop: 16 }}>
-          The Discord was <strong style={{ color: "#fff" }}>$600/mo</strong>. Founding members get all of this for <strong style={{ color: GOLD }}>$24.99/mo — locked for life.</strong>
+          The Discord was <strong style={{ color: "#fff" }}>$600/mo</strong>. Founding members get all of this for <strong style={{ color: GOLD }}>$24.99/mo — rate holds while you stay subscribed.</strong>
         </p>
 
         {/* Spot Counter */}
@@ -124,13 +122,13 @@ export default function CaptainPage({ onGetStarted }) {
             Claim Founding Spot — $24.99/mo
           </button>
         </div>
-        <p style={{ fontSize: 12, color: GRAY, marginTop: 12 }}>3-day free trial · Price locked forever · Cancel anytime</p>
+        <p style={{ fontSize: 12, color: GRAY, marginTop: 12 }}>3-day free trial · Rate holds while subscribed · Cancel anytime</p>
       </section>
 
       {/* Stats */}
       <section style={{ maxWidth: 600, margin: "0 auto 60px", padding: "0 24px" }}>
         <div style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 14, padding: "24px 28px", textAlign: "center" }}>
-          <div style={{ fontSize: 14, color: GRAY, marginBottom: 16 }}>Hunter's record since June 11, 2026</div>
+          <div style={{ fontSize: 14, color: GRAY, marginBottom: 16 }}>No cherry-picking. No deleted losses. Just the record — since June 11, 2026.</div>
           <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap", marginBottom: 16 }}>
             {[
               [`${record.wins}W-${record.losses}L`, "Record"],
@@ -154,8 +152,7 @@ export default function CaptainPage({ onGetStarted }) {
       <section style={{ maxWidth: 700, margin: "0 auto 60px", padding: "0 24px" }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>WHAT'S INSIDE</div>
-          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>Research, tracking, discipline. One system.</h2>
-          <p style={{ color: GRAY, fontSize: 14, marginTop: 8, maxWidth: 500, margin: "8px auto 0" }}>Most betting products give you picks. Betcierge gives you the whole operation behind them.</p>
+          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>This isn't another picks service.<br />It's a better way to bet.</h2>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {features.map((f, i) => (
@@ -163,6 +160,7 @@ export default function CaptainPage({ onGetStarted }) {
               <span style={{ fontSize: 22, flexShrink: 0 }}>{f.icon}</span>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>{f.name}</div>
+                <div style={{ color: GOLD, fontSize: 13, fontStyle: "italic", marginBottom: 4 }}>{f.kicker}</div>
                 <div style={{ color: GRAY, fontSize: 13, lineHeight: 1.5 }}>{f.desc}</div>
               </div>
             </div>
@@ -188,7 +186,7 @@ export default function CaptainPage({ onGetStarted }) {
           <div style={{ textAlign: "center" }}>
             <div style={{ color: GRAY, fontSize: 12 }}>Betcierge Founding Member</div>
             <div style={{ color: GREEN, fontSize: 22, fontWeight: 800 }}>$24.99/mo</div>
-            <div style={{ color: GOLD, fontSize: 11, fontWeight: 700 }}>🔒 LOCKED FOR LIFE</div>
+            <div style={{ color: GOLD, fontSize: 11, fontWeight: 700 }}>🔒 RATE HOLDS WHILE SUBSCRIBED</div>
           </div>
         </div>
 
@@ -204,7 +202,7 @@ export default function CaptainPage({ onGetStarted }) {
                 <div style={{ fontSize: 36, fontWeight: 800, color: "#fff" }}>$24.99<span style={{ fontSize: 14, color: GRAY, fontWeight: 400 }}>/mo</span></div>
                 <div style={{ fontSize: 16, color: GRAY, textDecoration: "line-through" }}>$29.99</div>
               </div>
-              <div style={{ color: GREEN, fontSize: 13, marginTop: 4 }}>🔒 Price locked for life</div>
+              <div style={{ color: GREEN, fontSize: 13, marginTop: 4 }}>🔒 Rate locked while subscribed</div>
               <div style={{ color: GRAY, fontSize: 12, marginTop: 2 }}>3-day free trial · Cancel anytime</div>
             </div>
             <div style={{ fontSize: 32 }}>🎯</div>
@@ -244,15 +242,15 @@ export default function CaptainPage({ onGetStarted }) {
       {/* Final CTA */}
       <section style={{ maxWidth: 600, margin: "0 auto 80px", padding: "0 24px" }}>
         <div style={{ background: "#0d0a00", border: "1px solid #f5a62344", borderRadius: 16, padding: "32px 28px", textAlign: "center" }}>
-          <div style={{ color: GOLD, fontWeight: 700, fontSize: 13, marginBottom: 8 }}>⚡ {FOUNDING_SPOTS_LEFT} founding spots remaining</div>
           <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 28, fontWeight: 700, color: "#fff", marginBottom: 12 }}>
-            Your personal betting coach.<br />$24.99/mo — forever.
+            You don't need more bets.<br />You need a better way to bet.
           </h2>
-          <p style={{ color: GRAY, fontSize: 14, marginBottom: 8 }}>3 days free. Full access. No commitment.</p>
-          <p style={{ color: GRAY, fontSize: 13, marginBottom: 24 }}>Change the way you bet. <strong style={{ color: GOLD }}>Founding price locked for life.</strong></p>
+          <p style={{ color: GRAY, fontSize: 14, marginBottom: 24 }}>Join the first {FOUNDING_TOTAL} Betcierge members and lock in your $24.99/mo founding rate for as long as you stay subscribed.</p>
           <button onClick={() => claimFounding(STRIPE_PRICE_CURRENT, 'Founding Member')} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 10, padding: "14px 40px", fontSize: 15, fontWeight: 700, cursor: "pointer", width: "100%" }}>
-            Claim Founding Price — $24.99/mo
+            Start My 3-Day Free Trial
           </button>
+          <p style={{ color: GRAY, fontSize: 12, marginTop: 12 }}>$24.99/mo after trial · Rate holds while subscribed · Cancel anytime</p>
+          <p style={{ color: GOLD, fontSize: 13, fontWeight: 700, marginTop: 8 }}>{FOUNDING_SPOTS_LEFT} founding spots remaining</p>
         </div>
       </section>
 
