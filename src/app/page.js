@@ -215,13 +215,71 @@ const criticalIssues = (bet) => {
   return issues;
 };
 
+// ── Past-game source registry (built for scale) ───────────────────────────
+// The odds feed only carries UPCOMING games — once a game is final it drops
+// off. So for a back-dated slip (user logged late), we can't use the odds feed;
+// we need each sport's COMPLETED-games source. Rather than hardcode one sport,
+// this is a registry: each sport supplies an adapter (date, teamWords) => games
+// in ONE normalized shape { gameId, game, gameDate, gameTime }. The resolver
+// asks the registry and doesn't care how each sport answers.
+//
+// Adding a new sport later = write one adapter + add one line here. No changes
+// to the resolver, the verify card, or anything downstream. That's the seam.
+//
+// normalizeSport() (defined in SnapToLog) returns the Odds API sport_key; we
+// key adapters on that so it lines up with everything else in the app.
+const matchTeamWords = (teamWords, ...names) => {
+  const hay = names.filter(Boolean).join(" ").toLowerCase();
+  return teamWords.some(w => hay.includes(w));
+};
+
+const PAST_GAME_SOURCES = {
+  // MLB — MLB Stats API schedule endpoint returns FINAL games for a past date,
+  // free, no key. Same source the settlement engine trusts. Fully implemented.
+  baseball_mlb: async (date, teamWords) => {
+    const res = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${date}&gameType=R`);
+    const data = await res.json();
+    const games = data?.dates?.[0]?.games || [];
+    return games
+      .filter(g => matchTeamWords(teamWords, g.teams?.away?.team?.name, g.teams?.home?.team?.name))
+      .map(g => {
+        const away = g.teams?.away?.team?.name;
+        const home = g.teams?.home?.team?.name;
+        return {
+          // MLB Stats gamePk isn't the Odds API id, but for a completed game we
+          // don't need the odds id — the settlement engine's MLB fallback matches
+          // by team+date anyway. Store the pk so it's available.
+          gameId: null,
+          mlbGamePk: g.gamePk,
+          game: `${away} @ ${home}`,
+          gameDate: new Date(g.gameDate).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+          gameTime: new Date(g.gameDate).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }),
+        };
+      });
+  },
+  // Other sports: adapters not built yet. Registering them as null makes the
+  // resolver degrade HONESTLY (falls to "log with this date, settle manually")
+  // instead of silently failing. When a sport's season arrives, replace null
+  // with an adapter and it drops straight in.
+  basketball_nba: null,
+  americanfootball_nfl: null,
+  americanfootball_ncaaf: null,
+  basketball_ncaab: null,
+  icehockey_nhl: null,
+  soccer_epl: null,
+  soccer_usa_mls: null,
+  mma_mixed_martial_arts: null,
+};
+
 // One editable row. Read fields show plain; flagged fields show amber + tappable.
 // Smart resolver for a game that couldn't be auto-matched (team name only, no
 // date, etc). Flow: confirm/enter a date → search the REAL schedule for that
 // team on that date → pick a real matchup (gets a real game_id) → or, if none
 // found, confirm as-is and settle manually later. This is the "option 3" the
 // founder chose: date-first, search, honest fallback.
-function GameResolver({ teamText, sport, initialDate, onResolve, onCancel }) {
+// For PAST dates it searches completed-games sources (per-sport registry);
+// for today/future it searches the live odds feed.
+function GameResolver({ teamText, sport, sportKey, initialDate, onResolve, onCancel }) {
   const [date, setDate] = useState(initialDate || "");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState(null); // null=not searched, []=none found
@@ -234,22 +292,38 @@ function GameResolver({ teamText, sport, initialDate, onResolve, onCancel }) {
     setSearching(true);
     setSearched(false);
     setResults(null);
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const isPast = date < today;
     try {
-      const oddsRes = await fetch("/api/odds", { method: "POST" });
-      const oddsData = await oddsRes.json();
-      const games = (oddsData.games || []).filter(g => {
-        const gDate = g.commence_time ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) : null;
-        if (gDate !== date) return false;
-        const home = (g.home_team || "").toLowerCase();
-        const away = (g.away_team || "").toLowerCase();
-        return teamWords.some(w => home.includes(w) || away.includes(w));
-      }).map(g => ({
-        gameId: g.id,
-        game: `${g.away_team} @ ${g.home_team}`,
-        gameDate: new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
-        gameTime: new Date(g.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }),
-      }));
-      setResults(games);
+      if (isPast) {
+        // Back-dated slip (logged late). The odds feed doesn't carry finished
+        // games — use the per-sport completed-games registry.
+        const adapter = sportKey ? PAST_GAME_SOURCES[sportKey] : null;
+        if (typeof adapter === "function") {
+          const games = await adapter(date, teamWords);
+          setResults(games);
+        } else {
+          // Sport's past-game source not built yet → honest empty → manual path.
+          setResults([]);
+        }
+      } else {
+        // Today/future → live odds feed.
+        const oddsRes = await fetch("/api/odds", { method: "POST" });
+        const oddsData = await oddsRes.json();
+        const games = (oddsData.games || []).filter(g => {
+          const gDate = g.commence_time ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) : null;
+          if (gDate !== date) return false;
+          const home = (g.home_team || "").toLowerCase();
+          const away = (g.away_team || "").toLowerCase();
+          return teamWords.some(w => home.includes(w) || away.includes(w));
+        }).map(g => ({
+          gameId: g.id,
+          game: `${g.away_team} @ ${g.home_team}`,
+          gameDate: new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+          gameTime: new Date(g.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }),
+        }));
+        setResults(games);
+      }
     } catch (e) {
       setResults([]);
     }
@@ -278,7 +352,7 @@ function GameResolver({ teamText, sport, initialDate, onResolve, onCancel }) {
         <>
           <div style={{ color: "#2ecc71", fontSize: 12, marginBottom: 8 }}>Found {results.length === 1 ? "the game" : `${results.length} possible games`} — tap to confirm:</div>
           {results.map((c, k) => (
-            <button key={k} onClick={() => onResolve({ game: c.game, gameId: c.gameId, gameDate: c.gameDate, gameTime: c.gameTime, grounded: true })}
+            <button key={k} onClick={() => onResolve({ game: c.game, gameId: c.gameId, mlbGamePk: c.mlbGamePk, gameDate: c.gameDate, gameTime: c.gameTime, grounded: true })}
               style={{ width: "100%", textAlign: "left", background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 10, padding: "12px 14px", marginBottom: 8, color: "#fff", fontSize: 14, cursor: "pointer" }}>
               <div style={{ fontWeight: 600 }}>{c.game}</div>
               <div style={{ color: "#888", fontSize: 12, marginTop: 2 }}>{c.gameDate}{c.gameTime ? ` · ${c.gameTime}` : ""}</div>
@@ -288,7 +362,7 @@ function GameResolver({ teamText, sport, initialDate, onResolve, onCancel }) {
       )}
       {searched && results && results.length === 0 && (
         <div style={{ color: "#f5a623", fontSize: 12, marginBottom: 10, lineHeight: 1.5 }}>
-          No scheduled game found for "{teamText}" on {date}. You can still log it with this date — Hunter will ask you the result after the game.
+          No game found for "{teamText}" on {date}. You can still log it with this date — you'll settle it yourself from Bet History.
         </div>
       )}
       <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
@@ -790,6 +864,7 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
           const patch = {};
           if (r.game) patch.game = r.game;
           if (r.gameId) patch.gameId = r.gameId;
+          if (r.mlbGamePk) patch.mlbGamePk = r.mlbGamePk;
           if (r.gameDate) patch.gameDate = r.gameDate;
           if (r.gameTime) patch.gameTime = r.gameTime;
           applyFieldEdit(patch, { markGame: true, confirmField: "date", autoSettleable: !!r.grounded });
@@ -815,6 +890,7 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
                 <GameResolver
                   teamText={tgt?.game}
                   sport={tgt?.sport}
+                  sportKey={normalizeSport(tgt?.sport || "")}
                   initialDate={tgt?.gameDate || ""}
                   onResolve={resolveGame}
                   onCancel={() => setEditing(null)}
