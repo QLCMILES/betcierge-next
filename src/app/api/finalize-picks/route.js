@@ -170,6 +170,33 @@ function extractText(content) {
   return (content || []).filter(c => c.type === 'text').map(c => c.text).join('');
 }
 
+// See poll-batch-picks/route.js for why this isn't a plain greedy regex —
+// this is the exact bug that took down legacy's picks on Sep 2, and this
+// file shares the identical extraction pattern, so it's equally exposed.
+function extractFirstJsonObject(text) {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 function cleanJson(text) {
   const clean = text
     .replace(/```json|```/g, '')
@@ -177,9 +204,9 @@ function cleanJson(text) {
     .replace(/<cite[^>]*>/g, '')
     .replace(/<\/cite>/g, '')
     .trim();
-  const jsonMatch = clean.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('No JSON found in response: ' + text.slice(0, 300));
-  return JSON.parse(jsonMatch[0]);
+  const jsonStr = extractFirstJsonObject(clean);
+  if (!jsonStr) throw new Error('No JSON found in response: ' + text.slice(0, 300));
+  return JSON.parse(jsonStr);
 }
 
 // ── Final lineup-currency check ──────────────────────────────────────────
@@ -585,7 +612,8 @@ async function finalizePicks() {
           .from('daily_picks')
           .select('id', { count: 'exact' })
           .eq('date', today)
-          .eq('bet_type', 'total');
+          .eq('bet_type', 'total')
+          .eq('pipeline_source', 'v2');
         if ((totalsToday || []).length >= MAX_TOTALS_PER_DAY) {
           console.log(`FINAL_TOTALS_DAILY_CAP: "${candidate.game}" is a total but today's slate already has ${MAX_TOTALS_PER_DAY} totals published — discarding rather than adding another, regardless of this candidate's own score.`);
           await supabase.from('game_candidates').update({
@@ -612,7 +640,8 @@ async function finalizePicks() {
         .select('id', { count: 'exact' })
         .eq('date', today)
         .eq('sport', candidate.sport)
-        .eq('bet_type', betType);
+        .eq('bet_type', betType)
+        .eq('pipeline_source', 'v2');
 
       if ((sameTypeToday || []).length >= CORRELATION_CAP_PER_SPORT_BETTYPE) {
         console.log(`FINAL_CORRELATION_CAP: "${candidate.game}" scored ${score} but ${candidate.sport}/${betType} already has ${CORRELATION_CAP_PER_SPORT_BETTYPE} picks published today — discarding rather than adding another same-type pick to an already-concentrated slate.`);
@@ -625,7 +654,8 @@ async function finalizePicks() {
       const { data: picksToday } = await supabase
         .from('daily_picks')
         .select('id', { count: 'exact' })
-        .eq('date', today);
+        .eq('date', today)
+        .eq('pipeline_source', 'v2');
 
       let publishNote = null;
 

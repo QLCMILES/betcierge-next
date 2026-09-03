@@ -63,6 +63,33 @@ function extractText(content) {
   return (content || []).filter(c => c.type === 'text').map(c => c.text).join('');
 }
 
+// See poll-batch-picks/route.js for why this isn't a plain greedy regex —
+// same bug, same fix, applied here too since it shares the identical
+// extraction pattern and is equally exposed to it.
+function extractFirstJsonObject(text) {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 function cleanJson(text) {
   const clean = text
     .replace(/```json|```/g, '')
@@ -70,9 +97,9 @@ function cleanJson(text) {
     .replace(/<cite[^>]*>/g, '')
     .replace(/<\/cite>/g, '')
     .trim();
-  const jsonMatch = clean.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('No JSON found in response: ' + text.slice(0, 300));
-  return JSON.parse(jsonMatch[0]);
+  const jsonStr = extractFirstJsonObject(clean);
+  if (!jsonStr) throw new Error('No JSON found in response: ' + text.slice(0, 300));
+  return JSON.parse(jsonStr);
 }
 
 // ── Game identity resolution (first-class `games` table) ─────────────────

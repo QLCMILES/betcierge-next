@@ -89,6 +89,7 @@ export async function GET(request) {
       .select('*')
       .eq('date', today)
       .eq('status', 'active')
+      .eq('pipeline_source', 'legacy')
       .limit(3)
       .order('created_at', { ascending: true });
     if (error) throw error;

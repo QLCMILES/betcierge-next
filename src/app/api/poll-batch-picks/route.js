@@ -48,6 +48,41 @@ function countSearches(content) {
   return (content || []).filter(c => c.type === 'server_tool_use' && c.name === 'web_search').length;
 }
 
+// Finds the first *complete*, brace-balanced JSON object in the text,
+// ignoring anything before or after it. A plain greedy regex here (the
+// prior approach) matched from the first "{" to the LAST "}" anywhere in
+// the whole string — which is exactly what took down legacy's picks on
+// Sep 2: the model returned a valid picks object followed by a second
+// JSON-like block, and the greedy match swallowed both into one
+// unparseable string ("Unexpected non-whitespace character after JSON").
+// This instead walks the string character by character, tracking brace
+// depth and staying string-aware (so a "{" or "}" inside a quoted value
+// doesn't affect the count), and stops exactly where the first object
+// actually closes — anything after that point is ignored.
+function extractFirstJsonObject(text) {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 function cleanJson(text) {
   const clean = text
     .replace(/```json|```/g, '')
@@ -55,11 +90,11 @@ function cleanJson(text) {
     .replace(/<cite[^>]*>/g, '')
     .replace(/<\/cite>/g, '')
     .trim();
-  const jsonMatch = clean.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('No JSON found in batch result: ' + text.slice(0, 300));
+  const jsonStr = extractFirstJsonObject(clean);
+  if (!jsonStr) throw new Error('No JSON found in batch result: ' + text.slice(0, 300));
 
   try {
-    return JSON.parse(jsonMatch[0]);
+    return JSON.parse(jsonStr);
   } catch (parseErr) {
     // CRITICAL: without this, a JSON parse failure only ever surfaces a
     // generic message like "Expected ',' or '}' at position X" with zero
@@ -69,13 +104,13 @@ function cleanJson(text) {
     // actually debuggable instead of a guess.
     const posMatch = parseErr.message.match(/position (\d+)/);
     const pos = posMatch ? parseInt(posMatch[1], 10) : null;
-    console.log(`JSON_PARSE_FAILED: ${parseErr.message}. Total matched length: ${jsonMatch[0].length} chars.`);
+    console.log(`JSON_PARSE_FAILED: ${parseErr.message}. Total matched length: ${jsonStr.length} chars.`);
     if (pos !== null) {
       const start = Math.max(0, pos - 200);
-      const end = Math.min(jsonMatch[0].length, pos + 200);
-      console.log(`JSON_PARSE_FAILED context around position ${pos}:\n...${jsonMatch[0].slice(start, end)}...`);
+      const end = Math.min(jsonStr.length, pos + 200);
+      console.log(`JSON_PARSE_FAILED context around position ${pos}:\n...${jsonStr.slice(start, end)}...`);
     } else {
-      console.log(`JSON_PARSE_FAILED — no position in error, logging first/last 500 chars:\nSTART: ${jsonMatch[0].slice(0, 500)}\nEND: ${jsonMatch[0].slice(-500)}`);
+      console.log(`JSON_PARSE_FAILED — no position in error, logging first/last 500 chars:\nSTART: ${jsonStr.slice(0, 500)}\nEND: ${jsonStr.slice(-500)}`);
     }
     throw parseErr;
   }
