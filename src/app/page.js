@@ -234,6 +234,161 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
     return result;
   };
 
+  // ── Grounding shape classifier ────────────────────────────────────────────
+  // Every bet type collapses into one of a few "grounding shapes" — what the
+  // system must look up to settle it. New bet types a book invents still sort
+  // into one of these; we never need to enumerate every bet type.
+  //   game        → grounds to one game, settles on final/segment score
+  //                 (ML, spread, total, team total, alt lines, F5, 1H, 1Q)
+  //   player_prop → grounds to one game + a player + a stat line
+  //   futures     → no game to ground; settles weeks/months later
+  //   unsupported → a market the odds feed can't carry (some soccer exotics);
+  //                 log it, but it can't auto-settle — honest degradation
+  const classifyBetShape = (parsed) => {
+    const bt = (parsed.betType || "").toLowerCase();
+    const pick = (parsed.pick || "").toLowerCase();
+    if (bt.includes("future") || /\b(to win|championship|mvp|season|award|division|conference)\b/.test(pick)) return "futures";
+    if (bt.includes("prop") || bt.includes("player") || parsed.player) return "player_prop";
+    // Soccer exotics the feed (h2h/spreads/totals only) can't settle from score
+    if (/\b(both teams to score|btts|correct score|asian handicap|double chance|draw no bet|first goalscorer|anytime scorer)\b/.test(pick)) return "unsupported";
+    return "game";
+  };
+
+  // ── Unified grounding engine ──────────────────────────────────────────────
+  // Given an extracted bet and the live odds feed, match it against the REAL
+  // schedule and return the bet enriched with gameId + canonical names + a
+  // provenance object. Provenance is the gate signal (read vs. matched vs.
+  // inferred vs. ambiguous vs. unmatched) — NOT the model's confidence score.
+  // Used by single bets AND each parlay leg, so grounding is identical everywhere.
+  //
+  // matchStatus (on returned .provenance.game):
+  //   read      → team/game text was printed on the slip AND we matched it to
+  //               exactly one real fixture (highest trust)
+  //   matched   → matched to exactly one real fixture (team read, no slip date)
+  //   ambiguous → >1 candidate fixture; user must pick which game (candidates attached)
+  //   unmatched → 0 candidate fixtures; nothing to ground against right now
+  // provenance.date:
+  //   read      → date was printed on the slip
+  //   matched   → date came from the single matched fixture (not the slip)
+  //   inferred  → we could not establish a date from slip or a unique fixture
+  const groundBet = async (parsed, oddsData) => {
+    const shape = classifyBetShape(parsed);
+    const dateOnSlip = !!parsed.gameDate;
+    const provenance = {
+      shape,
+      date: dateOnSlip ? "read" : "inferred",
+      game: "unmatched",
+      candidates: [],
+    };
+
+    // Futures + unsupported markets don't ground to a single game. Log them,
+    // but flag that they can't auto-settle — the settle-time backstop / one-tap
+    // outcome handles them. Never guess a game for these.
+    if (shape === "futures" || shape === "unsupported") {
+      provenance.game = "unmatched";
+      provenance.autoSettleable = false;
+      return { ...parsed, provenance };
+    }
+
+    if (!oddsData || !oddsData.games) return { ...parsed, provenance };
+
+    const parsedSport = normalizeSport(parsed.sport || "");
+    const parsedDate = parsed.gameDate || "";
+    const gameText = expandTeamAbbr(parsed.game || "").toLowerCase();
+
+    // Highest-confidence path: MLB with a starting pitcher on the slip.
+    // Re-derive the exact game from the MLB Stats API (real fixture source),
+    // never from the vision read alone.
+    if (parsed.pitcher && (parsedSport === "baseball_mlb")) {
+      try {
+        const pitcherName = parsed.pitcher.toLowerCase();
+        const searchDate = parsed.gameDate || new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+        const mlbRes = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${searchDate}&gameType=R&hydrate=probablePitcher`);
+        const mlbData = await mlbRes.json();
+        const games = mlbData.dates?.[0]?.games || [];
+        const pitcherGame = games.find(g => {
+          const ap = (g.teams?.away?.probablePitcher?.fullName?.split(' ').pop() || '').toLowerCase();
+          const hp = (g.teams?.home?.probablePitcher?.fullName?.split(' ').pop() || '').toLowerCase();
+          return (ap && (ap.includes(pitcherName) || pitcherName.includes(ap))) ||
+                 (hp && (hp.includes(pitcherName) || pitcherName.includes(hp)));
+        });
+        if (pitcherGame) {
+          const away = pitcherGame.teams?.away?.team?.name;
+          const home = pitcherGame.teams?.home?.team?.name;
+          const oddsMatch = oddsData.games.find(g => {
+            const h = g.home_team.toLowerCase(), a = g.away_team.toLowerCase();
+            return home.toLowerCase().split(' ').filter(w => w.length > 3).some(w => h.includes(w)) ||
+                   away.toLowerCase().split(' ').filter(w => w.length > 3).some(w => a.includes(w));
+          });
+          return {
+            ...parsed,
+            game: `${away} @ ${home}`,
+            gameDate: new Date(pitcherGame.gameDate).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+            gameTime: new Date(pitcherGame.gameDate).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }),
+            gameId: oddsMatch ? oddsMatch.id : (parsed.gameId || null),
+            provenance: { ...provenance, game: "read", date: "read", autoSettleable: !!oddsMatch },
+          };
+        }
+        // pitcher lookup failed → fall through to team-name matching below
+      } catch (e) { /* fall through */ }
+    }
+
+    // General path: find ALL candidate fixtures matching the team text,
+    // scoped by sport and (if we have one) date. Counting candidates is how we
+    // tell matched / ambiguous / unmatched apart honestly.
+    const candidates = oddsData.games.filter(g => {
+      const home = g.home_team.toLowerCase();
+      const away = g.away_team.toLowerCase();
+      const gDate = g.commence_time
+        ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+        : null;
+      if (parsedSport && g.sport_key && g.sport_key !== parsedSport) return false;
+      if (parsedDate && gDate && gDate !== parsedDate) return false;
+      const homeMatch = home.split(' ').filter(w => w.length > 3).every(w => gameText.includes(w));
+      const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => gameText.includes(w));
+      return homeMatch || awayMatch;
+    });
+
+    if (candidates.length === 1) {
+      const m = candidates[0];
+      return {
+        ...parsed,
+        game: `${m.away_team} @ ${m.home_team}`,
+        gameId: m.id,
+        gameDate: parsed.gameDate || new Date(m.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+        gameTime: parsed.gameTime || new Date(m.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }),
+        provenance: {
+          ...provenance,
+          game: dateOnSlip ? "read" : "matched",
+          date: dateOnSlip ? "read" : "matched",
+          autoSettleable: true,
+        },
+      };
+    }
+
+    if (candidates.length > 1) {
+      // Can't know which game — this is the "which game?" case. Attach the
+      // candidate list for the picker; do NOT guess one.
+      return {
+        ...parsed,
+        provenance: {
+          ...provenance,
+          game: "ambiguous",
+          autoSettleable: false,
+          candidates: candidates.map(m => ({
+            gameId: m.id,
+            game: `${m.away_team} @ ${m.home_team}`,
+            gameDate: new Date(m.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+            gameTime: new Date(m.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }),
+          })),
+        },
+      };
+    }
+
+    // Zero candidates — nothing to ground against. Save flagged; one-tap outcome later.
+    return { ...parsed, provenance: { ...provenance, game: "unmatched", autoSettleable: false } };
+  };
+
   const handleFile = async (file) => {
     if (!file) return;
     setStage("reading");
@@ -260,117 +415,39 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
       });
       const data = await response.json();
       const text = (data.content || []).filter(c => c.type === "text").map(c => c.text).join("");
-      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      let parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
       // Second call: look up game date/time via web search if missing from slip
-if (!parsed.gameDate || !parsed.gameTime) {
-      try {
-        const lookupResponse = await fetch("/api/claude", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-6",
-            max_tokens: 200,
-            system: `You are a sports schedule lookup assistant. Return ONLY raw JSON with no markdown: {"gameDate":"YYYY-MM-DD","gameTime":"HH:MM"}. Use 24hr ET timezone.`,
-            messages: [{ role: "user", content: `What date and time does this game start: ${parsed.sport} - ${parsed.game}?` }],
-            tools: [{ type: "web_search_20250305", name: "web_search" }]
-          }),
-        });
-        const lookupData = await lookupResponse.json();
-        const lookupText = (lookupData.content || []).filter(c => c.type === "text").map(c => c.text).join("");
-        const jsonMatch = lookupText.match(/\{[^}]+\}/);
-        const lookupParsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-        if (lookupParsed.gameDate && !parsed.gameDate) parsed.gameDate = lookupParsed.gameDate;
-        if (lookupParsed.gameTime && !parsed.gameTime) parsed.gameTime = lookupParsed.gameTime;
-      } catch(e) {}
-    }
+    // NOTE: the old web_search date-guess call was removed here. It was a
+    // second, silent guessing surface (it once invented a wrong date). Date is
+    // now derived by grounding against the real schedule inside groundBet().
 
     try {
   const oddsRes = await fetch("/api/odds", { method: "POST" });
   const oddsData = await oddsRes.json();
 
   if (oddsData.games) {
-    const game = expandTeamAbbr(parsed.game || "").toLowerCase();
-    const parsedDate = parsed.gameDate || "";
-    const parsedSport = normalizeSport(parsed.sport || "");
-    const match = oddsData.games.find(g => {
-      const home = g.home_team.toLowerCase();
-      const away = g.away_team.toLowerCase();
-      const gameDate = g.commence_time
-        ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-        : null;
-      // Filter by sport if we know it
-      if (parsedSport && g.sport_key && g.sport_key !== parsedSport) return false;
-      // Filter by date if we have one
-      if (parsedDate && gameDate && gameDate !== parsedDate) return false;
-      const homeMatch = home.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
-      const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
-      return homeMatch || awayMatch;
-    });
-    // For baseball with pitcher name — use MLB Stats API to find exact game
-    if (parsed.pitcher && (parsed.sport?.toLowerCase().includes('baseball') || parsed.sport?.toLowerCase().includes('mlb'))) {
-      try {
-        const pitcherName = parsed.pitcher.toLowerCase();
-        const searchDate = parsed.gameDate || new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-        const mlbRes = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${searchDate}&gameType=R&hydrate=probablePitcher`);
-        const mlbData = await mlbRes.json();
-        const games = mlbData.dates?.[0]?.games || [];
-        const pitcherGame = games.find(g => {
-          const awayPitcher = (g.teams?.away?.probablePitcher?.fullName?.split(' ').pop() || '').toLowerCase();
-          const homePitcher = (g.teams?.home?.probablePitcher?.fullName?.split(' ').pop() || '').toLowerCase();
-          return awayPitcher.includes(pitcherName) || homePitcher.includes(pitcherName) ||
-                 pitcherName.includes(awayPitcher) || pitcherName.includes(homePitcher);
-        });
-        if (pitcherGame) {
-          const away = pitcherGame.teams?.away?.team?.name;
-          const home = pitcherGame.teams?.home?.team?.name;
-          parsed.game = `${away} @ ${home}`;
-          parsed.gameDate = new Date(pitcherGame.gameDate).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-          parsed.gameTime = new Date(pitcherGame.gameDate).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
-          const oddsMatch = oddsData.games.find(g => {
-            const h = g.home_team.toLowerCase();
-            const a = g.away_team.toLowerCase();
-            return home.toLowerCase().split(' ').filter(w => w.length > 3).some(w => h.includes(w)) ||
-                   away.toLowerCase().split(' ').filter(w => w.length > 3).some(w => a.includes(w));
-          });
-          if (oddsMatch) parsed.gameId = oddsMatch.id;
-        } else {
-          // Pitcher lookup failed — fall back to strict team name + sport + date matching
-          const teamName = (parsed.game || '').toLowerCase();
-          const oddsMatch = oddsData.games.find(g => {
-            const h = g.home_team.toLowerCase();
-            const a = g.away_team.toLowerCase();
-            if (parsedSport && g.sport_key && g.sport_key !== parsedSport) return false;
-            if (parsedDate && g.commence_time) {
-              const gDate = new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-              if (gDate !== parsedDate) return false;
-            }
-            return h.split(' ').filter(w => w.length > 3).some(w => teamName.includes(w)) ||
-                   a.split(' ').filter(w => w.length > 3).some(w => teamName.includes(w));
-          });
-          if (oddsMatch) {
-            parsed.gameId = oddsMatch.id;
-            parsed.game = `${oddsMatch.away_team} @ ${oddsMatch.home_team}`;
-            parsed.gameDate = new Date(oddsMatch.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-            parsed.gameTime = new Date(oddsMatch.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
-          }
-        }
-      } catch(e) {}
-    }
-
-    if (match && !parsed.pitcher) {
-      parsed.gameId = match.id;
-      parsed.game = `${match.away_team} @ ${match.home_team}`;
-      if (!parsed.isLive) {
-        parsed.gameDate = new Date(match.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-        parsed.gameTime = new Date(match.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
-      }
+    if (parsed.legs && parsed.legs.length > 0) {
+      // Parlay: ground every leg through the same engine. A parlay's grounding
+      // trust is the WEAKEST of its legs — if any leg is ambiguous/unmatched,
+      // the whole ticket needs attention.
+      parsed.legs = await Promise.all(parsed.legs.map(leg => groundBet(leg, oddsData)));
+      const legStates = parsed.legs.map(l => l.provenance?.game || "unmatched");
+      const worst = legStates.includes("unmatched") ? "unmatched"
+                  : legStates.includes("ambiguous") ? "ambiguous"
+                  : legStates.every(s => s === "read") ? "read" : "matched";
+      parsed.provenance = {
+        game: worst,
+        autoSettleable: parsed.legs.every(l => l.provenance?.autoSettleable),
+      };
     } else if (parsed.isLive) {
-      // Live bet — game may be completed, search scores endpoint
+      // Live bet — game may already be complete; keep the dedicated scores
+      // lookup path. (Live grounding is its own shape; not folded into groundBet.)
+      const game = expandTeamAbbr(parsed.game || "").toLowerCase();
       try {
         const sportsToCheck = ['baseball_mlb', 'soccer_fifa_world_cup', 'soccer_usa_mls', 'basketball_nba', 'icehockey_nhl', 'americanfootball_nfl'];
         for (const sport of sportsToCheck) {
           const ticketTime = parsed.ticketTime || new Date().toISOString();
-      const scoresRes = await fetch(`/api/live-scores-lookup?sport=${sport}&game=${encodeURIComponent(game)}&ticket_time=${encodeURIComponent(ticketTime)}`);
+          const scoresRes = await fetch(`/api/live-scores-lookup?sport=${sport}&game=${encodeURIComponent(game)}&ticket_time=${encodeURIComponent(ticketTime)}`);
           if (scoresRes.ok) {
             const scoresData = await scoresRes.json();
             if (scoresData.game_id) {
@@ -382,41 +459,9 @@ if (!parsed.gameDate || !parsed.gameTime) {
           }
         }
       } catch(e) {}
-    } else if (parsed.game) {
-      parsed.game = parsed.game.replace(/\s+vs\.?\s+.*/i, '').trim();
-    }
-    // Match gameId for each parlay leg
-    if (parsed.legs && parsed.legs.length > 0) {
-      parsed.legs = parsed.legs.map(leg => {
-        const legGame = expandTeamAbbr(leg.game || "").toLowerCase();
-        const legSport = normalizeSport(leg.sport || "");
-        const legDate = leg.gameDate || "";
-        const legMatch = oddsData.games.find(g => {
-          const home = g.home_team.toLowerCase();
-          const away = g.away_team.toLowerCase();
-          const gDate = g.commence_time
-            ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-            : null;
-          // Never let a leg match a different sport's game (this is what let
-          // an MLB leg attach to an MMA fight when the extracted "game" text
-          // was wrong) or a game on a different date than the leg reported.
-          if (legSport && g.sport_key && g.sport_key !== legSport) return false;
-          if (legDate && gDate && gDate !== legDate) return false;
-          const homeMatch = home.split(' ').filter(w => w.length > 3).every(w => legGame.includes(w));
-          const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => legGame.includes(w));
-          return homeMatch || awayMatch;
-        });
-        if (legMatch) {
-          return {
-            ...leg,
-            gameId: legMatch.id,
-            game: `${legMatch.away_team} @ ${legMatch.home_team}`,
-            gameDate: new Date(legMatch.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
-            gameTime: new Date(legMatch.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false })
-          };
-        }
-        return leg;
-      });
+    } else {
+      // Single non-live bet: ground it through the unified engine.
+      parsed = await groundBet(parsed, oddsData);
     }
   }
 } catch(e) {}
@@ -469,119 +514,24 @@ if (!parsed.gameDate || !parsed.gameTime) {
         });
         const data = await response.json();
         const text = (data.content || []).filter(c => c.type === "text").map(c => c.text).join("");
-        const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+        let parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
         try {
           const oddsRes = await fetch("/api/odds", { method: "POST" });
           const oddsData = await oddsRes.json();
           if (oddsData.games) {
-            const game = expandTeamAbbr(parsed.game?.toLowerCase() || "");
-const parsedDate = parsed.gameDate || "";
-const parsedSport = normalizeSport(parsed.sport || "");
-const match = oddsData.games.find(g => {
-  const home = g.home_team.toLowerCase();
-  const away = g.away_team.toLowerCase();
-  const gameDate = g.commence_time
-    ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-    : null;
-  if (parsedSport && g.sport_key && g.sport_key !== parsedSport) return false;
-  if (parsedDate && gameDate && gameDate !== parsedDate) return false;
-  const homeMatch = home.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
-  const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => game.includes(w));
-  return homeMatch || awayMatch;
-});
-            // For baseball with pitcher name — use MLB Stats API to find exact game
-            if (parsed.pitcher && (parsed.sport?.toLowerCase().includes('baseball') || parsed.sport?.toLowerCase().includes('mlb'))) {
-              try {
-                const pitcherName = parsed.pitcher.toLowerCase();
-                const searchDate = parsed.gameDate || new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-                const mlbRes = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${searchDate}&gameType=R&hydrate=probablePitcher`);
-                const mlbData = await mlbRes.json();
-                const games = mlbData.dates?.[0]?.games || [];
-                const pitcherGame = games.find(g => {
-                  const awayPitcher = (g.teams?.away?.probablePitcher?.fullName?.split(' ').pop() || '').toLowerCase();
-                  const homePitcher = (g.teams?.home?.probablePitcher?.fullName?.split(' ').pop() || '').toLowerCase();
-                  return awayPitcher.includes(pitcherName) || homePitcher.includes(pitcherName) ||
-                         pitcherName.includes(awayPitcher) || pitcherName.includes(homePitcher);
-                });
-                if (pitcherGame) {
-                  const away = pitcherGame.teams?.away?.team?.name;
-                  const home = pitcherGame.teams?.home?.team?.name;
-                  parsed.game = `${away} @ ${home}`;
-                  parsed.gameDate = new Date(pitcherGame.gameDate).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-                  parsed.gameTime = new Date(pitcherGame.gameDate).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
-                  const oddsMatch = oddsData.games.find(g => {
-                    const h = g.home_team.toLowerCase();
-                    const a = g.away_team.toLowerCase();
-                    return home.toLowerCase().split(' ').filter(w => w.length > 3).some(w => h.includes(w)) ||
-                           away.toLowerCase().split(' ').filter(w => w.length > 3).some(w => a.includes(w));
-                  });
-                  if (oddsMatch) parsed.gameId = oddsMatch.id;
-                } else {
-                  // Pitcher lookup failed — fall back to team name matching with strict filter
-                  const teamName = (parsed.game || '').toLowerCase();
-                  const oddsMatch = oddsData.games.find(g => {
-                    const h = g.home_team.toLowerCase();
-                    const a = g.away_team.toLowerCase();
-                    if (parsedSport && g.sport_key && g.sport_key !== parsedSport) return false;
-                    if (parsedDate && g.commence_time) {
-                      const gDate = new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-                      if (gDate !== parsedDate) return false;
-                    }
-                    return h.split(' ').filter(w => w.length > 3).some(w => teamName.includes(w)) ||
-                           a.split(' ').filter(w => w.length > 3).some(w => teamName.includes(w));
-                  });
-                  if (oddsMatch) {
-                    parsed.gameId = oddsMatch.id;
-                    parsed.game = `${oddsMatch.away_team} @ ${oddsMatch.home_team}`;
-                    parsed.gameDate = new Date(oddsMatch.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-                    parsed.gameTime = new Date(oddsMatch.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
-                  }
-                }
-              } catch(e) {}
-            }
-
-            if (match && !parsed.pitcher) {
-              parsed.gameId = match.id;
-              parsed.game = `${match.away_team} @ ${match.home_team}`;
-              if (!parsed.isLive && !parsed.gameDate) {
-              parsed.gameDate = new Date(match.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-              }
-              if (!parsed.isLive && !parsed.gameTime) {
-              parsed.gameTime = new Date(match.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
-              }
-          
-            } else if (parsed.game) {
-              parsed.game = parsed.game.replace(/\s+vs\.?\s+.*/i, '').trim();
-            }
-            // Match gameId for each parlay leg
+            // Same unified grounding as handleFile — one engine, both paths.
             if (parsed.legs && parsed.legs.length > 0) {
-              parsed.legs = parsed.legs.map(leg => {
-                const legGame = expandTeamAbbr(leg.game || "").toLowerCase();
-                const legSport = normalizeSport(leg.sport || "");
-                const legDate = leg.gameDate || "";
-                const legMatch = oddsData.games.find(g => {
-                  const home = g.home_team.toLowerCase();
-                  const away = g.away_team.toLowerCase();
-                  const gDate = g.commence_time
-                    ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-                    : null;
-                  if (legSport && g.sport_key && g.sport_key !== legSport) return false;
-                  if (legDate && gDate && gDate !== legDate) return false;
-                  const homeMatch = home.split(' ').filter(w => w.length > 3).every(w => legGame.includes(w));
-                  const awayMatch = away.split(' ').filter(w => w.length > 3).every(w => legGame.includes(w));
-                  return homeMatch || awayMatch;
-                });
-                if (legMatch) {
-                  return {
-                    ...leg,
-                    gameId: legMatch.id,
-                    game: `${legMatch.away_team} @ ${legMatch.home_team}`,
-                    gameDate: leg.gameDate || new Date(legMatch.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
-gameTime: leg.gameTime || new Date(legMatch.commence_time).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }),
-                  };
-                }
-                return leg;
-              });
+              parsed.legs = await Promise.all(parsed.legs.map(leg => groundBet(leg, oddsData)));
+              const legStates = parsed.legs.map(l => l.provenance?.game || "unmatched");
+              const worst = legStates.includes("unmatched") ? "unmatched"
+                          : legStates.includes("ambiguous") ? "ambiguous"
+                          : legStates.every(s => s === "read") ? "read" : "matched";
+              parsed.provenance = {
+                game: worst,
+                autoSettleable: parsed.legs.every(l => l.provenance?.autoSettleable),
+              };
+            } else if (!parsed.isLive) {
+              parsed = await groundBet(parsed, oddsData);
             }
           }
         } catch(e) {}
