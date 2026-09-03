@@ -14,13 +14,15 @@ const DARK = "#0a0a0f";
 const CARD = "#111118";
 const BORDER = "#1e1e2e";
 const GREEN = "#2ecc71";
-const GRAY = "#6b7280";
+const GRAY = "#9ca3af";
 const LIGHT = "#d1d5db";
 
 const features = [
   { icon: "🤖", name: "Hunter — your betting coach", kicker: "Bring the hunch. Hunter brings the homework.", desc: "Ask about any game, bet, line, or idea. Hunter digs into the numbers, challenges your take, and tells you what he actually thinks — even when you don't want to hear it." },
   { icon: "🎯", name: "Daily Picks", kicker: "No edge? No bet.", desc: "Every game gets researched. When there's a play worth making, you get it. No picks forced just because you want action." },
   { icon: "🛡️", name: "Bankroll Guardrails", kicker: "Because \"I'll win it back\" is not a strategy.", desc: "Hunter keeps your bankroll, weekly goal, and bigger picture in view — especially when your gut is telling you to forget all three." },
+  { icon: "📸", name: "Snap to Log + Bet Tracker", kicker: "Your bets. Logged in seconds. Remembered forever.", desc: "Snap a photo of your bet slip and Betcierge does the rest. Every bet gets added to your history, giving you one place to see what you've bet, how you've performed, and your lifetime P&L." },
+  { icon: "📡", name: "Live Gamecast", kicker: "Every bet. Every game. One screen.", desc: "Follow all of today's action in one place with live scores, game status, and your bets attached to the games that matter to you. No bouncing between apps just to figure out where you stand." },
 ];
 
 const sharedFaqs = [
@@ -160,6 +162,26 @@ export default function Landing({ onGetStarted, onSignIn, source = "general" }) 
         <p style={{ fontSize: 12, color: GRAY, marginTop: 12 }}>3-day free trial · Rate holds while subscribed · Cancel anytime</p>
       </section>
 
+      {/* Features */}
+      <section style={{ maxWidth: 700, margin: "0 auto 60px", padding: "0 24px" }}>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>WHAT'S INSIDE</div>
+          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>This isn't another picks service.<br />It's a better way to bet.</h2>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {features.map((f, i) => (
+            <div key={i} style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 12, padding: "16px 20px", display: "flex", gap: 16, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 22, flexShrink: 0 }}>{f.icon}</span>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>{f.name}</div>
+                <div style={{ color: GOLD, fontSize: 13, fontStyle: "italic", marginBottom: 4 }}>{f.kicker}</div>
+                <div style={{ color: LIGHT, fontSize: 14, fontWeight: 500, lineHeight: 1.5 }}>{f.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* Slate Preview */}
       <section style={{ maxWidth: 480, margin: "0 auto 60px", padding: "0 24px" }}>
           <div style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 16, overflow: "hidden" }}>
@@ -215,26 +237,6 @@ export default function Landing({ onGetStarted, onSignIn, source = "general" }) 
         </div>
       </section>
 
-      {/* Features */}
-      <section style={{ maxWidth: 700, margin: "0 auto 60px", padding: "0 24px" }}>
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ fontSize: 11, color: GOLD, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>WHAT'S INSIDE</div>
-          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 700, color: "#fff" }}>This isn't another picks service.<br />It's a better way to bet.</h2>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {features.map((f, i) => (
-            <div key={i} style={{ background: CARD, border: "1px solid #1e1e2e", borderRadius: 12, padding: "16px 20px", display: "flex", gap: 16, alignItems: "flex-start" }}>
-              <span style={{ fontSize: 22, flexShrink: 0 }}>{f.icon}</span>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>{f.name}</div>
-                <div style={{ color: GOLD, fontSize: 13, fontStyle: "italic", marginBottom: 4 }}>{f.kicker}</div>
-                <div style={{ color: GRAY, fontSize: 13, lineHeight: 1.5 }}>{f.desc}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
       {/* Pricing — single tier */}
       <section style={{ maxWidth: 700, margin: "0 auto 60px", padding: "0 24px" }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
@@ -274,7 +276,7 @@ export default function Landing({ onGetStarted, onSignIn, source = "general" }) 
             </div>
             <div style={{ fontSize: 32 }}>🎯</div>
           </div>
-          {["Daily picks + full Hunter chat", "Lean Machine — extra plays beyond the daily picks", "Snap to Log bet slips", "Live Gamecast", "Full bet tracking & auto-settlement", "Bankroll guardrails & tilt protection"].map((f, i) => (
+          {["Daily picks + full Hunter chat", "Snap to Log bet slips", "Live Gamecast", "Full bet tracking & auto-settlement", "Bankroll guardrails & tilt protection"].map((f, i) => (
             <div key={i} style={{ color: LIGHT, fontSize: 13, marginBottom: 8, display: "flex", gap: 8 }}>
               <span style={{ color: GREEN }}>✓</span>{f}
             </div>
