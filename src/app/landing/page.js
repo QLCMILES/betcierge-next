@@ -144,9 +144,14 @@ export default function Landing({ onGetStarted, onSignIn, source = "general" }) 
             The Discord was <strong style={{ color: "#fff" }}>$600/mo</strong>. Founding members get all of this for <strong style={{ color: GOLD }}>{CURRENT_PRICE_DISPLAY} — rate holds while you stay subscribed.</strong>
           </p>
         ) : (
-          <p style={{ fontSize: 14, color: "#555", lineHeight: 1.7, maxWidth: 520, margin: "0 auto 32px", borderTop: "1px solid #1e1e2e", paddingTop: 16 }}>
-            NFL · NBA · MLB · Soccer · NHL · UFC · Golf · Tennis · College · Fantasy - DFS · International — every sport, every day.
-          </p>
+          <div style={{ maxWidth: 600, margin: "0 auto 32px", borderTop: "1px solid #1e1e2e", paddingTop: 16 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8, marginBottom: 10 }}>
+              {["NFL", "NBA", "MLB", "Soccer", "NHL", "UFC", "Golf", "Tennis", "College", "Fantasy - DFS", "International"].map((s) => (
+                <span key={s} style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 20, padding: "5px 14px", fontSize: 13, fontWeight: 500, color: LIGHT }}>{s}</span>
+              ))}
+            </div>
+            <div style={{ fontSize: 13, color: GRAY }}>Every sport, every day.</div>
+          </div>
         )}
         {isCaptain && (
           <div style={{ background: "#1a0f00", border: "1px solid #f5a62344", borderRadius: 12, padding: "12px 20px", marginBottom: 24, display: "inline-block" }}>
