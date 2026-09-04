@@ -154,7 +154,7 @@ function findScoreForTeam(game, teamName) {
     return n.includes(target) || target.includes(n);
   });
   if (match) return parseInt(match.score);
-  const targetWords = target.split(' ').filter(w => w.length > 3);
+  const targetWords = target.split(' ').filter(w => w.length > 2);
   match = game.scores.find(s => {
     const scoreWords = (s.name?.toLowerCase() || '').split(' ');
     return targetWords.some(w => scoreWords.includes(w));
@@ -168,23 +168,42 @@ function findMatchingGame(bet, scores) {
   const betGame = (bet.game || '').toLowerCase();
   const betDate = bet.game_date;
 
-  return scores.find(g => {
-    const home = g.home_team.toLowerCase();
-    const away = g.away_team.toLowerCase();
+  const sameDateGames = scores.filter(g => {
     const gameDate = g.commence_time
       ? new Date(g.commence_time).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
       : null;
-    const dateMatch = !betDate || !gameDate || gameDate === betDate;
-    if (!dateMatch) return false;
-
-    const exactMatch = betGame.includes(home) || betGame.includes(away);
-    if (exactMatch) return true;
-
-    const wordMatch =
-      home.split(' ').some(w => w.length > 3 && betGame.includes(w)) ||
-      away.split(' ').some(w => w.length > 3 && betGame.includes(w));
-    return wordMatch;
+    return !betDate || !gameDate || gameDate === betDate;
   });
+
+  // Exact match (full team name embedded in the bet's own game text, e.g.
+  // "Milwaukee Brewers @ Chicago Cubs") is a strong enough signal that it
+  // can't realistically collide with another game — no ambiguity check
+  // needed here, first hit wins same as before.
+  const exact = sameDateGames.find(g => {
+    const home = g.home_team.toLowerCase();
+    const away = g.away_team.toLowerCase();
+    return betGame.includes(home) || betGame.includes(away);
+  });
+  if (exact) return exact;
+
+  // FIX: fuzzy word match now allows 3-letter words (e.g. "Sox") so short
+  // nicknames like "Red Sox" can be found at all. That does mean two teams
+  // could theoretically share a short word (Red Sox / White Sox both have
+  // "sox"). Rather than silently guessing via first-match, only return a
+  // fuzzy match when it's the ONE candidate — ambiguous cases fall through
+  // to null (stays Pending, loud backstop notifies) instead of risking a
+  // wrong-game settlement.
+  const wordMatches = sameDateGames.filter(g => {
+    const home = g.home_team.toLowerCase();
+    const away = g.away_team.toLowerCase();
+    return home.split(' ').some(w => w.length > 2 && betGame.includes(w)) ||
+           away.split(' ').some(w => w.length > 2 && betGame.includes(w));
+  });
+  if (wordMatches.length > 1) {
+    console.warn(`[settle] Ambiguous game match for pick="${bet.pick}" game="${bet.game}" — ${wordMatches.length} candidates on ${betDate}, skipping`);
+    return null;
+  }
+  return wordMatches[0] || null;
 }
 
 // ─── DETERMINE RESULT ────────────────────────────────────────
@@ -220,7 +239,7 @@ function determineResult(bet, game) {
     const spreadMatch = pick.match(/([+-]?\d+\.?\d*)/);
     if (!spreadMatch) return null;
     const spread = parseFloat(spreadMatch[1]);
-    const homeWords = game.home_team.toLowerCase().split(' ').filter(w => w.length > 3);
+    const homeWords = game.home_team.toLowerCase().split(' ').filter(w => w.length > 2);
     const pickedHome = homeWords.some(w => pick.includes(w));
     const diff = pickedHome ? homeScore - awayScore : awayScore - homeScore;
     if (diff + spread === 0) return 'Push';
@@ -238,8 +257,8 @@ function determineResult(bet, game) {
   }
 
   // ── Moneyline ──
-  const homeWords = game.home_team.toLowerCase().split(' ').filter(w => w.length > 3);
-  const awayWords = game.away_team.toLowerCase().split(' ').filter(w => w.length > 3);
+  const homeWords = game.home_team.toLowerCase().split(' ').filter(w => w.length > 2);
+  const awayWords = game.away_team.toLowerCase().split(' ').filter(w => w.length > 2);
   const pickedHome = homeWords.some(w => pick.includes(w));
   const pickedAway = awayWords.some(w => pick.includes(w));
 
@@ -368,6 +387,22 @@ function matchPlayerName(propPlayer, fullName) {
   return false;
 }
 
+// FIX: same fail-safe-over-guess rule as the game matchers, applied to
+// players. A prop pick often gives just a last name (e.g. "Garcia"), and
+// box scores pool BOTH teams' rosters — common surnames (Garcia, Rodriguez,
+// Martinez, Smith...) can appear on both sides of the same game. The old
+// `.find()` silently took whichever player came first. This checks for a
+// SECOND candidate and backs off (no match — stays Pending, loud backstop
+// notifies) rather than risk crediting the wrong player's stat line.
+function findUniquePlayerMatch(players, propPlayer) {
+  const matches = players.filter(p => matchPlayerName(propPlayer, p.fullName));
+  if (matches.length > 1) {
+    console.warn(`[settle] Ambiguous player match for "${propPlayer}" — ${matches.length} candidates (${matches.map(m => m.fullName).join(', ')}), skipping`);
+    return null;
+  }
+  return matches[0] || null;
+}
+
 // ─── MLB ─────────────────────────────────────────────────────
 
 async function fetchMLBGamePks(date) {
@@ -410,17 +445,21 @@ async function settleMLBProp(bet) {
   let gamePksToSearch = games.map(g => g.gamePk);
   if (bet.game) {
     const betGame = bet.game.toLowerCase();
-    const matchingGame = games.find(g => {
+    const matchingGames = games.filter(g => {
       const away = g.awayTeam?.toLowerCase() || '';
       const home = g.homeTeam?.toLowerCase() || '';
-      return away.split(' ').some(w => w.length > 3 && betGame.includes(w)) ||
-        home.split(' ').some(w => w.length > 3 && betGame.includes(w));
+      return away.split(' ').some(w => w.length > 2 && betGame.includes(w)) ||
+        home.split(' ').some(w => w.length > 2 && betGame.includes(w));
     });
-    if (matchingGame) gamePksToSearch = [matchingGame.gamePk];
+    // Ambiguous (more than one game matches, e.g. a short shared word) —
+    // don't guess which one. Leaving gamePksToSearch unnarrowed is safe
+    // here since findUniquePlayerMatch below already refuses to guess
+    // between same-named players across games too.
+    if (matchingGames.length === 1) gamePksToSearch = [matchingGames[0].gamePk];
   }
   for (const gamePk of gamePksToSearch) {
     const players = await fetchBoxScorePlayers(gamePk);
-    const playerData = players.find(p => matchPlayerName(player, p.fullName));
+    const playerData = findUniquePlayerMatch(players, player);
     if (!playerData) continue;
     const statValue = playerData.stats[statDef.type]?.[statDef.field];
     if (statValue === undefined || statValue === null) continue;
@@ -440,11 +479,16 @@ async function fetchESPNGameId(date, game) {
     );
     const data = await res.json();
     const betGame = game.toLowerCase();
-    const event = (data.events || []).find(e => {
+    const events = (data.events || []).filter(e => {
       const name = e.name.toLowerCase();
-      return name.split(' ').filter(w => w.length > 3).some(w => betGame.includes(w));
+      return name.split(' ').filter(w => w.length > 2).some(w => betGame.includes(w));
     });
-    return event?.id || null;
+    // Ambiguous — don't guess which day's game this F5 bet belongs to.
+    if (events.length > 1) {
+      console.warn(`[settle] Ambiguous ESPN game match for game="${game}" on ${date} — ${events.length} candidates, skipping`);
+      return null;
+    }
+    return events[0]?.id || null;
   } catch { return null; }
 }
 
@@ -489,8 +533,8 @@ async function settleMLBF5(bet) {
 
   const homeName = f5.home_team?.toLowerCase() || '';
   const awayName = f5.away_team?.toLowerCase() || '';
-  const homeWords = homeName.split(' ').filter(w => w.length > 3);
-  const awayWords = awayName.split(' ').filter(w => w.length > 3);
+  const homeWords = homeName.split(' ').filter(w => w.length > 2);
+  const awayWords = awayName.split(' ').filter(w => w.length > 2);
   const pickedHome = homeWords.some(w => pick.includes(w));
   const pickedAway = awayWords.some(w => pick.includes(w));
   if (!pickedHome && !pickedAway) return null;
@@ -515,20 +559,25 @@ async function settleTeamTotal(bet) {
     const games = await fetchMLBGamePks(bet.game_date);
     if (!games.length) return null;
     const betGame = bet.game.toLowerCase();
-    const matchingGame = games.find(g => {
+    const matchingGames = games.filter(g => {
       const away = g.awayTeam?.toLowerCase() || '';
       const home = g.homeTeam?.toLowerCase() || '';
-      return away.split(' ').some(w => w.length > 3 && betGame.includes(w)) ||
-        home.split(' ').some(w => w.length > 3 && betGame.includes(w));
+      return away.split(' ').some(w => w.length > 2 && betGame.includes(w)) ||
+        home.split(' ').some(w => w.length > 2 && betGame.includes(w));
     });
+    if (matchingGames.length > 1) {
+      console.warn(`[settle] Ambiguous team-total game match for game="${bet.game}" on ${bet.game_date} — ${matchingGames.length} candidates, skipping`);
+      return null;
+    }
+    const matchingGame = matchingGames[0];
     if (!matchingGame) return null;
     const res = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&gamePk=${matchingGame.gamePk}&hydrate=linescore`);
     const data = await res.json();
     const gameData = data.dates?.[0]?.games?.[0];
     const awayName = matchingGame.awayTeam?.toLowerCase() || '';
     const homeName = matchingGame.homeTeam?.toLowerCase() || '';
-    const pickedHome = homeName.split(' ').some(w => w.length > 3 && pick.includes(w));
-    const pickedAway = awayName.split(' ').some(w => w.length > 3 && pick.includes(w));
+    const pickedHome = homeName.split(' ').some(w => w.length > 2 && pick.includes(w));
+    const pickedAway = awayName.split(' ').some(w => w.length > 2 && pick.includes(w));
     if (!pickedHome && !pickedAway) return null;
     const teamRuns = pickedHome ? gameData?.teams?.home?.score : gameData?.teams?.away?.score;
     if (teamRuns === undefined || teamRuns === null) return null;
@@ -578,7 +627,7 @@ async function settleNBAProp(bet) {
   if (!games.length) return null;
   for (const game of games) {
     const players = await fetchNBABoxScorePlayers(game.gameId);
-    const playerData = players.find(p => matchPlayerName(player, p.fullName));
+    const playerData = findUniquePlayerMatch(players, player);
     if (!playerData) continue;
     const actual = parseInt(playerData.stats[statField]);
     if (isNaN(actual)) continue;
@@ -636,7 +685,7 @@ async function settleNHLProp(bet) {
   if (!games.length) return null;
   for (const game of games) {
     const players = await fetchNHLBoxScorePlayers(game.gameId);
-    const playerData = players.find(p => matchPlayerName(player, p.fullName));
+    const playerData = findUniquePlayerMatch(players, player);
     if (!playerData) continue;
     const actual = parseFloat(playerData.stats[statField]);
     if (isNaN(actual)) continue;
@@ -713,7 +762,7 @@ async function settleNFLProp(bet) {
   if (!games.length) return null;
   for (const game of games) {
     const players = await fetchNFLBoxScorePlayers(game.gameId);
-    const playerData = players.find(p => matchPlayerName(player, p.fullName));
+    const playerData = findUniquePlayerMatch(players, player);
     if (!playerData) continue;
     const actual = parseFloat(playerData.stats[statField]);
     if (isNaN(actual)) continue;
@@ -757,8 +806,17 @@ async function settleLeg(leg, allScores) {
   }
 
   const match = findMatchingGame(leg, allScores);
-  if (!match) return null;
-  return determineResult(leg, match);
+  if (match) {
+    const result = determineResult(leg, match);
+    if (result !== null) return result;
+  }
+  // FIX: same MLB Stats API fallback as the straight-bet path — a parlay
+  // leg that misses on Odds API (or fails team-parsing) gets a second shot
+  // via clean MLB Stats API team names instead of being stuck forever.
+  if (sport.includes('mlb') || sport.includes('baseball')) {
+    return await settleMLBViaStatsAPI(leg);
+  }
+  return null;
 }
 
 async function settleParlays(allScores) {
@@ -854,12 +912,20 @@ async function settleMLBViaStatsAPI(bet) {
   if (!games.length) return null;
 
   const betGame = (bet.game || '').toLowerCase();
-  const match = games.find(g => {
+  const candidates = games.filter(g => {
     const away = g.awayTeam?.toLowerCase() || '';
     const home = g.homeTeam?.toLowerCase() || '';
-    return away.split(' ').some(w => w.length > 3 && betGame.includes(w)) ||
-           home.split(' ').some(w => w.length > 3 && betGame.includes(w));
+    return away.split(' ').some(w => w.length > 2 && betGame.includes(w)) ||
+           home.split(' ').some(w => w.length > 2 && betGame.includes(w));
   });
+  // FIX: same fail-safe-over-guess rule as findMatchingGame — the 3-letter
+  // word floor can make a short nickname (e.g. "Sox") match more than one
+  // game on the same date. Only settle when it's unambiguous.
+  if (candidates.length > 1) {
+    console.warn(`[settle] Ambiguous MLB Stats API match for pick="${bet.pick}" game="${bet.game}" — ${candidates.length} candidates on ${bet.game_date}, skipping`);
+    return null;
+  }
+  const match = candidates[0];
   if (!match) return null;
 
   try {
@@ -886,15 +952,15 @@ const awayScore = gameData?.teams?.away?.score;
       const spreadMatch = pick.match(/([+-]?\d+\.?\d*)/);
       if (!spreadMatch) return null;
       const spread = parseFloat(spreadMatch[1]);
-      const homeWords = match.homeTeam.toLowerCase().split(' ').filter(w => w.length > 3);
+      const homeWords = match.homeTeam.toLowerCase().split(' ').filter(w => w.length > 2);
       const pickedHome = homeWords.some(w => pick.includes(w));
       const diff = pickedHome ? homeScore - awayScore : awayScore - homeScore;
       if (diff + spread === 0) return 'Push';
       return diff + spread > 0 ? 'Win' : 'Loss';
     }
 
-    const homeWords = match.homeTeam.toLowerCase().split(' ').filter(w => w.length > 3);
-    const awayWords = match.awayTeam.toLowerCase().split(' ').filter(w => w.length > 3);
+    const homeWords = match.homeTeam.toLowerCase().split(' ').filter(w => w.length > 2);
+    const awayWords = match.awayTeam.toLowerCase().split(' ').filter(w => w.length > 2);
     const pickedHome = homeWords.some(w => pick.includes(w));
     const pickedAway = awayWords.some(w => pick.includes(w));
     if (!pickedHome && !pickedAway) return null;
@@ -1140,6 +1206,14 @@ export async function GET(request) {
         if (match) {
           result = determineResult(bet, match);
           settlementLog.push({ id: bet.id, pick: bet.pick, method: 'odds_api', result });
+        }
+        // FIX: MLB Stats API fallback — previously this branch had none, so
+        // any Odds-API miss or team-parse failure (e.g. "Brewers ML" not
+        // resolving against the matched game) left the bet stuck Pending
+        // forever with no second attempt. Mirrors settleDailyPicks().
+        if (result === null && (sport.includes('mlb') || sport.includes('baseball'))) {
+          result = await settleMLBViaStatsAPI(bet);
+          settlementLog.push({ id: bet.id, pick: bet.pick, method: 'mlb_stats_fallback', result });
         }
       }
 

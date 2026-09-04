@@ -2515,7 +2515,15 @@ function Gamecast({ bets, parlays = [], onNav }) {
   const activeBets = bets.filter(b => !b.isParlay && b.gameDate === today && b.betType !== 'manual_adjustment');
   const todayParlays = bets.filter(b => b.isParlay && b.gameDate === today);
   const parlayGameIds = todayParlays.flatMap(p => (p.legs || []).map(l => l.gameId).filter(Boolean));
-  const gameIds = [...new Set([...activeBets.map(b => b.gameId).filter(Boolean), ...parlayGameIds])];
+  // FIX (blank Pending boxes): straightGameIds drives the standalone
+  // "Straight Bet Game Cards" below — it must only include games from your
+  // actual straight bets. Parlay leg games are already shown inside their
+  // own parlay card; including them here produced an empty ghost card
+  // (no game name, no bets) for any parlay-leg game with no matching
+  // straight bet. gameIds (the union) is kept separately since the
+  // live-scores fetch still needs parlay leg games too.
+  const straightGameIds = [...new Set(activeBets.map(b => b.gameId).filter(Boolean))];
+  const gameIds = [...new Set([...straightGameIds, ...parlayGameIds])];
 
   const fetchScores = async () => {
     if (!gameIds.length) { setLoading(false); return; }
@@ -2657,7 +2665,7 @@ function Gamecast({ bets, parlays = [], onNav }) {
           );
         })}
         {/* Straight Bet Game Cards */}
-        {gameIds.map(gameId => {
+        {straightGameIds.map(gameId => {
           const score = scores.find(s => s.game_id === gameId);
           const gameBets = activeBets.filter(b => b.gameId === gameId);
           const firstBet = gameBets[0];
