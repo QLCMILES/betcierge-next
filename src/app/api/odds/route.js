@@ -8,7 +8,7 @@ const isNBASeason = month >= 10 || month <= 6; // Oct-Jun
 const isNHLSeason = month >= 10 || month <= 6; // Oct-Jun
 const isMLBSeason = month >= 3 && month <= 10; // Mar-Oct
 const isNCAABSeason = month >= 11 || month <= 4; // Nov-Apr
-const isNCAAFSeason = month >= 8 && month <= 1; // Aug-Jan
+const isNCAAFSeason = month >= 8 || month <= 1; // Aug-Jan
 
 const SPORTS = [
   ...(isMLBSeason ? ['baseball_mlb'] : []),
