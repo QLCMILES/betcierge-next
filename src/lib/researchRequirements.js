@@ -122,6 +122,72 @@ export const REQUIREMENT_META = {
     instruction: "Batter-vs-pitcher career history is SUPPLEMENTARY, used ONLY when the sample is meaningfully large. Small BvP samples are contaminated by age, arsenal changes, and park — never treat a tiny BvP line as primary evidence.",
     supplementary: true, // never a required primary slot; informs only when sample is meaningful
   },
+
+  // ── Football (NFL + NCAAF) ───────────────────────────────────────────────
+  // Built Sep 8 from Miles's 6 core signals + the three-way review synthesis
+  // (ChatGPT/Manus/Gemini). Shared by both NFL and NCAAF via FOOTBALL_BASELINE;
+  // NCAAF adds recruiting/home-field on top. Design decisions encoded here:
+  //  - Injuries are CRITICAL but NOT a code hard gate (no structured football
+  //    injury feed integrated; all three reviewers agreed). "Questionable"
+  //    RESOLVES the slot (official designation found) — only a failed lookup of
+  //    a bet-material player is unresolved. Provenance (official report vs. web)
+  //    stated in the finding.
+  //  - QB matchup is its own domain (ChatGPT's "missing sixth signal"), not
+  //    folded into offensive efficiency.
+  //  - Rivalry/motivation is NOT a slot (all three: narrative trap) — it lives
+  //    in Stage 2 framing prose, not here. Only verifiable facts are slots.
+  //  - Week-1/early-season thin-sample handling is baked into the efficiency
+  //    and injury instructions (no real current-season sample yet).
+  offensive_efficiency_both: {
+    label: "Both teams' offensive efficiency",
+    instruction: "Establish BOTH teams' offensive efficiency — EPA/play or DVOA, yards/play, red-zone TD%, and third-down conversion. Weight recent form over season average when they diverge. EARLY SEASON: if fewer than 3 games have been played this season, say so explicitly, lean on returning production / prior-season efficiency with an explicit staleness caveat, and flag the sample as thin — do NOT present a stale or tiny sample as if it were settled.",
+    turn1: true,
+  },
+  defensive_efficiency_both: {
+    label: "Both teams' defensive efficiency",
+    instruction: "Establish BOTH teams' defensive efficiency — defensive EPA/play or DVOA, success rate allowed, red-zone defense, and third-down stop rate. Weight recent form over season average when they diverge. EARLY SEASON: if fewer than 3 games have been played this season, say so explicitly, lean on returning production / prior-season data with a staleness caveat, and flag the sample as thin.",
+    turn1: true,
+  },
+  qb_form_and_matchup_both: {
+    label: "Both QBs' form + matchup",
+    instruction: "For BOTH starting QBs, establish more than raw completion%/YPA: recent efficiency, performance under pressure, turnover-worthy-play / interception tendency, mobility where relevant, and specifically how each QB projects against THIS opponent's coverage and pressure profile. The core question is 'can this quarterback function against what this defense does' — answer it directly, not with a generic team-offense number.",
+    turn1: true,
+  },
+  trenches_matchup: {
+    label: 'Trenches matchup (O-line vs D-line)',
+    instruction: "Establish who wins in the trenches, both directions: O-line run-block grade vs. opposing run-defense, and O-line pass-protection grade vs. opposing pass-rush (PFF or equivalent win rates). This is a primary handicapping signal, not a footnote — a decisive trench edge often drives the whole game.",
+    turn1: true,
+  },
+  pass_rush_pressure: {
+    label: 'Pass rush / QB pressure',
+    instruction: "Establish each defense's ability to pressure the QB — pressure rate, sack rate, and pass-rush win rate, especially WITHOUT blitzing — against the opposing O-line's pass-block win rate and the QB's time-to-throw and sacks taken. A defense that generates pressure with four is a real, often underpriced edge; a QB who folds under pressure against a strong rush is a real fade.",
+    turn1: true,
+  },
+  key_injuries_both: {
+    label: 'Key injuries / availability, both teams',
+    instruction: "Establish the availability of every player MATERIAL to this specific bet on BOTH teams — the starting QB always, plus any player whose absence would move this line (LT vs. a top edge rusher, WR1, a defense's key pass rusher, a lead back for a total). Report each by official designation (Out / Doubtful / Questionable / Probable / Available). CRITICAL DISTINCTION: an official 'Questionable' (or any posted designation) RESOLVES this slot — you found the official status; then weigh it in the pick. The slot is UNRESOLVED only when a bet-material player's status could not be established at all. State provenance in the finding: whether each status came from an official team/conference/league report (high confidence) or was inferred from news/beat coverage (lower confidence). NCAAF NOTE: Power 4 conferences (SEC, Big Ten, Big 12, ACC) now publish enforced availability reports; Group of 5 / FCS programs often do not — if a bet-material player's status genuinely cannot be found for such a game, mark unavailable and say what you checked.",
+    turn1: true,
+  },
+  key_number_awareness: {
+    label: 'Key-number awareness (spread)',
+    instruction: "For this spread, establish exactly where the current number sits relative to football's key margins — 3, 7, 10, 14 — and treat the half-point hook lines (3.5, 7.5, 10.5) as their own distinct signal, NOT a rounding detail: +3.5 covers a 3-point loss that +3 does not; laying -3.5 needs a 4-point win, not just any win. Note whether the line has crossed a key number since open and whether the current price fairly reflects the hook. Never treat -3.5 and -3 (or +2.5 and +3) as the same bet — flag the difference explicitly.",
+  },
+  weather_detail_football: {
+    label: 'Weather detail (football totals)',
+    instruction: "Establish game-time wind, precipitation, and temperature and how they bear on this total. Wind 15+ mph meaningfully suppresses the passing game and kicking (favors under); heavy precipitation and extreme cold do the same. Dome/retractable-roof games negate this — say so. If the forecast isn't reliable yet (more than ~48h out), mark unavailable rather than guessing.",
+  },
+  pace_and_script_fit: {
+    label: 'Pace + game-script fit',
+    instruction: "Establish both teams' pace (seconds/play, plays/game) and the likely game script — who is expected to lead/trail and how that shapes run/pass volume and clock. A total lives or dies on pace and script; a spread can hinge on whether the favorite's script runs up the score or milks the clock.",
+  },
+  recruiting_talent_gap: {
+    label: 'Recruiting / roster talent gap (NCAAF)',
+    instruction: "Establish the roster-talent gap between the two programs — recruiting composite (e.g. 247 team talent), blue-chip ratio, returning production, and net transfer-portal movement. In college the raw talent disparity between programs is often the single biggest driver, especially Power 4 vs. Group of 5 or FCS. This is a season-stable prior, answerable once — not per-game breaking news.",
+  },
+  home_field_and_crowd: {
+    label: 'Home field / crowd (NCAAF)',
+    instruction: "Establish this venue's home-field effect where it's quantifiable — home/road ATS splits, crowd-driven false-start/quiet-count disruption, altitude or unusual travel, and notable environment. Treat as a supporting prior, not per-game news. Do not inflate it into a decisive factor without real evidence.",
+  },
 };
 
 // ── The requirement sets, keyed by sport × market ────────────────────────
@@ -131,6 +197,18 @@ export const REQUIREMENT_META = {
 // means baseline fully covers that bet. isMarketFullyMapped() treats a market
 // as mapped if it's a key in the sport block at all (even with an empty
 // array), so an intentionally-empty add-on is NOT mistaken for an unmapped market.
+// Shared football core (Fork 1, Sep 8): the 6 signals every football pick runs,
+// referenced by both the NFL and NCAAF blocks below so the common set is
+// defined once. Order is the research priority order (all six are turn1).
+const FOOTBALL_BASELINE = [
+  'offensive_efficiency_both',
+  'defensive_efficiency_both',
+  'qb_form_and_matchup_both',
+  'trenches_matchup',
+  'pass_rush_pressure',
+  'key_injuries_both',
+];
+
 export const REQUIREMENTS = {
   MLB: {
     _baseline: [
@@ -172,10 +250,48 @@ export const REQUIREMENTS = {
       'bvp_history_supplementary',
     ],
   },
-  // NFL / NCAAF: added later as their own blocks, same engine. When added,
-  // material_conditions (weather) becomes heavy-weight baseline and the
-  // "starter" keys are replaced by unit-metric keys (o-line, secondary
-  // grades, QB status) per the review's football-templating note.
+  // ── Football (NFL + NCAAF) ─────────────────────────────────────────────
+  // Fork 1 (resolved Sep 8): two separate sport blocks, but the shared 6-signal
+  // baseline is declared ONCE below (FOOTBALL_BASELINE) and referenced by both,
+  // so there's a single source of truth for what's common and clean separation
+  // for what differs (NCAAF's critical list and add-ons legitimately diverge
+  // from NFL's — see CRITICAL / CRITICAL_UNAVAILABLE_ALLOW).
+  NFL: {
+    _baseline: [...FOOTBALL_BASELINE],
+    // Baseline fully covers a straight who-wins bet.
+    moneyline: [],
+    spread: [
+      'key_number_awareness',
+    ],
+    total: [
+      'weather_detail_football',
+      'pace_and_script_fit',
+    ],
+    // NFL first half — same core handicap, no first-half-specific add-on yet.
+    first_half: [],
+    prop: [
+      // Props lean on the baseline (QB/efficiency/injuries already cover most
+      // player context); no football prop-specific slots defined yet.
+    ],
+  },
+  NCAAF: {
+    // Same 6-signal core as NFL, plus the two college-specific priors.
+    _baseline: [
+      ...FOOTBALL_BASELINE,
+      'recruiting_talent_gap',
+      'home_field_and_crowd',
+    ],
+    moneyline: [],
+    spread: [
+      'key_number_awareness',
+    ],
+    total: [
+      'weather_detail_football',
+      'pace_and_script_fit',
+    ],
+    first_half: [],
+    prop: [],
+  },
 };
 
 // ── Critical slots, keyed by sport × market ──────────────────────────────
@@ -238,6 +354,54 @@ export const CRITICAL = {
       // NON-critical: player_handedness_splits, lineup_position, park_or_category_factor
     ],
   },
+  NFL: {
+    // All 6 core signals are critical — Miles's baseline is the handicap.
+    // key_injuries_both is critical but NOT a hard gate (no structured feed);
+    // "Questionable" resolves it, only a failed lookup of a bet-material player
+    // leaves it unresolved. See CRITICAL_UNAVAILABLE_ALLOW (NFL: none — an
+    // NFL "unavailable" is a research failure, not a data reality).
+    _baseline: [
+      'offensive_efficiency_both',
+      'defensive_efficiency_both',
+      'qb_form_and_matchup_both',
+      'trenches_matchup',
+      'pass_rush_pressure',
+      'key_injuries_both',
+    ],
+    moneyline: [],
+    spread: [
+      'key_number_awareness',   // critical for a spread (Miles: key numbers decide spreads)
+    ],
+    total: [
+      'weather_detail_football',  // critical for a total — wind/precip drive scoring
+      'pace_and_script_fit',      // critical for a total — pace/script is the total
+    ],
+    first_half: [],
+    prop: [],
+  },
+  NCAAF: {
+    // Same critical core as NFL. recruiting_talent_gap and home_field_and_crowd
+    // are baseline but NON-critical — strong priors that inform, never block
+    // (a G5 game with no talent-composite data should still be pickable).
+    _baseline: [
+      'offensive_efficiency_both',
+      'defensive_efficiency_both',
+      'qb_form_and_matchup_both',
+      'trenches_matchup',
+      'pass_rush_pressure',
+      'key_injuries_both',
+    ],
+    moneyline: [],
+    spread: [
+      'key_number_awareness',
+    ],
+    total: [
+      'weather_detail_football',
+      'pace_and_script_fit',
+    ],
+    first_half: [],
+    prop: [],
+  },
 };
 
 // ── Unavailable policy for CRITICAL slots ────────────────────────────────
@@ -263,6 +427,21 @@ export const CRITICAL = {
 export const CRITICAL_UNAVAILABLE_ALLOW = {
   MLB: {
     // slot_key: true,   // ← publish even if this CRITICAL slot is `unavailable`
+  },
+  // NFL: intentionally EMPTY. Power/pro injury reporting is mandated and
+  // enforced, so an NFL injury slot coming back `unavailable` is a research
+  // failure, not a data reality — refuse, don't publish blind.
+  NFL: {},
+  // NCAAF (Fork 3, Miles Sep 8): allow key_injuries_both to publish when
+  // genuinely `unavailable`. Rationale: Group of 5 / FCS programs are not
+  // required to publish availability reports, so for those games the info may
+  // truly not exist (vs. "wasn't found"). Miles keeps G5 in because those soft
+  // lines are a real profit center — cutting them to avoid the data gap would
+  // throw out the edge. The instruction already forces the model to (a) confine
+  // "unavailable" to bet-MATERIAL players and (b) state what it checked, so a
+  // Power 4 game (which does publish) should essentially never hit this path.
+  NCAAF: {
+    key_injuries_both: true,
   },
 };
 
