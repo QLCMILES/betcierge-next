@@ -22,6 +22,7 @@ import {
   evaluateEvidence,
   REQUIREMENT_META,
 } from './researchRequirements';
+import { formatPeriodOddsForPrompt } from './periodOdds';
 
 const MODEL = 'claude-sonnet-4-6';
 const MAX_OUTPUT_TOKENS = 16000;
@@ -97,12 +98,26 @@ After researching, report an "evidence" entry for each item listed above. This i
   ]`
     : '';
 
+  // Sep 10 period-markets build: real, code-fetched period-market odds
+  // (F5, first half, etc.), when this sport has them active — see
+  // periodMarketsConfig.js / periodOdds.js. This is the actual fix, not
+  // just the guard around it: the model now reasons from REAL captured
+  // numbers instead of self-reporting a period price from its own search,
+  // which is exactly how the Sep 8 incident's "-115" got invented.
+  const periodOddsText = candidate.original_period_odds
+    ? formatPeriodOddsForPrompt(candidate.original_period_odds, candidate.period_home_team, candidate.period_away_team)
+    : null;
+  const periodOddsBlock = periodOddsText
+    ? `\nREAL PERIOD-MARKET ODDS (captured directly from the odds provider — these are the ONLY period-market numbers you may use; do not estimate, calculate, or invent any other period line or price):\n${periodOddsText}\n\nIf you recommend a period-market bet (F5, first half, etc.), you MUST use one of the exact lines/prices listed above, worded to match. If none of the period lines above represent a good edge, recommend a full-game bet instead — do not invent a period number that isn't listed.\n`
+    : '';
+
   return `You are Hunter, an elite sports betting analyst. Today is ${today_display}.
 
 This is STAGE 2 — deep research on exactly ONE game. You have already identified this candidate as worth researching:
 Game: ${candidate.game}
 Sport: ${candidate.sport}
 Proposed angle: ${candidate.proposed_pick} (${candidate.stage1_reason})
+${periodOddsBlock}
 
 You are researching THIS GAME ONLY. Do not discuss or reference any other game, any other sport, or any other matchup anywhere in your search queries, your reasoning, or your written insight. This isolation is deliberate — mixing in other games' context is exactly the failure mode we are protecting against.
 

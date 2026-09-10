@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { fetchPeriodOddsForEvent } from '../../../lib/periodOdds';
 
 // Synchronous by design (not Batches API) — this step needs a guaranteed
 // timely response right up against each candidate's own publish deadline.
@@ -42,6 +43,12 @@ const TOTAL_PUBLISH_THRESHOLD = 7.0;
 const MAX_TOTALS_PER_DAY = 2;
 const DAILY_PICK_CAP = 3;
 const CORRELATION_CAP_PER_SPORT_BETTYPE = 2;
+// Sep 10 review, Fork 4: max picks (any bet type) on the SAME individual
+// game. 2 permits a genuinely strong game to publish both an F5 and a
+// full-game angle (Manus's "looser" option — real double exposure, but not
+// blocking a legitimately strong same-game pair); 1 would be the strictest
+// read of "these are the same underlying edge." Miles's call to tune.
+const PER_GAME_CORRELATION_CAP = 2;
 const ELITE_OVERRIDE_THRESHOLD = 8.5; // a pick this strong publishes as a genuine 4th+ pick even when the daily cap is full — never bumps an existing pick (Miles, Aug 3). Does NOT override the correlation cap, which is a risk-concentration guard, not a quality gate.
 
 // Same logic as settle-bets.js's inferBetType() — deriving from the ACTUAL
@@ -56,19 +63,76 @@ const ELITE_OVERRIDE_THRESHOLD = 8.5; // a pick this strong publishes as a genui
 // output, not something to special-case. Strip the known odds value out
 // first if present, so an embedded "+120" doesn't get misread as a spread
 // number and misclassify a moneyline pick as a runline.
+//
+// Sep 10 period-markets review, item 1: period-market text (F5, first
+// half, etc.) used to fall through into plain "runline"/"moneyline" —
+// which is exactly how the Sep 8 incident's pick evaded the correlation
+// cap (an F5 run line silently counted as a full-game run line). Period
+// detection now runs first and PREFIXES the result (e.g. "f5_runline",
+// "first_half_moneyline") rather than replacing it — the underlying
+// market shape is still classified by the exact same rules either way,
+// so this doesn't duplicate the classifier, just names the bucket
+// correctly. See PERIOD_MARKET_PREFIXES below for how this bet_type is
+// then used by the stop-ship guard in finalizePicks().
+const PERIOD_MARKERS = [
+  { period: 'f5', pattern: /\bf5\b|first\s*5|1st\s*5/ },
+  { period: 'first_half', pattern: /\bfirst half\b|\b1h\b/ },
+  { period: 'first_quarter', pattern: /\bfirst quarter\b|\b1q\b/ },
+  { period: 'first_period', pattern: /\bfirst period\b|\b1p\b/ },
+  { period: 'first_set', pattern: /\bfirst set\b|\bs1\b/ },
+];
+
+function detectPeriodMarker(pLower) {
+  for (const { period, pattern } of PERIOD_MARKERS) {
+    if (pattern.test(pLower)) return period;
+  }
+  return null;
+}
+
 function inferBetTypeFromPickText(pickText, oddsText) {
   if (!pickText) return 'unknown';
   let p = pickText.toLowerCase();
   if (oddsText) {
     p = p.split(oddsText.toLowerCase().trim()).join('');
   }
-  if (p.includes(' & ') || p.includes(' and ')) return 'combo';
-  if (p.includes('both teams to score') || p.includes('btts')) return 'btts';
-  if ((p.includes('over') || p.includes('under')) && p.match(/\d+\.?\d*/)) return 'total';
-  if (p.match(/[+-]\d+\.?\d+/) && !p.match(/^[+-]\d{3,}$/)) return 'runline';
-  if (p.includes(' ml') || p.endsWith(' ml') || p.includes('moneyline')) return 'moneyline';
-  return 'moneyline';
+  const period = detectPeriodMarker(p);
+
+  let market;
+  if (p.includes(' & ') || p.includes(' and ')) market = 'combo';
+  else if (p.includes('both teams to score') || p.includes('btts')) market = 'btts';
+  else if ((p.includes('over') || p.includes('under')) && p.match(/\d+\.?\d*/)) market = 'total';
+  else if (p.match(/[+-]\d+\.?\d+/) && !p.match(/^[+-]\d{3,}$/)) market = 'runline';
+  else if (p.includes(' ml') || p.endsWith(' ml') || p.includes('moneyline')) market = 'moneyline';
+  else market = 'moneyline';
+
+  return period ? `${period}_${market}` : market;
 }
+
+// Sep 10 period-markets review. This pipeline has no verified odds source
+// for ANY period market until PERIOD_MARKET_PUBLISHING_ENABLED is flipped
+// on below. Kept as its own list (rather than a regex on betType) so it
+// stays in lockstep with PERIOD_MARKERS above with no risk of drifting
+// apart. Consumed by parsePeriodBetType() just below.
+const PERIOD_MARKET_PREFIXES = ['f5_', 'first_half_', 'first_quarter_', 'first_period_', 'first_set_'];
+
+// Splits a prefixed bet type (e.g. "f5_runline") back into its period type
+// ("f5") and market shape ("runline") for checkPeriodFreshness(). Returns
+// null for a non-period bet type.
+function parsePeriodBetType(betType) {
+  for (const prefix of PERIOD_MARKET_PREFIXES) {
+    if ((betType || '').startsWith(prefix)) {
+      return { periodType: prefix.slice(0, -1), marketShape: betType.slice(prefix.length) };
+    }
+  }
+  return null;
+}
+
+// Sep 10 review: the explicit human checkpoint. Starts false. Flip to true
+// only after deploying and watching a real candidate go Stage 1 clearance
+// -> period-odds fetch -> Stage 2 research (with real numbers in the
+// prompt) -> this freshness check, end to end, against live data. See
+// BETC_PERIOD_MARKETS_V2_REVIEW_SYNTHESIS.md, ship-first item 5.
+const PERIOD_MARKET_PUBLISHING_ENABLED = false;
 
 function parseOddsString(str) {
   const out = {};
@@ -163,7 +227,69 @@ async function fetchLiveOddsForGame(gameName) {
     moneyline: h2h?.outcomes?.map(o => `${o.name}: ${o.price}`).join(', ') || null,
     spread: spread?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', ') || null,
     total: total?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', ') || null,
+    // Sep 10 period-markets build — see the matching addition in
+    // research-scheduler.js's fetchLiveOddsForGame for why this is here.
+    eventId: match.id || null,
+    home_team: match.home_team || null,
+    away_team: match.away_team || null,
   };
+}
+
+// ── Period-market freshness (Sep 10 review, item 5 — "the single most
+// important line in this entire build," per the review synthesis) ────────
+// Compares the period odds captured at Stage 1 clearance
+// (candidate.original_period_odds) against a fresh re-fetch taken right
+// now, at final-confirmation time — same staleness-threshold logic as the
+// moneyline/spread/total branches above, just against real period numbers
+// instead of skipping entirely. Returns { stale, reason, freshPeriodOdds }
+// so the caller can persist the fresh snapshot regardless of the verdict.
+async function checkPeriodFreshness(periodType, marketShape, candidate, eventId) {
+  const original = candidate.original_period_odds?.[periodType];
+  if (!original) {
+    return { stale: true, reason: `No original period odds were ever captured for "${periodType}" on this candidate.`, freshPeriodOdds: null };
+  }
+
+  const freshPeriodOdds = await fetchPeriodOddsForEvent(candidate.sport_key, eventId, process.env.ODDS_API_KEY);
+  const fresh = freshPeriodOdds?.[periodType];
+  if (!fresh || !fresh[marketShape]) {
+    return { stale: true, reason: `No fresh "${periodType}" odds available at final confirmation (provider pulled the line or it's not currently posted).`, freshPeriodOdds };
+  }
+
+  if (marketShape === 'moneyline') {
+    const origML = original.moneyline;
+    const freshML = fresh.moneyline;
+    if (!origML || !freshML) return { stale: true, reason: `Missing ${periodType} moneyline in original or fresh snapshot.`, freshPeriodOdds };
+    const diffHome = Math.abs(freshML.home - origML.home);
+    const diffAway = Math.abs(freshML.away - origML.away);
+    if (Math.max(diffHome, diffAway) >= MONEYLINE_REJECT_CENTS) {
+      return { stale: true, reason: `${periodType} moneyline moved ${Math.max(diffHome, diffAway)} cents since research (home ${origML.home} → ${freshML.home}, away ${origML.away} → ${freshML.away})`, freshPeriodOdds };
+    }
+    return { stale: false, reason: null, freshPeriodOdds };
+  }
+
+  if (marketShape === 'spread' || marketShape === 'runline') {
+    const origSp = original.spread;
+    const freshSp = fresh.spread;
+    if (!origSp || !freshSp) return { stale: true, reason: `Missing ${periodType} spread in original or fresh snapshot.`, freshPeriodOdds };
+    const diff = Math.abs(freshSp.home_line - origSp.home_line);
+    if (diff >= POINT_REJECT) {
+      return { stale: true, reason: `${periodType} spread moved ${diff} points since research (${origSp.home_line} → ${freshSp.home_line})`, freshPeriodOdds };
+    }
+    return { stale: false, reason: null, freshPeriodOdds };
+  }
+
+  if (marketShape === 'total') {
+    const origTot = original.total;
+    const freshTot = fresh.total;
+    if (!origTot || !freshTot) return { stale: true, reason: `Missing ${periodType} total in original or fresh snapshot.`, freshPeriodOdds };
+    const diff = Math.abs(freshTot.over_line - origTot.over_line);
+    if (diff >= TOTAL_REJECT) {
+      return { stale: true, reason: `${periodType} total moved ${diff} since research (${origTot.over_line} → ${freshTot.over_line})`, freshPeriodOdds };
+    }
+    return { stale: false, reason: null, freshPeriodOdds };
+  }
+
+  return { stale: true, reason: `Unrecognized period market shape "${marketShape}".`, freshPeriodOdds };
 }
 
 function extractText(content) {
@@ -562,18 +688,66 @@ async function finalizePicks() {
         }).eq('id', candidate.id);
         continue;
       }
-      const freshness = checkFreshness(
-        betType,
-        { moneyline: candidate.fresh_moneyline, spread: candidate.fresh_spread, total: candidate.fresh_total },
-        liveOdds
-      );
-      if (freshness.stale) {
-        console.log(`FINAL_STALE_LINE_MOVE: "${candidate.game}" \u2014 ${freshness.reason} \u2014 discarding rather than publishing a dead edge.`);
-        await supabase.from('game_candidates').update({
-          status: 'discarded_stale_final',
-          notes: `Discarded at final confirmation: ${freshness.reason}`,
-        }).eq('id', candidate.id);
-        continue;
+
+      // ── PERIOD_MARKET_GUARD (Sep 10 review) ───────────────────────────
+      // PERIOD_MARKET_PUBLISHING_ENABLED starts false. This is the
+      // explicit, human-flipped checkpoint the review called for — "do
+      // not lift the guard because the fetch merely exists; lift it once
+      // the freshness check is demonstrably running against real
+      // numbers." Flip to true only after watching a real Stage-1 ->
+      // Stage-2 -> finalize cycle complete successfully against live
+      // data. Until then, EVERY period-market pick refuses unconditionally
+      // — this is deliberately the same safe behavior as tonight's
+      // stop-ship guard, just now built on top of the real verification
+      // path instead of a blanket block with nothing underneath it.
+      const periodInfo = parsePeriodBetType(betType);
+      if (periodInfo) {
+        if (!PERIOD_MARKET_PUBLISHING_ENABLED) {
+          console.log(`PERIOD_MARKET_GUARD: "${candidate.game}" resolved to bet type "${betType}" — PERIOD_MARKET_PUBLISHING_ENABLED is false, refusing rather than publishing.`);
+          await supabase.from('game_candidates').update({
+            status: 'discarded_no_period_odds_source',
+            notes: `Period-market guard: pick text resolved to "${betType}"; PERIOD_MARKET_PUBLISHING_ENABLED is false pending live verification (Sep 10 review, ship-first item 5).`,
+          }).eq('id', candidate.id);
+          continue;
+        }
+
+        const periodFreshness = await checkPeriodFreshness(periodInfo.periodType, periodInfo.marketShape, candidate, liveOdds.eventId);
+        await supabase.from('game_candidates').update({ fresh_period_odds: periodFreshness.freshPeriodOdds }).eq('id', candidate.id);
+
+        if (periodFreshness.stale) {
+          console.log(`FINAL_PERIOD_STALE: "${candidate.game}" (${betType}) \u2014 ${periodFreshness.reason} \u2014 discarding rather than publishing an ungrounded/stale period pick.`);
+          await supabase.from('game_candidates').update({
+            status: 'discarded_stale_final',
+            notes: `Discarded at final confirmation (period market): ${periodFreshness.reason}`,
+          }).eq('id', candidate.id);
+          continue;
+        }
+        // Verified fresh against real captured period odds — proceed to
+        // the shared lineup/threshold/correlation/insert path below same
+        // as any full-game pick. NOTE: this confirms the LINE moved
+        // acceptably little, matching the moneyline/spread/total branches
+        // exactly — it does not yet re-verify that pick.odds matches a
+        // specific real price to the cent. The prompt-injection fix in
+        // researchLoop.js (real numbers handed to the model, "you MUST
+        // use one of the exact lines/prices listed") is what constrains
+        // the model's own output; a code-level exact-match check against
+        // the model's final text is the natural next hardening step, in
+        // the spirit of ChatGPT's "models select, don't create markets"
+        // proposal, not built tonight.
+      } else {
+        const freshness = checkFreshness(
+          betType,
+          { moneyline: candidate.fresh_moneyline, spread: candidate.fresh_spread, total: candidate.fresh_total },
+          liveOdds
+        );
+        if (freshness.stale) {
+          console.log(`FINAL_STALE_LINE_MOVE: "${candidate.game}" \u2014 ${freshness.reason} \u2014 discarding rather than publishing a dead edge.`);
+          await supabase.from('game_candidates').update({
+            status: 'discarded_stale_final',
+            notes: `Discarded at final confirmation: ${freshness.reason}`,
+          }).eq('id', candidate.id);
+          continue;
+        }
       }
 
       // \u2500\u2500 Final lineup-currency check \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -647,6 +821,31 @@ async function finalizePicks() {
         console.log(`FINAL_CORRELATION_CAP: "${candidate.game}" scored ${score} but ${candidate.sport}/${betType} already has ${CORRELATION_CAP_PER_SPORT_BETTYPE} picks published today — discarding rather than adding another same-type pick to an already-concentrated slate.`);
         await supabase.from('game_candidates').update({
           status: 'discarded_correlation_cap',
+        }).eq('id', candidate.id);
+        continue;
+      }
+
+      // Per-game correlation ceiling (Sep 10 review, Fork 4 — Miles's
+      // decision: Manus's per-game ceiling over Gemini's single-bucket
+      // merge or ChatGPT's market-family cap). The cap above is keyed by
+      // bet_type, which is now correctly period-aware — but it only stops
+      // concentration WITHIN one market label. It does nothing to stop an
+      // F5 run line and a full-game run line on the SAME GAME from both
+      // publishing (same starting pitcher, same lineup, same early-game
+      // state — the real correlation the Sep 8 incident's bet type would
+      // have carried, had it been caught by data instead of invented). This
+      // checks ANY bet type, scoped to this one game, regardless of market.
+      const { data: sameGameToday } = await supabase
+        .from('daily_picks')
+        .select('id', { count: 'exact' })
+        .eq('date', today)
+        .eq('game', candidate.game)
+        .eq('pipeline_source', 'v2');
+
+      if ((sameGameToday || []).length >= PER_GAME_CORRELATION_CAP) {
+        console.log(`FINAL_PER_GAME_CAP: "${candidate.game}" scored ${score} but this game already has ${PER_GAME_CORRELATION_CAP} pick(s) published today across all markets — discarding rather than adding a second correlated exposure to the same matchup.`);
+        await supabase.from('game_candidates').update({
+          status: 'discarded_per_game_cap',
         }).eq('id', candidate.id);
         continue;
       }

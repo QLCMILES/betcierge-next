@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { waitUntil } from '@vercel/functions';
 import { runStage2ResearchLoop, extractText, cleanJson } from '../../../lib/researchLoop';
+import { fetchPeriodOddsForEvent } from '../../../lib/periodOdds';
+import { getActivePeriodMarketsForSport } from '../../../lib/periodMarketsConfig';
 
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
@@ -317,6 +319,15 @@ async function fetchLiveOddsForGame(gameName, sportKey) {
     moneyline: h2h?.outcomes?.map(o => `${o.name}: ${o.price}`).join(', ') || null,
     spread: spread?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', ') || null,
     total: total?.outcomes?.map(o => `${o.name} ${o.point}: ${o.price}`).join(', ') || null,
+    // Sep 10 period-markets build: The Odds API's own event id for this
+    // game, the SAME id already used as gameId throughout Snap-to-Log's
+    // grounding engine. Needed to call the per-event period-odds endpoint
+    // without a second bulk-odds fetch. home_team/away_team pass through
+    // too, so the period fetch can map outcomes to sides without a third
+    // lookup.
+    eventId: match.id || null,
+    home_team: match.home_team || null,
+    away_team: match.away_team || null,
   };
 }
 
@@ -423,6 +434,32 @@ async function submitNewResearch(today) {
         continue;
       }
 
+      // ── Period-odds fetch (Sep 10 review, Fork 2 — unanimous) ─────────
+      // Fetched exactly HERE, at Stage 1 clearance, and nowhere else. All
+      // three reviewers rejected fetching only once the model "shows
+      // interest" in a period bet — that recreates the Sep 8 incident's
+      // actual mechanism (the model committing to a line before any real
+      // data exists). This candidate has already cleared the pre-flight
+      // freshness check above, so this is the system's own "worth
+      // spending real research on" decision — the same moment, reused,
+      // rather than a second guess. Honestly degrades to null (not an
+      // error) when this sport has no active period markets, or the
+      // provider has nothing posted for this event yet — see
+      // fetchPeriodOddsForEvent(). Attached directly onto the candidate
+      // object (not a new runStage2ResearchLoop parameter) so
+      // buildStage2SystemPrompt in researchLoop.js can read it the same
+      // way it already reads every other candidate field.
+      let periodOdds = null;
+      if (getActivePeriodMarketsForSport(candidate.sport_key)) {
+        periodOdds = await fetchPeriodOddsForEvent(candidate.sport_key, freshOdds.eventId, process.env.ODDS_API_KEY);
+        candidate.original_period_odds = periodOdds;
+        candidate.period_home_team = freshOdds.home_team;
+        candidate.period_away_team = freshOdds.away_team;
+        console.log(periodOdds
+          ? `PERIOD_ODDS_CAPTURED: "${candidate.game}" — ${Object.keys(periodOdds).join(', ')}`
+          : `PERIOD_ODDS_UNAVAILABLE: "${candidate.game}" — sport supports period markets but none posted by ${PRIMARY_BOOKMAKER_KEY}/fallback for this event yet.`);
+      }
+
       // Fresh odds check passed — run the real, code-owned multi-turn
       // research loop, bounded by this run's shared deadlineTs (the loop
       // honors it via its own hybrid wall-clock guard). This either reaches
@@ -436,6 +473,7 @@ async function submitNewResearch(today) {
         fresh_moneyline: freshOdds.moneyline,
         fresh_spread: freshOdds.spread,
         fresh_total: freshOdds.total,
+        original_period_odds: periodOdds, // NULL is a real, honest value here — see comment above
       }).eq('id', candidate.id);
 
       if (result.verdict === 'publish') {
