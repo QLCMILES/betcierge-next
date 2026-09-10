@@ -16,6 +16,26 @@ const SPORTS = [
 ];
 const BET_TYPES = ["Moneyline", "Spread", "Total (O/U)", "Parlay", "Prop", "Live Bet", "Team Total"];
 const SPORT_OPTIONS = ["MLB", "NBA", "NFL", "NHL", "Soccer", "UFC/MMA", "NCAAB", "NCAAF", "Golf", "Tennis"];
+// Sep 10, 2026 build: the sportsbook field, for the multi-book Gambling
+// Activity Report feature. Grouped by regulatory category, not just
+// alphabetical, since that grouping matters downstream (the report treats
+// prediction-market activity differently — see the exclusion note where the
+// report is built). Kalshi/Polymarket are included here so a bet CAN be
+// tagged with them today even though Snap-to-Log doesn't parse their slip
+// format yet (separate future work) — manual entry works immediately.
+const SPORTSBOOK_OPTIONS = [
+  // Regulated US sportsbooks
+  "DraftKings", "FanDuel", "BetMGM", "Caesars", "ESPN Bet", "Fanatics",
+  "bet365", "BetRivers", "Hard Rock Bet", "WynnBET", "theScore Bet",
+  "Bally Bet", "Betfred",
+  // DFS / pick'em / sweepstakes-model apps
+  "PrizePicks", "Underdog", "Betr", "Dabble", "Rebet", "ProphetX", "Fliff",
+  // Offshore / international
+  "Bovada", "BetOnline", "MyBookie",
+  // Prediction markets — excluded from tax-report gambling math; see report build
+  "Kalshi", "Polymarket",
+  "Other",
+];
 
 // ── Supabase + Auth ────────────────────────────────────────────────────────
 import { supabase } from "../lib/supabase";
@@ -379,18 +399,35 @@ function GameResolver({ teamText, sport, sportKey, initialDate, onResolve, onCan
 }
 
 // Small controlled input for the inline editor (text / date / number).
-function EditField({ initial, type, onSave, onCancel }) {
+// Sep 10, 2026: added the `options` prop (used for Sportsbook) — when
+// present, renders a real <select> instead of free text. Keeping this a
+// dropdown rather than open text is deliberate: free text on something like
+// "DraftKings" vs "Draft Kings" vs "DK" would quietly break the Gambling
+// Activity Report's per-book grouping.
+function EditField({ initial, type, options, onSave, onCancel }) {
   const [val, setVal] = useState(initial ?? "");
   return (
     <div>
-      <input
-        autoFocus
-        type={type || "text"}
-        value={val}
-        onChange={e => setVal(e.target.value)}
-        onKeyDown={e => { if (e.key === "Enter") onSave(val); }}
-        style={{ width: "100%", boxSizing: "border-box", background: "#0f0f18", border: "1px solid #3a3a48", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 15, marginBottom: 12 }}
-      />
+      {options ? (
+        <select
+          autoFocus
+          value={val}
+          onChange={e => setVal(e.target.value)}
+          style={{ width: "100%", boxSizing: "border-box", background: "#0f0f18", border: "1px solid #3a3a48", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 15, marginBottom: 12 }}
+        >
+          <option value="">— Not set —</option>
+          {options.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      ) : (
+        <input
+          autoFocus
+          type={type || "text"}
+          value={val}
+          onChange={e => setVal(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") onSave(val); }}
+          style={{ width: "100%", boxSizing: "border-box", background: "#0f0f18", border: "1px solid #3a3a48", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 15, marginBottom: 12 }}
+        />
+      )}
       <div style={{ display: "flex", gap: 10 }}>
         <button onClick={onCancel} style={{ flex: 1, background: "#1a1a24", border: "1px solid #2a2a38", borderRadius: 10, padding: "12px 0", color: "#888", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
         <button onClick={() => onSave(val)} style={{ flex: 1, background: "#f5a623", border: "none", borderRadius: 10, padding: "12px 0", color: "#0a0a0f", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Save</button>
@@ -646,7 +683,7 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
           max_tokens: 1000,
-            system: "You are Hunter. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). For STRAIGHT BETS return ONLY raw JSON: {\"sport\":\"...\",\"game\":\"...\",\"betType\":\"...\",\"odds\":\"...\",\"pick\":\"...\",\"amount\":0,\"toWin\":0,\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\",\"pitcher\":\"LAST_NAME_ONLY_or_null\",\"confidence\":95}. For baseball bets, set pitcher to the starting pitcher last name visible on the slip (e.g. \"SPROAT\"). For all other sports set pitcher to null. For PARLAYS, TEASERS, and SGPs return ONLY raw JSON: {\"betType\":\"parlay\",\"ticketNumber\":\"...\",\"amount\":0,\"toWin\":0,\"odds\":\"...\",\"teaserPoints\":null,\"gameDate\":\"YYYY-MM-DD\",\"legs\":[{\"sport\":\"...\",\"game\":\"...\",\"pick\":\"...\",\"odds\":\"...\",\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\"}],\"confidence\":95}. For TEASERS set betType to \"teaser\" and teaserPoints to the point value. For SGPs set betType to \"sgp\". PARLAY LEG GAME FIELD: If a parlay leg shows only one team with no opponent visible (typical for moneyline-style listings), set that leg's \"game\" to just \"[Team]\" with no opponent — same rule as single bets. NEVER infer, guess, or invent an opponent or matchup for a leg's \"game\" field, even if a plausible-looking matchup (e.g. a promo banner for an unrelated game/sport elsewhere on screen) appears nearby. If genuinely unclear, use an empty string. TRYINK FORMAT: Bets show as [#]. [Team] [Pitcher1] - R / [Pitcher2] - L LP [spread] [odds]. The format is ALWAYS: bet number, then team name, then two pitcher names separated by /, then spread (if any), then odds. Extract ONLY the team name — stop at the first all-caps surname after the team name. SPREAD DETECTION: In TryInk format, \"- R\" and \"- L\" after pitcher names indicate pitcher handedness (Right/Left) — NOT a spread. A RUN LINE bet requires an explicit number like -1.5 or +1.5 on the line AFTER the pitcher names. Preserve the sign exactly — if you see -1½ set pick to \"[Team] -1.5\", if you see +1½ set pick to \"[Team] +1.5\". The odds are the LAST number on the line. FIRST HALF DETECTION: If the bet line starts with \"1H\" (e.g. \"1975. 1H Los Angeles Dodgers...\"), this is a FIRST HALF bet. Set betType to \"1H\" and set pick to \"[Team] 1H ML\" (or \"[Team] 1H -1.5\" if there is a spread). FIRST 5 INNINGS DETECTION: If the bet line contains \"1st 5\", \"F5\", \"First 5\", or \"First 5 Innings\", this is an MLB-ONLY first-5-innings bet — NOT the same thing as FIRST HALF/1H, which does not apply to baseball. Set betType to \"F5\" and ALWAYS include the literal text \"F5\" in the pick, e.g. \"[Team] F5 ML\" or \"[Team] F5 -1.5\". Never label an MLB first-5-innings bet as \"1H\". TEAM TOTAL DETECTION: If you see \"Team Total\" or \"Team total points\" in the bet description, this is a TEAM TOTAL bet — only one team's score counts. Set betType to \"teamtotal\" and set pick to \"[Team Name] Over X.X\" or \"[Team Name] Under X.X\" — always include the team name. Example: \"Milwaukee Brewers Over 4.5\". TOTAL DETECTION: If you see \"U\" or \"O\" followed by a number (e.g. \"U 7½\", \"O 8.5\") and it is NOT a team total, this is a GAME TOTAL bet. Set pick to \"Under X.X\" or \"Over X.X\" and betType to \"total\". Do NOT include team name in the pick. If NO spread and NO total, set pick to \"[Team] ML\". Set game to just \"[Team]\" with no opponent. Never include pitcher names in game or pick fields. The gameDate on TryInk slips is shown in the ticket timestamp at the top (e.g. \"2026/06/15\") — use that date, NOT any date embedded in the bet line. ODDS: If odds show as \"Pk\" or \"PK\" that means pick'em = +100. EXCEPTION: For LIVE bets (when \"Live:\" is present on the slip), \"Pk\" is a status indicator — NOT the odds. For live bets always extract the odds from the bet detail line itself (e.g. \"+128\" or \"-140\"), never use \"Pk\" as the odds. TRYINK SOCCER PARLAY FORMAT: Soccer parlays on tryInk show as \"Props: [number]\" with multiple bet details listed. Each line with a team name or player name is a separate leg. A bet showing \"[Player] 1+ Score or Assist, to win: [Team] (Game)\" contains TWO legs: (1) [Team] ML and (2) [Player] 1+ Score or Assist prop. Parse these as a parlay with both legs. LIVE BET DETECTION: If the slip contains \"Live:\" followed by a number (e.g. \"Live: 302296347\"), this is a LIVE BET placed during an in-progress game. For live bets: (1) set isLive to true in the JSON, (2) use the ticket timestamp date as gameDate — NOT today's date. The ticket timestamp format is \"YYYY/MM/DD HH:MM:SS AM/PM\" — extract YYYY-MM-DD from it. Important: if the ticket time is after midnight ET but the game started the previous calendar day, still use the ticket timestamp date as gameDate. (3) gameTime should be left empty for live bets. SCHEDULED DATE DETECTION: If the slip shows a scheduled date and time (e.g. \"Scheduled: June 24, 2026 9:45 PM EST\"), extract the date directly as gameDate in YYYY-MM-DD format and gameTime in 24hr ET format. Do NOT convert timezones — use the date exactly as written. \"June 24, 2026 9:45 PM EST\" → gameDate: \"2026-06-24\", gameTime: \"21:45\". GENERAL RULES: Never guess any text you cannot clearly read. Use empty strings for missing fields. gameDate in ET. gameTime in 24hr ET format. If unclear: {\"error\":\"reason\"}.",
+            system: "You are Hunter. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). For STRAIGHT BETS return ONLY raw JSON: {\"sport\":\"...\",\"game\":\"...\",\"betType\":\"...\",\"odds\":\"...\",\"pick\":\"...\",\"amount\":0,\"toWin\":0,\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\",\"pitcher\":\"LAST_NAME_ONLY_or_null\",\"sportsbook\":\"BOOK_NAME_or_null\",\"confidence\":95}. For baseball bets, set pitcher to the starting pitcher last name visible on the slip (e.g. \"SPROAT\"). For all other sports set pitcher to null. For PARLAYS, TEASERS, and SGPs return ONLY raw JSON: {\"betType\":\"parlay\",\"ticketNumber\":\"...\",\"amount\":0,\"toWin\":0,\"odds\":\"...\",\"teaserPoints\":null,\"sportsbook\":\"BOOK_NAME_or_null\",\"gameDate\":\"YYYY-MM-DD\",\"legs\":[{\"sport\":\"...\",\"game\":\"...\",\"pick\":\"...\",\"odds\":\"...\",\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\"}],\"confidence\":95}. For TEASERS set betType to \"teaser\" and teaserPoints to the point value. For SGPs set betType to \"sgp\". PARLAY LEG GAME FIELD: If a parlay leg shows only one team with no opponent visible (typical for moneyline-style listings), set that leg's \"game\" to just \"[Team]\" with no opponent — same rule as single bets. NEVER infer, guess, or invent an opponent or matchup for a leg's \"game\" field, even if a plausible-looking matchup (e.g. a promo banner for an unrelated game/sport elsewhere on screen) appears nearby. If genuinely unclear, use an empty string. TRYINK FORMAT: Bets show as [#]. [Team] [Pitcher1] - R / [Pitcher2] - L LP [spread] [odds]. The format is ALWAYS: bet number, then team name, then two pitcher names separated by /, then spread (if any), then odds. Extract ONLY the team name — stop at the first all-caps surname after the team name. SPREAD DETECTION: In TryInk format, \"- R\" and \"- L\" after pitcher names indicate pitcher handedness (Right/Left) — NOT a spread. A RUN LINE bet requires an explicit number like -1.5 or +1.5 on the line AFTER the pitcher names. Preserve the sign exactly — if you see -1½ set pick to \"[Team] -1.5\", if you see +1½ set pick to \"[Team] +1.5\". The odds are the LAST number on the line. FIRST HALF DETECTION: If the bet line starts with \"1H\" (e.g. \"1975. 1H Los Angeles Dodgers...\"), this is a FIRST HALF bet. Set betType to \"1H\" and set pick to \"[Team] 1H ML\" (or \"[Team] 1H -1.5\" if there is a spread). FIRST 5 INNINGS DETECTION: If the bet line contains \"1st 5\", \"F5\", \"First 5\", or \"First 5 Innings\", this is an MLB-ONLY first-5-innings bet — NOT the same thing as FIRST HALF/1H, which does not apply to baseball. Set betType to \"F5\" and ALWAYS include the literal text \"F5\" in the pick, e.g. \"[Team] F5 ML\" or \"[Team] F5 -1.5\". Never label an MLB first-5-innings bet as \"1H\". TEAM TOTAL DETECTION: If you see \"Team Total\" or \"Team total points\" in the bet description, this is a TEAM TOTAL bet — only one team's score counts. Set betType to \"teamtotal\" and set pick to \"[Team Name] Over X.X\" or \"[Team Name] Under X.X\" — always include the team name. Example: \"Milwaukee Brewers Over 4.5\". TOTAL DETECTION: If you see \"U\" or \"O\" followed by a number (e.g. \"U 7½\", \"O 8.5\") and it is NOT a team total, this is a GAME TOTAL bet. Set pick to \"Under X.X\" or \"Over X.X\" and betType to \"total\". Do NOT include team name in the pick. If NO spread and NO total, set pick to \"[Team] ML\". Set game to just \"[Team]\" with no opponent. Never include pitcher names in game or pick fields. The gameDate on TryInk slips is shown in the ticket timestamp at the top (e.g. \"2026/06/15\") — use that date, NOT any date embedded in the bet line. ODDS: If odds show as \"Pk\" or \"PK\" that means pick'em = +100. EXCEPTION: For LIVE bets (when \"Live:\" is present on the slip), \"Pk\" is a status indicator — NOT the odds. For live bets always extract the odds from the bet detail line itself (e.g. \"+128\" or \"-140\"), never use \"Pk\" as the odds. TRYINK SOCCER PARLAY FORMAT: Soccer parlays on tryInk show as \"Props: [number]\" with multiple bet details listed. Each line with a team name or player name is a separate leg. A bet showing \"[Player] 1+ Score or Assist, to win: [Team] (Game)\" contains TWO legs: (1) [Team] ML and (2) [Player] 1+ Score or Assist prop. Parse these as a parlay with both legs. LIVE BET DETECTION: If the slip contains \"Live:\" followed by a number (e.g. \"Live: 302296347\"), this is a LIVE BET placed during an in-progress game. For live bets: (1) set isLive to true in the JSON, (2) use the ticket timestamp date as gameDate — NOT today's date. The ticket timestamp format is \"YYYY/MM/DD HH:MM:SS AM/PM\" — extract YYYY-MM-DD from it. Important: if the ticket time is after midnight ET but the game started the previous calendar day, still use the ticket timestamp date as gameDate. (3) gameTime should be left empty for live bets. SCHEDULED DATE DETECTION: If the slip shows a scheduled date and time (e.g. \"Scheduled: June 24, 2026 9:45 PM EST\"), extract the date directly as gameDate in YYYY-MM-DD format and gameTime in 24hr ET format. Do NOT convert timezones — use the date exactly as written. \"June 24, 2026 9:45 PM EST\" → gameDate: \"2026-06-24\", gameTime: \"21:45\". SPORTSBOOK DETECTION: If the sportsbook's name or logo is visible anywhere on the slip (app header, watermark, ticket branding), set sportsbook to that book's common name exactly (e.g. \"DraftKings\", \"FanDuel\", \"BetMGM\", \"Caesars\", \"Kalshi\", \"Polymarket\"). A slip in TRYINK FORMAT (see above) should be set to \"TryInk\" unless a different book's branding is visible instead. If no book name or logo is visible, or you are not confident, set sportsbook to null — do not guess a book from the bet format alone. GENERAL RULES: Never guess any text you cannot clearly read. Use empty strings for missing fields. gameDate in ET. gameTime in 24hr ET format. If unclear: {\"error\":\"reason\"}.",
           messages: [{ role: "user", content: [
             { type: "image", source: { type: "base64", media_type: file.type || "image/jpeg", data: base64 } },
             { type: "text", text: "Extract the bet details from this slip." }
@@ -745,7 +782,7 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
           body: JSON.stringify({
             model: "claude-sonnet-4-6",
             max_tokens: 1000,
-            system: "You are Hunter. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). For STRAIGHT BETS return ONLY raw JSON: {\"sport\":\"...\",\"game\":\"...\",\"betType\":\"...\",\"odds\":\"...\",\"pick\":\"...\",\"amount\":0,\"toWin\":0,\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\",\"pitcher\":\"LAST_NAME_ONLY_or_null\",\"confidence\":95}. For baseball bets, set pitcher to the starting pitcher last name visible on the slip (e.g. \"SPROAT\"). For all other sports set pitcher to null. For PARLAYS, TEASERS, and SGPs return ONLY raw JSON: {\"betType\":\"parlay\",\"ticketNumber\":\"...\",\"amount\":0,\"toWin\":0,\"odds\":\"...\",\"teaserPoints\":null,\"gameDate\":\"YYYY-MM-DD\",\"legs\":[{\"sport\":\"...\",\"game\":\"...\",\"pick\":\"...\",\"odds\":\"...\",\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\"}],\"confidence\":95}. For TEASERS set betType to \"teaser\" and teaserPoints to the point value. For SGPs set betType to \"sgp\". PARLAY LEG GAME FIELD: If a parlay leg shows only one team with no opponent visible (typical for moneyline-style listings), set that leg's \"game\" to just \"[Team]\" with no opponent — same rule as single bets. NEVER infer, guess, or invent an opponent or matchup for a leg's \"game\" field, even if a plausible-looking matchup (e.g. a promo banner for an unrelated game/sport elsewhere on screen) appears nearby. If genuinely unclear, use an empty string. TRYINK FORMAT: Bets show as [#]. [Team] [Pitcher1] - R / [Pitcher2] - L LP [spread] [odds]. The format is ALWAYS: bet number, then team name, then two pitcher names separated by /, then spread (if any), then odds. Extract ONLY the team name — stop at the first all-caps surname after the team name. SPREAD DETECTION: In TryInk format, \"- R\" and \"- L\" after pitcher names indicate pitcher handedness (Right/Left) — NOT a spread. A RUN LINE bet requires an explicit number like -1.5 or +1.5 on the line AFTER the pitcher names. Preserve the sign exactly — if you see -1½ set pick to \"[Team] -1.5\", if you see +1½ set pick to \"[Team] +1.5\". The odds are the LAST number on the line. FIRST HALF DETECTION: If the bet line starts with \"1H\" (e.g. \"1975. 1H Los Angeles Dodgers...\"), this is a FIRST HALF bet. Set betType to \"1H\" and set pick to \"[Team] 1H ML\" (or \"[Team] 1H -1.5\" if there is a spread). FIRST 5 INNINGS DETECTION: If the bet line contains \"1st 5\", \"F5\", \"First 5\", or \"First 5 Innings\", this is an MLB-ONLY first-5-innings bet — NOT the same thing as FIRST HALF/1H, which does not apply to baseball. Set betType to \"F5\" and ALWAYS include the literal text \"F5\" in the pick, e.g. \"[Team] F5 ML\" or \"[Team] F5 -1.5\". Never label an MLB first-5-innings bet as \"1H\". TEAM TOTAL DETECTION: If you see \"Team Total\" or \"Team total points\" in the bet description, this is a TEAM TOTAL bet — only one team's score counts. Set betType to \"teamtotal\" and set pick to \"[Team Name] Over X.X\" or \"[Team Name] Under X.X\" — always include the team name. Example: \"Milwaukee Brewers Over 4.5\". TOTAL DETECTION: If you see \"U\" or \"O\" followed by a number (e.g. \"U 7½\", \"O 8.5\") and it is NOT a team total, this is a GAME TOTAL bet. Set pick to \"Under X.X\" or \"Over X.X\" and betType to \"total\". Do NOT include team name in the pick. If NO spread and NO total, set pick to \"[Team] ML\". Set game to just \"[Team]\" with no opponent. Never include pitcher names in game or pick fields. The gameDate on TryInk slips is shown in the ticket timestamp at the top (e.g. \"2026/06/15\") — use that date, NOT any date embedded in the bet line. ODDS: If odds show as \"Pk\" or \"PK\" that means pick'em = +100. EXCEPTION: For LIVE bets (when \"Live:\" is present on the slip), \"Pk\" is a status indicator — NOT the odds. For live bets always extract the odds from the bet detail line itself (e.g. \"+128\" or \"-140\"), never use \"Pk\" as the odds. TRYINK SOCCER PARLAY FORMAT: Soccer parlays on tryInk show as \"Props: [number]\" with multiple bet details listed. Each line with a team name or player name is a separate leg. A bet showing \"[Player] 1+ Score or Assist, to win: [Team] (Game)\" contains TWO legs: (1) [Team] ML and (2) [Player] 1+ Score or Assist prop. Parse these as a parlay with both legs. LIVE BET DETECTION: If the slip contains \"Live:\" followed by a number (e.g. \"Live: 302296347\"), this is a LIVE BET placed during an in-progress game. For live bets: (1) set isLive to true in the JSON, (2) use the ticket timestamp date as gameDate — NOT today's date. The ticket timestamp format is \"YYYY/MM/DD HH:MM:SS AM/PM\" — extract YYYY-MM-DD from it. Important: if the ticket time is after midnight ET but the game started the previous calendar day, still use the ticket timestamp date as gameDate. (3) gameTime should be left empty for live bets. SCHEDULED DATE DETECTION: If the slip shows a scheduled date and time (e.g. \"Scheduled: June 24, 2026 9:45 PM EST\"), extract the date directly as gameDate in YYYY-MM-DD format and gameTime in 24hr ET format. Do NOT convert timezones — use the date exactly as written. \"June 24, 2026 9:45 PM EST\" → gameDate: \"2026-06-24\", gameTime: \"21:45\". GENERAL RULES: Never guess any text you cannot clearly read. Use empty strings for missing fields. gameDate in ET. gameTime in 24hr ET format. If unclear: {\"error\":\"reason\"}.",
+            system: "You are Hunter. Extract bet details from a sportsbook screenshot. Normalize odds to standard American format (even money = +100, run lines at even = +100). For STRAIGHT BETS return ONLY raw JSON: {\"sport\":\"...\",\"game\":\"...\",\"betType\":\"...\",\"odds\":\"...\",\"pick\":\"...\",\"amount\":0,\"toWin\":0,\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\",\"pitcher\":\"LAST_NAME_ONLY_or_null\",\"sportsbook\":\"BOOK_NAME_or_null\",\"confidence\":95}. For baseball bets, set pitcher to the starting pitcher last name visible on the slip (e.g. \"SPROAT\"). For all other sports set pitcher to null. For PARLAYS, TEASERS, and SGPs return ONLY raw JSON: {\"betType\":\"parlay\",\"ticketNumber\":\"...\",\"amount\":0,\"toWin\":0,\"odds\":\"...\",\"teaserPoints\":null,\"sportsbook\":\"BOOK_NAME_or_null\",\"gameDate\":\"YYYY-MM-DD\",\"legs\":[{\"sport\":\"...\",\"game\":\"...\",\"pick\":\"...\",\"odds\":\"...\",\"gameDate\":\"YYYY-MM-DD\",\"gameTime\":\"HH:MM\"}],\"confidence\":95}. For TEASERS set betType to \"teaser\" and teaserPoints to the point value. For SGPs set betType to \"sgp\". PARLAY LEG GAME FIELD: If a parlay leg shows only one team with no opponent visible (typical for moneyline-style listings), set that leg's \"game\" to just \"[Team]\" with no opponent — same rule as single bets. NEVER infer, guess, or invent an opponent or matchup for a leg's \"game\" field, even if a plausible-looking matchup (e.g. a promo banner for an unrelated game/sport elsewhere on screen) appears nearby. If genuinely unclear, use an empty string. TRYINK FORMAT: Bets show as [#]. [Team] [Pitcher1] - R / [Pitcher2] - L LP [spread] [odds]. The format is ALWAYS: bet number, then team name, then two pitcher names separated by /, then spread (if any), then odds. Extract ONLY the team name — stop at the first all-caps surname after the team name. SPREAD DETECTION: In TryInk format, \"- R\" and \"- L\" after pitcher names indicate pitcher handedness (Right/Left) — NOT a spread. A RUN LINE bet requires an explicit number like -1.5 or +1.5 on the line AFTER the pitcher names. Preserve the sign exactly — if you see -1½ set pick to \"[Team] -1.5\", if you see +1½ set pick to \"[Team] +1.5\". The odds are the LAST number on the line. FIRST HALF DETECTION: If the bet line starts with \"1H\" (e.g. \"1975. 1H Los Angeles Dodgers...\"), this is a FIRST HALF bet. Set betType to \"1H\" and set pick to \"[Team] 1H ML\" (or \"[Team] 1H -1.5\" if there is a spread). FIRST 5 INNINGS DETECTION: If the bet line contains \"1st 5\", \"F5\", \"First 5\", or \"First 5 Innings\", this is an MLB-ONLY first-5-innings bet — NOT the same thing as FIRST HALF/1H, which does not apply to baseball. Set betType to \"F5\" and ALWAYS include the literal text \"F5\" in the pick, e.g. \"[Team] F5 ML\" or \"[Team] F5 -1.5\". Never label an MLB first-5-innings bet as \"1H\". TEAM TOTAL DETECTION: If you see \"Team Total\" or \"Team total points\" in the bet description, this is a TEAM TOTAL bet — only one team's score counts. Set betType to \"teamtotal\" and set pick to \"[Team Name] Over X.X\" or \"[Team Name] Under X.X\" — always include the team name. Example: \"Milwaukee Brewers Over 4.5\". TOTAL DETECTION: If you see \"U\" or \"O\" followed by a number (e.g. \"U 7½\", \"O 8.5\") and it is NOT a team total, this is a GAME TOTAL bet. Set pick to \"Under X.X\" or \"Over X.X\" and betType to \"total\". Do NOT include team name in the pick. If NO spread and NO total, set pick to \"[Team] ML\". Set game to just \"[Team]\" with no opponent. Never include pitcher names in game or pick fields. The gameDate on TryInk slips is shown in the ticket timestamp at the top (e.g. \"2026/06/15\") — use that date, NOT any date embedded in the bet line. ODDS: If odds show as \"Pk\" or \"PK\" that means pick'em = +100. EXCEPTION: For LIVE bets (when \"Live:\" is present on the slip), \"Pk\" is a status indicator — NOT the odds. For live bets always extract the odds from the bet detail line itself (e.g. \"+128\" or \"-140\"), never use \"Pk\" as the odds. TRYINK SOCCER PARLAY FORMAT: Soccer parlays on tryInk show as \"Props: [number]\" with multiple bet details listed. Each line with a team name or player name is a separate leg. A bet showing \"[Player] 1+ Score or Assist, to win: [Team] (Game)\" contains TWO legs: (1) [Team] ML and (2) [Player] 1+ Score or Assist prop. Parse these as a parlay with both legs. LIVE BET DETECTION: If the slip contains \"Live:\" followed by a number (e.g. \"Live: 302296347\"), this is a LIVE BET placed during an in-progress game. For live bets: (1) set isLive to true in the JSON, (2) use the ticket timestamp date as gameDate — NOT today's date. The ticket timestamp format is \"YYYY/MM/DD HH:MM:SS AM/PM\" — extract YYYY-MM-DD from it. Important: if the ticket time is after midnight ET but the game started the previous calendar day, still use the ticket timestamp date as gameDate. (3) gameTime should be left empty for live bets. SCHEDULED DATE DETECTION: If the slip shows a scheduled date and time (e.g. \"Scheduled: June 24, 2026 9:45 PM EST\"), extract the date directly as gameDate in YYYY-MM-DD format and gameTime in 24hr ET format. Do NOT convert timezones — use the date exactly as written. \"June 24, 2026 9:45 PM EST\" → gameDate: \"2026-06-24\", gameTime: \"21:45\". SPORTSBOOK DETECTION: If the sportsbook's name or logo is visible anywhere on the slip (app header, watermark, ticket branding), set sportsbook to that book's common name exactly (e.g. \"DraftKings\", \"FanDuel\", \"BetMGM\", \"Caesars\", \"Kalshi\", \"Polymarket\"). A slip in TRYINK FORMAT (see above) should be set to \"TryInk\" unless a different book's branding is visible instead. If no book name or logo is visible, or you are not confident, set sportsbook to null — do not guess a book from the bet format alone. GENERAL RULES: Never guess any text you cannot clearly read. Use empty strings for missing fields. gameDate in ET. gameTime in 24hr ET format. If unclear: {\"error\":\"reason\"}.",
             messages: [{ role: "user", content: [
               { type: "image", source: { type: "base64", media_type: file.type || "image/jpeg", data: base64 } },
               { type: "text", text: "Extract the bet details from this slip." }
@@ -857,7 +894,7 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
         const gameIssue = isGame && criticalIssues(tgt || {}).some(i => i.field === "game");
         const candidates = isGame ? (tgt?.provenance?.candidates || []) : [];
         const curVal = field === "gameDate" ? (tgt?.gameDate || "") : (tgt?.[field] ?? "");
-        const labelMap = { game: "Game", gameDate: "Date", gameTime: "Time", pick: "Pick", odds: "Odds", amount: "Wager", toWin: "To Win", sport: "Sport" };
+        const labelMap = { game: "Game", gameDate: "Date", gameTime: "Time", pick: "Pick", odds: "Odds", amount: "Wager", toWin: "To Win", sport: "Sport", sportsbook: "Sportsbook" };
         // A resolved game edit patches game fields and marks provenance so the
         // gate clears — grounded:true means we attached a real game_id.
         const resolveGame = (r) => {
@@ -899,6 +936,7 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
                 <EditField
                   initial={curVal}
                   type={field === "gameDate" ? "date" : (field === "amount" || field === "toWin" ? "number" : "text")}
+                  options={field === "sportsbook" ? SPORTSBOOK_OPTIONS : undefined}
                   onSave={(val) => {
                     const patch = field === "amount" ? { amount: parseFloat(val) || 0 }
                                 : field === "toWin" ? { toWin: parseFloat(val) || 0 }
@@ -951,6 +989,7 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
           {imagePreview && <img src={imagePreview} alt="slip" style={{ width: "100%", maxHeight: 150, objectFit: "contain", marginBottom: 12 }} />}
           <div style={{ background: "#0f0f18", border: `1px solid ${clear ? "#2a2a38" : "#5a4a1e"}`, borderRadius: 14, padding: "6px 16px", marginBottom: 14 }}>
             <VerifyRow label="Sport" value={extractedBet.sport} onEdit={() => setEditing({ target: "single", field: "sport" })} />
+            <VerifyRow label="Sportsbook" value={extractedBet.sportsbook} onEdit={() => setEditing({ target: "single", field: "sportsbook" })} />
             <VerifyRow label="Game" value={extractedBet.game} flagged={issues.some(i => i.field === "game")} onEdit={() => setEditing({ target: "single", field: "game" })} />
             <VerifyRow label="Pick" value={extractedBet.pick} onEdit={() => setEditing({ target: "single", field: "pick" })} />
             {q && <VerifyRow label="Bet type" value={q} onEdit={() => setEditing({ target: "single", field: "pick" })} />}
@@ -992,6 +1031,9 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
             {clear ? "All legs check out — tap any field to change it, or log the bet." : "One or more legs need a detail confirmed before this can settle automatically."}
           </div>
           {imagePreview && <img src={imagePreview} alt="slip" style={{ width: "100%", maxHeight: 110, objectFit: "contain", marginBottom: 12 }} />}
+          <div style={{ background: "#0f0f18", border: "1px solid #2a2a38", borderRadius: 14, padding: "6px 16px", marginBottom: 14 }}>
+            <VerifyRow label="Sportsbook" value={extractedBet.sportsbook} onEdit={() => setEditing({ target: "single", field: "sportsbook" })} />
+          </div>
           <div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 10 }}>
             {extractedBet.legs?.map((leg, i) => {
               const li = legIssues[i];
@@ -1053,6 +1095,7 @@ function SnapToLog({ onConfirm, onCancel, onDone }) {
               {slips[currentSlip].preview && <img src={slips[currentSlip].preview} alt="slip" style={{ width: "100%", maxHeight: 130, objectFit: "contain", marginBottom: 12 }} />}
               <div style={{ background: "#0f0f18", border: `1px solid ${clear ? "#2a2a38" : "#5a4a1e"}`, borderRadius: 14, padding: "6px 16px", marginBottom: 14 }}>
                 <VerifyRow label="Sport" value={p.sport} onEdit={() => setEditing({ target: "queue", field: "sport" })} />
+                <VerifyRow label="Sportsbook" value={p.sportsbook} onEdit={() => setEditing({ target: "queue", field: "sportsbook" })} />
                 <VerifyRow label="Game" value={p.game} flagged={issues.some(i => i.field === "game")} onEdit={() => setEditing({ target: "queue", field: "game" })} />
                 <VerifyRow label="Pick" value={p.pick} onEdit={() => setEditing({ target: "queue", field: "pick" })} />
                 {q && <VerifyRow label="Bet type" value={q} onEdit={() => setEditing({ target: "queue", field: "pick" })} />}
@@ -2347,6 +2390,7 @@ async function tryMatchGameId(game, sport, gameDate) {
 function BetLogger({ onSave, onNav }) {
   const [mode, setMode] = useState("choose");
   const [sport, setSport] = useState("NBA");
+  const [sportsbook, setSportsbook] = useState("");
   const [betType, setBetType] = useState("Spread");
   const [game, setGame] = useState("");
   const [pick, setPick] = useState("");
@@ -2364,6 +2408,7 @@ function BetLogger({ onSave, onNav }) {
   useEffect(() => {
   if (prefill && prefill.sport) {
     setSport(prefill.sport || "NBA");
+    setSportsbook(prefill.sportsbook || "");
     setBetType(prefill.betType || "Spread");
     setGame(prefill.game || "");
     setPick(prefill.pick || "");
@@ -2406,7 +2451,7 @@ function BetLogger({ onSave, onNav }) {
     // Parlays aren't matched — the manual parlay form only captures a
     // pick/odds string per leg, no game/sport/date fields to match against.
     const matchedGameId = isParlay ? null : await tryMatchGameId(game, sport, gameDate);
-    onSave({ sport, game, betType, pick: finalPick, odds: finalOdds, amount: parseFloat(amount), type: category, result: "Pending", profit: 0, isToday: true, id: Date.now(), gameDate, gameTime, gameId: matchedGameId });
+    onSave({ sport, sportsbook: sportsbook || null, game, betType, pick: finalPick, odds: finalOdds, amount: parseFloat(amount), type: category, result: "Pending", profit: 0, isToday: true, id: Date.now(), gameDate, gameTime, gameId: matchedGameId });
     setSaved(true);
     setTimeout(() => { setSaved(false); setGame(""); setPick(""); setLine(""); setOdds(""); setAmount(""); setLegs([{ pick: "", odds: "" }, { pick: "", odds: "" }]); setErrors({}); setMode("choose"); }, 1500);
   };
@@ -2445,6 +2490,11 @@ function BetLogger({ onSave, onNav }) {
           <div style={{ flex: 1 }}><label style={S.label}>Sport</label><select style={S.select} value={sport} onChange={e => setSport(e.target.value)}>{SPORT_OPTIONS.map(s => <option key={s}>{s}</option>)}</select></div>
           <div style={{ flex: 1 }}><label style={S.label}>Bet Type</label><select style={S.select} value={betType} onChange={e => { setBetType(e.target.value); setErrors({}); }}>{BET_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
         </div>
+        <label style={S.label}>Sportsbook <span style={{ color: "#555", textTransform: "none", fontWeight: 400, letterSpacing: 0 }}>(optional)</span></label>
+        <select style={S.select} value={sportsbook} onChange={e => setSportsbook(e.target.value)}>
+          <option value="">— Not set —</option>
+          {SPORTSBOOK_OPTIONS.map(b => <option key={b}>{b}</option>)}
+        </select>
         <label style={S.label}>Game / Matchup</label>
         <input style={{ ...S.input, ...(errors.game ? { borderColor: "#e74c3c" } : {}) }} placeholder="e.g. Spurs vs OKC Thunder" value={game} onChange={e => setGame(e.target.value)} />
         {errors.game && <div style={S.err}>{errors.game}</div>}
@@ -3106,6 +3156,7 @@ useEffect(() => {
     const mappedStraight = (straightBets || []).map(b => ({
       id: b.id,
       sport: b.sport,
+      sportsbook: b.sportsbook,
       game: b.game,
       betType: b.bet_type,
       pick: b.pick,
@@ -3124,6 +3175,7 @@ useEffect(() => {
     const mappedParlays = (parlaysData || []).map(p => ({
       id: p.id,
       isParlay: true,
+      sportsbook: p.sportsbook,
       betType: p.bet_type,
       odds: p.odds,
       amount: p.wager,
@@ -3171,6 +3223,7 @@ useEffect(() => {
         user_id: userKey,
         ticket_number: bet.ticketNumber || null,
         bet_type: bet.betType || 'parlay',
+        sportsbook: bet.sportsbook || null,
         wager: bet.amount,
         to_win: bet.toWin,
         odds: bet.odds,
@@ -3235,6 +3288,7 @@ const markAllRead = async () => {
       await supabase.from('user_bets').insert({
         user_id: userKey,
         sport: bet.sport,
+        sportsbook: bet.sportsbook || null,
         game: bet.game,
         bet_type: bet.betType,
         pick: bet.pick,
@@ -3252,13 +3306,13 @@ const markAllRead = async () => {
       const { data: straightBets } = await supabase.from('user_bets').select('*').eq('user_id', userKey).order('created_at', { ascending: false });
       const { data: parlaysData } = await supabase.from('parlays').select('*, parlay_legs(*)').eq('user_id', userKey).order('created_at', { ascending: false });
       const mappedStraight = (straightBets || []).map(b => ({
-        id: b.id, sport: b.sport, game: b.game, betType: b.bet_type, pick: b.pick,
+        id: b.id, sport: b.sport, sportsbook: b.sportsbook, game: b.game, betType: b.bet_type, pick: b.pick,
         odds: b.odds, amount: b.amount, type: b.type, result: b.result,
         isToday: b.is_today, gameDate: b.game_date, gameTime: b.game_time,
         gameId: b.game_id, toWin: b.to_win, isParlay: false, createdAt: b.created_at,
       }));
       const mappedParlays = (parlaysData || []).map(p => ({
-        id: p.id, isParlay: true, betType: p.bet_type, odds: p.odds,
+        id: p.id, isParlay: true, sportsbook: p.sportsbook, betType: p.bet_type, odds: p.odds,
         amount: p.wager, toWin: p.to_win, result: p.result, gameDate: p.game_date,
         teaserPoints: p.teaser_points, ticketNumber: p.ticket_number, numLegs: p.num_legs,
         legs: (p.parlay_legs || []).sort((a, b) => a.leg_number - b.leg_number).map(l => ({
