@@ -1111,6 +1111,8 @@ async function flagUnsettleableBets() {
         target: 'single',
         channel: 'in_app',
         sent_by: 'system:settle-bets',
+        related_table: item.table,
+        related_id: item.id,
       }).select().single();
       if (notif) {
         await supabase.from('user_notifications').insert({

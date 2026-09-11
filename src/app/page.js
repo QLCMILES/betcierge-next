@@ -2781,11 +2781,12 @@ function Gamecast({ bets, parlays = [], onNav }) {
     </div>
   );
 }
-function History({ bets, onUpdate, onDelete, onNav, userKey }) {
+function History({ bets, onUpdate, onDelete, onNav, userKey, focusBet, onFocusHandled }) {
   const [historyView, setHistoryView] = useState("bets"); // "bets" | "tax"
   const [filterSport, setFilterSport] = useState("All");
   const [filterResult, setFilterResult] = useState("All");
   const [expandedGroups, setExpandedGroups] = useState({});
+  const [highlightedBetId, setHighlightedBetId] = useState(null);
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
@@ -2838,6 +2839,34 @@ function History({ bets, onUpdate, onDelete, onNav, userKey }) {
     setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
+  // Deep-link from a notification: switch to All Bets, clear filters that
+  // could hide the target, expand its month if it's not in "this week", then
+  // scroll to and briefly highlight the specific bet card.
+  useEffect(() => {
+    if (!focusBet) return;
+    const targetIsParlay = focusBet.table === "parlays";
+    const target = bets.find(b => b.id === focusBet.id && !!b.isParlay === targetIsParlay);
+    if (!target) { onFocusHandled?.(); return; }
+
+    setHistoryView("bets");
+    setFilterSport("All");
+    setFilterResult("All");
+
+    const gd = target.gameDate;
+    if (gd && !isThisWeek(gd)) {
+      setExpandedGroups(prev => ({ ...prev, [formatMonthLabel(gd)]: true }));
+    }
+
+    const t = setTimeout(() => {
+      document.getElementById(`bet-${target.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedBetId(target.id);
+      onFocusHandled?.();
+      setTimeout(() => setHighlightedBetId(null), 4000);
+    }, 150);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusBet]);
+
   // Split into this week vs older, then group older by month
   const thisWeekDates = sortedDates.filter(isThisWeek);
   const olderDates = sortedDates.filter(d => !isThisWeek(d));
@@ -2858,7 +2887,7 @@ function History({ bets, onUpdate, onDelete, onNav, userKey }) {
   const winRate = settled.length > 0 ? ((wins.length / settled.length) * 100).toFixed(0) : 0;
 
   const BetCard = ({ bet, onUpdate, onDelete }) => (
-    <div key={bet.id} style={S.betCard}>
+    <div id={`bet-${bet.id}`} style={{ ...S.betCard, ...(highlightedBetId === bet.id ? { border: "1px solid #f5a623", boxShadow: "0 0 0 2px #f5a62350" } : {}) }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {bet.isParlay ? (
@@ -3223,6 +3252,7 @@ export default function Betcierge() {
 const [screen, setScreen] = useState("dashboard");
 const [notifications, setNotifications] = useState([]);
 const [showNotifs, setShowNotifs] = useState(false);
+const [focusBet, setFocusBet] = useState(null); // { id, table } set when a notification deep-links to a specific bet
 const unreadCount = notifications.filter(n => !n.read).length;
 const [bets, setBets] = useState([]);
 const [session, setSession] = useState(null);
@@ -3571,13 +3601,29 @@ if (!user?.name) return null; // new users are redirected to /onboarding by the 
           {notifications.length === 0 ? (
             <div style={{ color: "#888", fontSize: 13, textAlign: "center", marginTop: 40 }}>No notifications yet</div>
           ) : (
-            notifications.map(n => (
-              <div key={n.id} style={{ background: n.read ? "#0f0f18" : "#111128", border: `1px solid ${n.read ? "#1e1e2e" : "#3a3a5e"}`, borderRadius: 10, padding: 14, marginBottom: 10 }}>
-                <div style={{ fontSize: 13, color: "#fff", lineHeight: 1.5 }}>{n.notifications?.message}</div>
-                <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>{new Date(n.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
-                {!n.read && <div style={{ width: 6, height: 6, background: "#f5a623", borderRadius: "50%", marginTop: 6 }} />}
-              </div>
-            ))
+            notifications.map(n => {
+              const rel = n.notifications;
+              const linked = !!(rel?.related_id && rel?.related_table);
+              return (
+                <div
+                  key={n.id}
+                  onClick={() => {
+                    if (!linked) return;
+                    setFocusBet({ id: rel.related_id, table: rel.related_table });
+                    setShowNotifs(false);
+                    setScreen('history');
+                  }}
+                  style={{ background: n.read ? "#0f0f18" : "#111128", border: `1px solid ${n.read ? "#1e1e2e" : "#3a3a5e"}`, borderRadius: 10, padding: 14, marginBottom: 10, cursor: linked ? "pointer" : "default" }}
+                >
+                  <div style={{ fontSize: 13, color: "#fff", lineHeight: 1.5 }}>{rel?.message}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+                    <div style={{ fontSize: 11, color: "#888" }}>{new Date(n.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                    {linked && <div style={{ fontSize: 11, color: "#f5a623", fontWeight: 700 }}>Tap to view →</div>}
+                  </div>
+                  {!n.read && <div style={{ width: 6, height: 6, background: "#f5a623", borderRadius: "50%", marginTop: 6 }} />}
+                </div>
+              );
+            })
           )}
         </div>
       )}
@@ -3587,7 +3633,7 @@ if (!user?.name) return null; // new users are redirected to /onboarding by the 
       {screen === "card" && <TodayCard bets={bets} onNav={setScreen} />}
 {screen === "gamecast" && <Gamecast bets={bets} onNav={setScreen} />}
       {screen === "logger" && <BetLogger onSave={addBet} onNav={setScreen} />}
-      {screen === "history" && <History bets={bets} onUpdate={updateBet} onDelete={deleteBet} onNav={setScreen} userKey={userKey} />}
+      {screen === "history" && <History bets={bets} onUpdate={updateBet} onDelete={deleteBet} onNav={setScreen} userKey={userKey} focusBet={focusBet} onFocusHandled={() => setFocusBet(null)} />}
       {screen === "upgrade" && <UpgradeScreen user={user} userKey={userKey} onNav={setScreen} />}
 
       {/* Nav Bar */}
