@@ -3060,6 +3060,7 @@ function TaxReportView({ userKey }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [expandedTaxDays, setExpandedTaxDays] = useState({});
 
   useEffect(() => {
     if (!userKey) return;
@@ -3169,20 +3170,47 @@ function TaxReportView({ userKey }) {
             <button disabled style={{ flex: 1, background: "#131313", border: "1px solid #333", color: "#555", borderRadius: 10, padding: "10px 0", fontSize: 13, fontWeight: 700, cursor: "not-allowed" }}>⬇ Export PDF (soon)</button>
           </div>
 
-          {/* Sessions */}
+          {/* Sessions — grouped by day, sportsbooks nested when a day has more than one */}
           <div style={{ color: "#fff", fontFamily: "'Cormorant Garamond',serif", fontSize: 17, fontWeight: 700, marginBottom: 8 }}>
             Sessions ({report.sessions.length})
           </div>
           {report.sessions.length === 0 ? (
             <div style={S.empty}>No settled sessions for {taxYear} yet.</div>
-          ) : (
-            report.sessions.map((s, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #1e1e2e", fontSize: 13 }}>
-                <span style={{ color: "#ccc" }}>{s.date} · {s.sportsbook} · {s.wagerCount} wager{s.wagerCount === 1 ? "" : "s"}</span>
-                <span style={{ color: s.net >= 0 ? "#2ecc71" : "#e74c3c", fontWeight: 700 }}>{s.net >= 0 ? "+" : ""}{fmtMoney(s.net)}</span>
-              </div>
-            ))
-          )}
+          ) : (() => {
+            const byDate = {};
+            report.sessions.forEach(s => {
+              if (!byDate[s.date]) byDate[s.date] = [];
+              byDate[s.date].push(s);
+            });
+            const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
+            return dates.map(date => {
+              const daySessions = byDate[date];
+              const single = daySessions.length === 1;
+              const dayNet = daySessions.reduce((sum, s) => sum + s.net, 0);
+              const dayWagers = daySessions.reduce((sum, s) => sum + s.wagerCount, 0);
+              const isExpanded = expandedTaxDays[date] === true;
+              return (
+                <div key={date}>
+                  <div
+                    onClick={() => !single && setExpandedTaxDays(prev => ({ ...prev, [date]: !prev[date] }))}
+                    style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: single || !isExpanded ? "1px solid #1e1e2e" : "none", cursor: single ? "default" : "pointer" }}
+                  >
+                    <span style={{ color: "#ccc", fontSize: 13 }}>
+                      {date}{single ? ` · ${daySessions[0].sportsbook}` : ` · ${daySessions.length} sportsbooks`} · {dayWagers} wager{dayWagers === 1 ? "" : "s"}
+                      {!single && <span style={{ color: "#888", marginLeft: 6, fontSize: 11 }}>{isExpanded ? "▲" : "▼"}</span>}
+                    </span>
+                    <span style={{ color: dayNet >= 0 ? "#2ecc71" : "#e74c3c", fontWeight: 700, fontSize: 13 }}>{dayNet >= 0 ? "+" : ""}{fmtMoney(dayNet)}</span>
+                  </div>
+                  {!single && isExpanded && daySessions.map((s, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0 6px 16px", borderBottom: i === daySessions.length - 1 ? "1px solid #1e1e2e" : "none", fontSize: 12 }}>
+                      <span style={{ color: "#888" }}>{s.sportsbook} · {s.wagerCount} wager{s.wagerCount === 1 ? "" : "s"}</span>
+                      <span style={{ color: s.net >= 0 ? "#2ecc71" : "#e74c3c" }}>{s.net >= 0 ? "+" : ""}{fmtMoney(s.net)}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            });
+          })()}
         </>
       )}
     </div>
