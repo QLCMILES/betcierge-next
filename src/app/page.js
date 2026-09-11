@@ -2781,7 +2781,8 @@ function Gamecast({ bets, parlays = [], onNav }) {
     </div>
   );
 }
-function History({ bets, onUpdate, onDelete, onNav }) {
+function History({ bets, onUpdate, onDelete, onNav, userKey }) {
+  const [historyView, setHistoryView] = useState("bets"); // "bets" | "tax"
   const [filterSport, setFilterSport] = useState("All");
   const [filterResult, setFilterResult] = useState("All");
   const [expandedGroups, setExpandedGroups] = useState({});
@@ -2973,6 +2974,19 @@ function History({ bets, onUpdate, onDelete, onNav }) {
       <div style={S.backRow}><button style={S.backBtn} onClick={() => onNav("dashboard")}>← Back</button><div style={S.logo}>BETCIERGE</div></div>
       <div style={S.secTitle}>Bet History 📋</div>
 
+      {/* All Bets / Tax Report toggle */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {[{ id: "bets", lbl: "All Bets" }, { id: "tax", lbl: "Tax Report" }].map(v => (
+          <button key={v.id} onClick={() => setHistoryView(v.id)} style={{ flex: 1, background: historyView === v.id ? "#1a1500" : "#131313", border: `1px solid ${historyView === v.id ? "#f5a623" : "#333"}`, color: historyView === v.id ? "#f5a623" : "#888", borderRadius: 10, padding: "10px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            {v.lbl}
+          </button>
+        ))}
+      </div>
+
+      {historyView === "tax" ? (
+        <TaxReportView userKey={userKey} />
+      ) : (
+        <>
       {/* All-time stats */}
       <div style={S.statsRow}>
         {[
@@ -3032,6 +3046,144 @@ function History({ bets, onUpdate, onDelete, onNav }) {
             );
           })}
         </div>
+      )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Tax Report tab (lives inside Bet History) ───────────────────────────────
+function TaxReportView({ userKey }) {
+  const currentYear = new Date().getFullYear();
+  const [taxYear, setTaxYear] = useState(currentYear);
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!userKey) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetch("/api/tax-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: userKey, taxYear }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (cancelled) return;
+        if (data.error) { setError(data.error); setReport(null); }
+        else { setReport(data); }
+      })
+      .catch(err => { if (!cancelled) setError(err.message || "Failed to load report"); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [userKey, taxYear]);
+
+  const fmtMoney = (n) => `$${Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const exportCSV = () => {
+    if (!report) return;
+    const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const headers = ["Date", "Sportsbook", "Game", "Bet Type", "Pick", "Odds", "Stake", "Result", "Net"];
+    const rows = report.ledger.map(w => [w.date, w.sportsbook, esc(w.game), w.betType, esc(w.pick), w.odds, w.stake, w.result, w.net].join(","));
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `betcierge-tax-report-${taxYear}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
+
+  return (
+    <div>
+      {/* Tax year selector */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {yearOptions.map(y => (
+          <button key={y} onClick={() => setTaxYear(y)} style={{ background: taxYear === y ? "#1a1500" : "#131313", border: `1px solid ${taxYear === y ? "#f5a623" : "#333"}`, color: taxYear === y ? "#f5a623" : "#888", borderRadius: 20, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>
+            {y}
+          </button>
+        ))}
+      </div>
+
+      {loading && <div style={S.empty}>Loading your {taxYear} report…</div>}
+      {!loading && error && <div style={{ ...S.empty, color: "#e74c3c" }}>Couldn't load report: {error}</div>}
+
+      {!loading && !error && report && (
+        <>
+          {/* Disclaimer */}
+          <div style={{ background: "#131313", border: "1px solid #333", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 12, color: "#888", lineHeight: 1.5 }}>
+            {report.disclaimer}
+          </div>
+
+          {/* Summary */}
+          <div style={S.statsRow}>
+            <div style={{ ...S.statBox, flex: 1 }}>
+              <div style={{ ...S.statVal, color: "#2ecc71", fontSize: 15 }}>{fmtMoney(report.summary.schedule1GrossWinnings)}</div>
+              <div style={S.statLbl}>Gross Winnings</div>
+            </div>
+            <div style={{ ...S.statBox, flex: 1 }}>
+              <div style={{ ...S.statVal, color: "#f5a623", fontSize: 15 }}>{fmtMoney(report.summary.scheduleADeductibleLossIfItemizing)}</div>
+              <div style={S.statLbl}>Deductible Loss</div>
+            </div>
+            <div style={{ ...S.statBox, flex: 1 }}>
+              <div style={{ ...S.statVal, color: "#e74c3c", fontSize: 15 }}>{fmtMoney(report.summary.nonDeductibleLoss)}</div>
+              <div style={S.statLbl}>Non-Deductible</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: "#888", marginTop: 10, marginBottom: 16, lineHeight: 1.5 }}>{report.summary.itemizingRequiredNote}</div>
+
+          {/* Data quality warnings */}
+          {report.dataQualityWarnings?.length > 0 && (
+            <div style={{ background: "#1a1500", border: "1px solid #f5a62350", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+              <div style={{ color: "#f5a623", fontSize: 12, fontWeight: 700, marginBottom: 6 }}>⚠ Worth knowing</div>
+              {report.dataQualityWarnings.map((w, i) => (
+                <div key={i} style={{ fontSize: 12, color: "#ccc", marginBottom: 4, lineHeight: 1.4 }}>• {w}</div>
+              ))}
+            </div>
+          )}
+
+          {/* Methodology notes */}
+          <details style={{ marginBottom: 8 }}>
+            <summary style={{ color: "#f5a623", fontSize: 12, cursor: "pointer" }}>How sessions are grouped</summary>
+            <div style={{ fontSize: 12, color: "#888", marginTop: 6, lineHeight: 1.5 }}>{report.sessionMethodNote}</div>
+          </details>
+          {report.predictionMarketNote && (
+            <details style={{ marginBottom: 14 }}>
+              <summary style={{ color: "#f5a623", fontSize: 12, cursor: "pointer" }}>About excluded prediction-market activity</summary>
+              <div style={{ fontSize: 12, color: "#888", marginTop: 6, lineHeight: 1.5 }}>{report.predictionMarketNote}</div>
+            </details>
+          )}
+
+          {/* Export */}
+          <div style={{ display: "flex", gap: 8, marginTop: 14, marginBottom: 20 }}>
+            <button onClick={exportCSV} style={{ flex: 1, background: "#1a1500", border: "1px solid #f5a623", color: "#f5a623", borderRadius: 10, padding: "10px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>⬇ Export CSV</button>
+            <button disabled style={{ flex: 1, background: "#131313", border: "1px solid #333", color: "#555", borderRadius: 10, padding: "10px 0", fontSize: 13, fontWeight: 700, cursor: "not-allowed" }}>⬇ Export PDF (soon)</button>
+          </div>
+
+          {/* Sessions */}
+          <div style={{ color: "#fff", fontFamily: "'Cormorant Garamond',serif", fontSize: 17, fontWeight: 700, marginBottom: 8 }}>
+            Sessions ({report.sessions.length})
+          </div>
+          {report.sessions.length === 0 ? (
+            <div style={S.empty}>No settled sessions for {taxYear} yet.</div>
+          ) : (
+            report.sessions.map((s, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #1e1e2e", fontSize: 13 }}>
+                <span style={{ color: "#ccc" }}>{s.date} · {s.sportsbook} · {s.wagerCount} wager{s.wagerCount === 1 ? "" : "s"}</span>
+                <span style={{ color: s.net >= 0 ? "#2ecc71" : "#e74c3c", fontWeight: 700 }}>{s.net >= 0 ? "+" : ""}{fmtMoney(s.net)}</span>
+              </div>
+            ))
+          )}
+        </>
       )}
     </div>
   );
@@ -3407,7 +3559,7 @@ if (!user?.name) return null; // new users are redirected to /onboarding by the 
       {screen === "card" && <TodayCard bets={bets} onNav={setScreen} />}
 {screen === "gamecast" && <Gamecast bets={bets} onNav={setScreen} />}
       {screen === "logger" && <BetLogger onSave={addBet} onNav={setScreen} />}
-      {screen === "history" && <History bets={bets} onUpdate={updateBet} onDelete={deleteBet} onNav={setScreen} />}
+      {screen === "history" && <History bets={bets} onUpdate={updateBet} onDelete={deleteBet} onNav={setScreen} userKey={userKey} />}
       {screen === "upgrade" && <UpgradeScreen user={user} userKey={userKey} onNav={setScreen} />}
 
       {/* Nav Bar */}
