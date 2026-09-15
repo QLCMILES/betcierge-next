@@ -1772,6 +1772,7 @@ function PicksTab({ userKey, user, session, onNav }) {
         .gte('date', '2026-06-11')
 .lte('date', new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }))
         .eq('status', 'active')
+        .eq('pipeline_source', 'legacy')
         .order('date', { ascending: false })
         .order('id', { ascending: true });
       if (data) {
