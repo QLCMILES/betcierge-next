@@ -10,6 +10,12 @@ const supabase = createClient(
 
 const MIN_SEARCHES_REQUIRED = 15;
 
+// Sep 16, 2026: legacy → v2 cutover kill-switch — see generate-picks.js for
+// the full rationale. Both legacy routes share this same decision (paused,
+// not deleted); kept as two separate constants rather than one shared
+// import so each route can be independently reversed if ever needed.
+const LEGACY_PIPELINE_ENABLED = false;
+
 // Phase 1 hardening: dynamic pick count instead of a forced exactly-3.
 // The model now scores every researched candidate honestly; code selects
 // the final list based on this fixed, non-negotiable threshold — never
@@ -610,6 +616,10 @@ export async function GET(request) {
   const cronHeader = request.headers.get('x-vercel-cron');
   if (authHeader !== 'Bearer betcierge_cron_2026_v3' && !cronHeader) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (!LEGACY_PIPELINE_ENABLED) {
+    console.log('LEGACY_PIPELINE_PAUSED: poll-batch-picks triggered but legacy is paused post-cutover — no-op.');
+    return Response.json({ success: true, message: 'Legacy pipeline is paused (v2 cutover) — no-op.' });
   }
   try {
     await processPendingBatches();

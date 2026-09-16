@@ -1,5 +1,6 @@
 
 import { createClient } from '@supabase/supabase-js';
+import { isEligibleForPublicRecord } from '../../../lib/picksEligibility';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -84,16 +85,21 @@ export async function POST(request) {
 export async function GET(request) {
   try {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    // Sep 16, 2026: was `.eq('pipeline_source', 'legacy').limit(3)` directly
+    // in SQL — now fetches both sources for today and applies the same
+    // shared, date-aware rule the tracker uses (src/lib/picksEligibility.js),
+    // limiting to 3 AFTER filtering so a same-date overlap (shouldn't happen
+    // post-cutover, but not assumed) can't silently cut off an eligible row.
     const { data, error } = await supabase
       .from('daily_picks')
       .select('*')
       .eq('date', today)
       .eq('status', 'active')
-      .eq('pipeline_source', 'legacy')
-      .limit(3)
+      .in('pipeline_source', ['legacy', 'v2'])
       .order('created_at', { ascending: true });
     if (error) throw error;
-    return Response.json({ picks: data });
+    const eligible = (data || []).filter(isEligibleForPublicRecord).slice(0, 3);
+    return Response.json({ picks: eligible });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }

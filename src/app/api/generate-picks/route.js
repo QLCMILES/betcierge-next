@@ -12,6 +12,15 @@ const supabase = createClient(
 const MIN_SEARCHES_REQUIRED = 15;
 const TIME_BUDGET_MS = 60000; // gates the Stage 1 candidate-pool retry only — Stage 1 is lightweight (no web search), this is generous headroom for it, not the old full-research budget
 
+// Sep 16, 2026: legacy → v2 cutover. Fork B (decided): pause legacy rather
+// than deleting it — v2's track record over Sep 1–15 (21-16, 56.8%) beat
+// legacy's over the same window (10-9-3, 52.6%), so the public record now
+// shows v2 for that range forward (see src/lib/picksEligibility.js) and
+// legacy stops generating NEW picks. This flag is the actual kill-switch —
+// an explicit no-op, not just relying on cron-job.org being paused
+// externally — so it can be reversed in one line if v2 needs rolling back.
+const LEGACY_PIPELINE_ENABLED = false;
+
 async function callClaude(body, retryCount = 0, timeoutMs = 500000) {
   // INTERIM FIX (500s), pending a real architectural fix: we do NOT stream
   // this response, so we have zero visibility into whether Claude is still
@@ -923,6 +932,10 @@ export async function GET(request) {
   const cronSecret = request.headers.get('x-cron-secret');
   if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}` && cronSecret !== process.env.CRON_SECRET) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (!LEGACY_PIPELINE_ENABLED) {
+    console.log('LEGACY_PIPELINE_PAUSED: generate-picks triggered but legacy is paused post-cutover — no-op.');
+    return Response.json({ success: true, message: 'Legacy pipeline is paused (v2 cutover) — no-op.' });
   }
   // Return 200 immediately so cron-job.org doesn't time out
   // Vercel continues running generatePicks() in the background

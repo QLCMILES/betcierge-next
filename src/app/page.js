@@ -41,6 +41,7 @@ const SPORTSBOOK_OPTIONS = [
 import { supabase } from "../lib/supabase";
 import LoginScreen from "../lib/LoginScreen";
 import Landing from "./landing/page";
+import { isEligibleForPublicRecord } from "../lib/picksEligibility";
 import {
   isEntitled,
   CURRENT_PRICE_DISPLAY,
@@ -1766,17 +1767,22 @@ function PicksTab({ userKey, user, session, onNav }) {
   const loadHistory = async () => {
     setHistoryLoading(true);
     try {
+      // Sep 16, 2026: was `.eq('pipeline_source', 'legacy')` — now fetches
+      // both sources in range and applies the shared, date-aware rule (see
+      // src/lib/picksEligibility.js) so this can never silently diverge
+      // from what /api/claude's GET handler shows in the actual pick cards
+      // again, the way it did before the Sep 15 fix.
       const { data } = await supabase
         .from('daily_picks')
         .select('*')
         .gte('date', '2026-06-11')
 .lte('date', new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }))
         .eq('status', 'active')
-        .eq('pipeline_source', 'legacy')
+        .in('pipeline_source', ['legacy', 'v2'])
         .order('date', { ascending: false })
         .order('id', { ascending: true });
       if (data) {
-        setHistory(data);
+        setHistory(data.filter(isEligibleForPublicRecord));
         setExpandedDates({});
       }
     } catch (e) {
