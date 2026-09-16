@@ -1840,6 +1840,20 @@ function PicksTab({ userKey, user, session, onNav }) {
     .sort((a, b) => new Date(b) - new Date(a));
   const toggleDate = (d) => setExpandedDates(prev => ({ ...prev, [d]: !prev[d] }));
   const formatDate = (s) => new Date(s + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  // Sep 16, 2026: legacy's game_time has always been a clean string like
+  // "8:40 PM ET" — v2 stores the same field as a raw ISO datetime instead
+  // ("2026-09-16T17:41:00+00:00"), so post-cutover picks showed the raw
+  // string straight to users. Detects the ISO shape specifically and
+  // formats it to match legacy's own style exactly; anything else (legacy's
+  // strings, or any future format) passes through unchanged rather than
+  // risk mangling a shape this wasn't built to handle.
+  const formatGameTime = (t) => {
+    if (!t) return t;
+    if (!/^\d{4}-\d{2}-\d{2}T/.test(t)) return t;
+    const d = new Date(t);
+    if (isNaN(d.getTime())) return t;
+    return d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }) + ' ET';
+  };
 
   const dayRecord = (dayPicks) => {
     const w = dayPicks.filter(p => p.result === 'Win').length;
@@ -1929,11 +1943,11 @@ function PicksTab({ userKey, user, session, onNav }) {
                               <div style={{ flex: 1 }}>
                                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 3 }}>
                                   <span style={{ fontSize: 9, background: '#1a1a00', color: '#f5a623', padding: '1px 6px', borderRadius: 4, fontWeight: 700, textTransform: 'uppercase' }}>{pick.sport}</span>
-                                  {pick.game_time && <span style={{ fontSize: 10, color: '#888' }}>{pick.game_time}</span>}
+                                  {pick.game_time && <span style={{ fontSize: 10, color: '#888' }}>{formatGameTime(pick.game_time)}</span>}
                                 </div>
                                 <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>{pick.game}</div>
                                 <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{pick.pick}</div>
-                                <div style={{ fontSize: 10, color: '#f5a623', marginTop: 3 }}>{pick.units || 1}U</div>
+                                <div style={{ fontSize: 10, color: '#f5a623', marginTop: 3 }}>{pick.units || 1} units</div>
                                 {pick.insight && !pick.insight.startsWith('**') && <div style={{ fontSize: 11, color: '#888', marginTop: 4, lineHeight: 1.4 }}>{pick.insight}</div>}
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, marginLeft: 10 }}>
@@ -1998,8 +2012,8 @@ function PicksTab({ userKey, user, session, onNav }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <span style={{ background: "#1a1a00", color: "#f5a623", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6 }}>{pick.sport}</span>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {pick.game_time && <span style={{ color: "#f5a623", fontSize: 12, fontWeight: 600, background: "#2a1a00", padding: "2px 8px", borderRadius: 4 }}>🕐 {pick.game_time}</span>}
-              <span style={{ background: '#1a1a00', color: '#f5a623', border: '1px solid #f5a623', fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>{pick.units}U</span>
+              {pick.game_time && <span style={{ color: "#f5a623", fontSize: 12, fontWeight: 600, background: "#2a1a00", padding: "2px 8px", borderRadius: 4 }}>🕐 {formatGameTime(pick.game_time)}</span>}
+              <span style={{ background: '#1a1a00', color: '#f5a623', border: '1px solid #f5a623', fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>{pick.units} units</span>
             </div>
           </div>
           <div style={{ color: "#fff", fontSize: 15, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginBottom: 8 }}>{pick.game}</div>
