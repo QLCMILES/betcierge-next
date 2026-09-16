@@ -1715,7 +1715,28 @@ return (
 // ── Insight Formatter ──────────────────────────────────────────────────────
 function formatInsight(text) {
   if (!text) return null;
-  const clean = text.replace(/<cite[^>]*>|<\/cite>/g, '');
+  // Sep 16, 2026: v2's Stage 2 research writeup sometimes comes back with
+  // real HTML tags (<h3>, <p>, etc.) instead of legacy's plain markdown-
+  // style formatting (**bold**, line breaks) — this function was only ever
+  // built for the latter, so the tags rendered as literal visible text
+  // instead of being formatted. Rather than build a second rendering path,
+  // convert the HTML into the SAME markdown-equivalent syntax the existing
+  // logic below already understands — headers become **bold** lines,
+  // paragraphs become line breaks. Fully backward-compatible: legacy
+  // insights contain none of these tags, so none of this matches and they
+  // pass through completely unchanged.
+  const htmlNormalized = text
+    .replace(/<h[1-3][^>]*>/gi, '\n**')
+    .replace(/<\/h[1-3]>/gi, '**\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<p[^>]*>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?strong>/gi, '**')
+    .replace(/<\/?b>/gi, '**')
+    .replace(/<li[^>]*>/gi, '- ')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<\/?[uo]l[^>]*>/gi, '');
+  const clean = htmlNormalized.replace(/<cite[^>]*>|<\/cite>/g, '');
   return clean.split('\n').map((line, i) => {
     if (line.trim() === '') return <div key={i} style={{ height: 8 }} />;
     if (line.startsWith('**') && line.endsWith('**')) {
@@ -1804,7 +1825,19 @@ function PicksTab({ userKey, user, session, onNav }) {
   const roi = totalRisked > 0 ? ((unitsPnl / totalRisked) * 100).toFixed(1) : '0.0';
 
   const byDate = history.reduce((acc, p) => { (acc[p.date] = acc[p.date] || []).push(p); return acc; }, {});
-  const sortedDates = Object.keys(byDate).sort((a, b) => new Date(b) - new Date(a));
+  // Sep 16, 2026: "Last 14 Days" was a label with no actual cutoff behind
+  // it — sortedDates rendered the ENTIRE fetched history (back to Jun 11),
+  // unbounded. This computes a real 14-calendar-day floor and applies it
+  // ONLY here, not to `history` itself — the topline Record/Win Rate/Units/
+  // ROI stats above are sourced from the full `history` array and are
+  // explicitly meant to cover the whole "Since Jun 11" window, not just
+  // the last 14 days.
+  const fourteenDaysAgo = new Date();
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+  const fourteenDaysAgoStr = fourteenDaysAgo.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const sortedDates = Object.keys(byDate)
+    .filter(d => d >= fourteenDaysAgoStr)
+    .sort((a, b) => new Date(b) - new Date(a));
   const toggleDate = (d) => setExpandedDates(prev => ({ ...prev, [d]: !prev[d] }));
   const formatDate = (s) => new Date(s + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
