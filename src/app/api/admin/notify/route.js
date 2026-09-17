@@ -1,69 +1,83 @@
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseAnon = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+import { NextResponse } from 'next/server';
+// If your project has the "@/" path alias configured (jsconfig.json or
+// tsconfig.json with "paths": { "@/*": ["./src/*"] }), you can use the
+// cleaner import instead:  import { requireAdmin } from '@/lib/requireAdmin';
+import { requireAdmin } from '../../../../lib/requireAdmin';
 
 export async function POST(req) {
   try {
+    // ── Admin gate ──────────────────────────────────────────────────
+    // Was previously WIDE OPEN: no auth at all, and the page never sent a
+    // token. Now verified server-side via the shared helper.
+    const gate = await requireAdmin(req);
+    if (gate.error) {
+      return NextResponse.json({ error: gate.error }, { status: gate.status });
+    }
+    const { user, adminClient } = gate;
+
     const { message, target, channel } = await req.json();
+    if (!message || !message.trim()) {
+      return NextResponse.json({ error: 'Message required' }, { status: 400 });
+    }
 
-    let query = supabaseAnon.from('user_profiles').select('*');
+    // Recipients fetched with the SERVICE-ROLE client. The old code used the
+    // anon client here, which RLS silently blocked — it returned zero users,
+    // which is why this route never actually delivered anything.
+    let query = adminClient.from('user_profiles').select('user_id, phone, sms_opt_in');
     if (target === 'team') query = query.in('subscription_tier', ['team', 'edge', 'capital']);
-    if (target === 'trial') query = query.not('trial_ends_at', 'is', null);
-    if (target === 'free') query = query.eq('subscription_tier', 'lookout');
-    
-    const { data: users, error: userError } = await query;
-    if (!users?.length) return Response.json({ sent: 0, debug: userError?.message });
+    else if (target === 'trial') query = query.not('trial_ends_at', 'is', null);
+    else if (target === 'free') query = query.eq('subscription_tier', 'lookout');
+    // target === 'all' (or anything else) → no filter → every user.
 
-    const { data: notif, error: notifError } = await supabaseAdmin.from('notifications').insert({
-      message, target, channel, sent_by: 'qlcmiles@gmail.com'
+    const { data: users, error: userError } = await query;
+    if (!users?.length) {
+      return NextResponse.json({ sent: 0, debug: userError?.message });
+    }
+
+    // One broadcast row, then a per-user delivery row for each recipient.
+    const { data: notif } = await adminClient.from('notifications').insert({
+      message,
+      target,
+      channel,
+      sent_by: user.email,
     }).select().single();
-    
 
     if (notif) {
       const userNotifs = users.map(u => ({
         user_id: u.user_id,
         notification_id: notif.id,
-        read: false
+        read: false,
       }));
-      const { error: unError } = await supabaseAdmin.from('user_notifications').insert(userNotifs);
-      console.log('User notifs error:', unError?.message);
+      await adminClient.from('user_notifications').insert(userNotifs);
     }
 
     let smsSent = 0;
     if ((channel === 'sms' || channel === 'both') && process.env.TWILIO_ACCOUNT_SID) {
       const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
       const smsUsers = users.filter(u => u.phone && u.sms_opt_in);
-      for (const user of smsUsers) {
+      for (const u of smsUsers) {
         try {
           await twilio.messages.create({
             body: `Betcierge: ${message}`,
             from: process.env.TWILIO_PHONE_NUMBER,
-            to: user.phone
+            to: u.phone,
           });
           smsSent++;
-        } catch(e) {
+        } catch (e) {
           console.error('SMS error:', e.message);
         }
       }
     }
 
-    await supabaseAdmin.from('admin_log').insert({
+    await adminClient.from('admin_log').insert({
       action: 'send_notification',
       target,
       details: { message, channel, smsSent, totalUsers: users.length },
-      performed_by: 'qlcmiles@gmail.com'
+      performed_by: user.id,
     });
 
-    return Response.json({ sent: users.length, smsSent });
-  } catch(e) {
-    return Response.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ sent: users.length, smsSent });
+  } catch (e) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }

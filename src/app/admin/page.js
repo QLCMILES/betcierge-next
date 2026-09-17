@@ -116,12 +116,17 @@ export default function AdminDashboard() {
     if (!notifMsg.trim()) return;
     setSending(true);
     try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
       const res = await fetch('/api/admin/notify', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentSession?.access_token}`,
+        },
         body: JSON.stringify({ message: notifMsg, target: notifTarget, channel: notifChannel })
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
       setFeedback(`Sent to ${data.sent} users`);
       setNotifMsg('');
     } catch(e) {
