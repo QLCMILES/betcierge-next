@@ -138,6 +138,15 @@ async function refreshMLBFromStatsAPI() {
 
 export async function GET(req) {
   try {
+    // Cron-only gate — matches the other scheduled routes. Blocks anyone
+    // from triggering the metered Odds API loop by hitting this URL.
+    // (POST below stays open — the Gamecast frontend calls it with no secret.)
+    const authHeader = req.headers.get('authorization');
+    const isVercelCron = req.headers.get('x-vercel-cron') === '1';
+    if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const allScores = [];
 
     for (const sport of SPORTS) {
