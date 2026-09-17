@@ -105,6 +105,14 @@ export async function POST(req) {
           stripe_subscription_id: null,
           stripe_price_id: null,
           subscription_ends_at: null,
+          // FIX (Sep 17, 2026): isEntitled() in lib/pricing.js checks
+          // trial_ends_at FIRST and returns true if it's still a future date
+          // — before it ever looks at subscription_status. Without clearing
+          // this here, a user who cancels DURING their free trial keeps full
+          // paid access until the original trial date, despite being fully
+          // canceled in Stripe. Confirmed live via a real test cancellation
+          // (miles+test12@dbpodcasts.com, Sep 17 2026) before this fix.
+          trial_ends_at: null,
         }).eq('user_id', profile.user_id);
 
         console.log(`✅ Subscription canceled for user ${profile.user_id}`);
