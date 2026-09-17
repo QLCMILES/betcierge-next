@@ -415,7 +415,10 @@ function TrialPricingStep({ userId, onBack, onCompleteFreeTier }) {
       await persistCompleted(userId);
       const res = await fetch("/api/stripe/create-checkout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token}`,
+        },
         body: JSON.stringify({
           priceId: STRIPE_PRICE_CURRENT,
           userId,

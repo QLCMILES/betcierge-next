@@ -1,6 +1,9 @@
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+// If your project has the "@/" path alias configured, you can use the cleaner
+// import instead:  import { requireUser } from '@/lib/requireUser';
+import { requireUser } from '../../../../lib/requireUser';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const supabase = createClient(
@@ -10,9 +13,19 @@ const supabase = createClient(
 
 export async function POST(req) {
   try {
-    const { priceId, userId, email } = await req.json();
+    // Identity comes from the verified session token, NOT the request body.
+    // Previously this route trusted a userId/email sent in the body, so a
+    // crafted request could start a checkout as another user. Now the real
+    // user is derived server-side; the body's userId/email are ignored.
+    const auth = await requireUser(req);
+    if (auth.error) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
+    const userId = auth.user.id;
+    const email = auth.user.email;
 
-    if (!priceId || !userId || !email) {
+    const { priceId } = await req.json();
+    if (!priceId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
