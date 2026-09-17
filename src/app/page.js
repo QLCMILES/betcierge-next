@@ -2100,12 +2100,14 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
     <div style={S.logo}>BETCIERGE</div>
+    <button onClick={() => onNav('settings')} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 2 }} aria-label="Account settings">
+      <span style={{ fontSize: 16 }}>⚙️</span>
+    </button>
     <button onClick={() => { setShowNotifs(!showNotifs); if (!showNotifs) markAllRead(); }} style={{ background: "none", border: "none", cursor: "pointer", position: "relative", padding: 0, marginTop: 2 }}>
       <span style={{ fontSize: 16 }}>🔔</span>
       {unreadCount > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: "#e74c3c", color: "#fff", borderRadius: "50%", fontSize: 9, fontWeight: 700, width: 14, height: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>{unreadCount}</span>}
     </button>
   </div>
-  <button onClick={() => supabase.auth.signOut()} style={{ background: "none", border: "none", color: "#888", fontSize: 11, cursor: "pointer", padding: 0 }}>Sign out</button>
 </div>
       </div>
 
@@ -2231,6 +2233,112 @@ function Dashboard({ user, bets, onNav, userKey, unreadCount, showNotifs, setSho
         <div style={S.secTitle}>Talk to Hunter 🤖</div>
         <HunterChat user={user} bets={bets} userKey={userKey} onNav={onNav} />
       </div>
+    </div>
+  );
+}
+
+// ── Settings Screen ─────────────────────────────────────────────────────────
+// Account/Settings screen — the "Manage Subscription" promise the landing
+// page already makes ("Cancel anytime — from your account settings") but
+// that had no actual screen behind it until now. Plan status is derived
+// from subscription_status (via isEntitled/isPaid), NEVER from the raw
+// subscription_tier field — tier can go stale (see Sep 17 DB check: two
+// canceled test accounts still show tier 'team'), but status is what
+// actually gates access, so it's the only thing safe to show the user.
+function planStatusInfo(user) {
+  const isTrialing = user?.trial_ends_at && new Date(user.trial_ends_at) > new Date();
+  if (isTrialing) {
+    const end = new Date(user.trial_ends_at);
+    return {
+      label: "Free Trial",
+      detail: `Ends ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`,
+      color: "#f5a623",
+    };
+  }
+  const status = (user?.subscription_status || "").toLowerCase();
+  if (status === "active" || status === "trialing") {
+    const endsRaw = user?.subscription_ends_at;
+    const detail = endsRaw
+      ? `Renews ${new Date(endsRaw).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`
+      : "Active";
+    return { label: "Active Subscriber", detail, color: "#2ecc71" };
+  }
+  if (status === "past_due") {
+    return { label: "Payment Issue", detail: "Your last payment didn't go through — update your payment method to keep your access.", color: "#e74c3c" };
+  }
+  return { label: "No Active Subscription", detail: "Start a free trial to unlock full access.", color: "#888" };
+}
+
+function SettingsScreen({ user, onNav }) {
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState("");
+  const plan = planStatusInfo(user);
+
+  const openPortal = async () => {
+    setPortalLoading(true);
+    setPortalError("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/stripe/portal', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        setPortalError(data.error || "Something went wrong. Please try again.");
+      }
+    } catch (e) {
+      setPortalError("Something went wrong. Please try again.");
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  return (
+    <div style={S.screen}>
+      <div style={S.backRow}>
+        <button style={S.backBtn} onClick={() => onNav('dashboard')}>← Back</button>
+        <div style={S.logo}>BETCIERGE</div>
+      </div>
+      <div style={S.secTitle}>Account & Subscription ⚙️</div>
+
+      <div style={S.card}>
+        <div style={S.cardLbl}>Name</div>
+        <div style={{ color: "#fff", fontSize: 15, fontWeight: 600, marginBottom: 14 }}>{user?.name || "—"}</div>
+        <div style={S.cardLbl}>Email</div>
+        <div style={{ color: "#fff", fontSize: 15, fontWeight: 600 }}>{user?.email || "—"}</div>
+      </div>
+
+      <div style={S.card}>
+        <div style={S.cardLbl}>Plan Status</div>
+        <div style={{ color: plan.color, fontSize: 18, fontFamily: "'Cormorant Garamond',serif", fontWeight: 700, marginTop: 4, marginBottom: 4 }}>
+          {plan.label}
+        </div>
+        <div style={{ color: "#888", fontSize: 13, marginBottom: 16, lineHeight: 1.5 }}>{plan.detail}</div>
+
+        <button
+          onClick={openPortal}
+          disabled={portalLoading}
+          style={{ width: "100%", background: "#f5a623", color: "#000", fontWeight: 700, fontSize: 14, padding: "12px 0", borderRadius: 10, border: "none", cursor: portalLoading ? "default" : "pointer", opacity: portalLoading ? 0.7 : 1 }}
+        >
+          {portalLoading ? "Opening..." : "Manage Subscription"}
+        </button>
+        {portalError && (
+          <div style={{ color: "#e74c3c", fontSize: 12, marginTop: 10, lineHeight: 1.5 }}>{portalError}</div>
+        )}
+      </div>
+
+      <button
+        onClick={() => supabase.auth.signOut()}
+        style={{ width: "100%", background: "none", border: "1px solid #333", color: "#888", borderRadius: 10, padding: "12px 0", fontSize: 14, cursor: "pointer", marginTop: 8 }}
+      >
+        Sign Out
+      </button>
     </div>
   );
 }
@@ -3691,6 +3799,7 @@ if (!user?.name) return null; // new users are redirected to /onboarding by the 
       {screen === "logger" && <BetLogger onSave={addBet} onNav={setScreen} />}
       {screen === "history" && <History bets={bets} onUpdate={updateBet} onDelete={deleteBet} onNav={setScreen} userKey={userKey} focusBet={focusBet} onFocusHandled={() => setFocusBet(null)} />}
       {screen === "upgrade" && <UpgradeScreen user={user} userKey={userKey} onNav={setScreen} />}
+      {screen === "settings" && <SettingsScreen user={user} onNav={setScreen} />}
 
       {/* Nav Bar */}
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "#0d0d14", borderTop: "1px solid #1e1e2e", display: "flex", padding: "8px 0 12px" }}>
