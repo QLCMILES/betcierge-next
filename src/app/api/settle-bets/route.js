@@ -574,6 +574,144 @@ async function settleMLBF5(bet) {
   return (pickedHome && homeWon) || (pickedAway && !homeWon) ? 'Win' : 'Loss';
 }
 
+// ─── FIRST HALF (NFL / NCAAF / NBA / NCAAB) ────────────────────────────────
+// Football and basketball don't have F5 — "1H" (halftime, end of Q2) is the
+// real bet type these sports use. Before this, any "1H" pick for these
+// sports matched the OLD detection condition (which only looked for the
+// literal substring "1h ml") and, even when it matched, was routed into
+// settleMLBF5() gated behind an MLB-only sport check — so it silently did
+// nothing and sat Pending forever. Worse than unsupported, since it never
+// reached the honest NO_MATCH fallback either. This is a genuinely new
+// capability, not a fix to something that partially worked.
+//
+// Same two-step pattern as the MLB F5 settler above (scoreboard for the
+// game ID, summary for the actual period detail) and the same whole-team-
+// name-first, ambiguity-guarded matching this session already fixed for
+// baseball — built in from the start here rather than needing the same
+// patch later.
+
+function sportToEspnHalfPath(sport) {
+  const s = (sport || '').toLowerCase();
+  if (s.includes('ncaaf') || s.includes('college football')) return 'football/college-football';
+  if (s.includes('nfl') || s.includes('football')) return 'football/nfl';
+  if (s.includes('ncaab') || s.includes('college basketball')) return 'basketball/mens-college-basketball';
+  if (s.includes('nba') || s.includes('basketball')) return 'basketball/nba';
+  return null;
+}
+
+async function fetchHalfGameId(sportPath, date, game) {
+  try {
+    const dateFormatted = date.replace(/-/g, '');
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/scoreboard?dates=${dateFormatted}`
+    );
+    const data = await res.json();
+    const betGame = game.toLowerCase();
+    const events = data.events || [];
+
+    const exactMatches = events.filter(e => {
+      const competitors = e.competitions?.[0]?.competitors || [];
+      return competitors.some(c => {
+        const teamName = c.team?.displayName?.toLowerCase();
+        return teamName && betGame.includes(teamName);
+      });
+    });
+    if (exactMatches.length === 1) return exactMatches[0].id;
+    if (exactMatches.length > 1) {
+      console.warn(`[settle] Ambiguous ${sportPath} half game match (exact) for game="${game}" on ${date} — ${exactMatches.length} candidates, skipping`);
+      return null;
+    }
+
+    const fuzzyMatches = events.filter(e => {
+      const competitors = e.competitions?.[0]?.competitors || [];
+      return competitors.some(c => {
+        const teamName = c.team?.displayName?.toLowerCase() || '';
+        return teamName.split(' ').some(w => w.length > 2 && betGame.includes(w));
+      });
+    });
+    if (fuzzyMatches.length > 1) {
+      console.warn(`[settle] Ambiguous ${sportPath} half game match (fuzzy) for game="${game}" on ${date} — ${fuzzyMatches.length} candidates, skipping`);
+      return null;
+    }
+    return fuzzyMatches[0]?.id || null;
+  } catch { return null; }
+}
+
+async function fetchHalfScore(sportPath, espnGameId) {
+  try {
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/summary?event=${espnGameId}`
+    );
+    const data = await res.json();
+    const competitors = data.header?.competitions?.[0]?.competitors || [];
+    const home = competitors.find(c => c.homeAway === 'home');
+    const away = competitors.find(c => c.homeAway === 'away');
+    if (!home || !away) return null;
+
+    // ESPN's linescores are PER-QUARTER points (not cumulative) for both
+    // football and basketball, so halftime = Q1 + Q2 for each team.
+    const halfPoints = (c) => {
+      const periods = c.linescores || [];
+      if (periods.length < 2) return null;
+      const q1 = parseFloat(periods[0]?.value ?? periods[0]?.displayValue);
+      const q2 = parseFloat(periods[1]?.value ?? periods[1]?.displayValue);
+      if (isNaN(q1) || isNaN(q2)) return null;
+      return q1 + q2;
+    };
+    const homeScore = halfPoints(home);
+    const awayScore = halfPoints(away);
+    if (homeScore === null || awayScore === null) return null;
+
+    return {
+      homeScore, awayScore,
+      home_team: home.team?.displayName,
+      away_team: away.team?.displayName,
+    };
+  } catch { return null; }
+}
+
+async function settleFirstHalf(bet) {
+  if (!bet.game_date || !bet.game) return null;
+  const sportPath = sportToEspnHalfPath(bet.sport);
+  if (!sportPath) return null;
+  const espnId = await fetchHalfGameId(sportPath, bet.game_date, bet.game);
+  if (!espnId) return null;
+  const half = await fetchHalfScore(sportPath, espnId);
+  if (!half) return null;
+
+  const pick = bet.pick.toLowerCase();
+  const { homeScore, awayScore } = half;
+
+  if (pick.includes('over') || pick.includes('under')) {
+    const lineMatch = pick.match(/(\d+\.?\d*)/);
+    if (!lineMatch) return null;
+    const line = parseFloat(lineMatch[1]);
+    const total = homeScore + awayScore;
+    if (total === line) return 'Push';
+    return pick.includes('over') ? (total > line ? 'Win' : 'Loss') : (total < line ? 'Win' : 'Loss');
+  }
+
+  const homeWords = (half.home_team || '').toLowerCase().split(' ').filter(w => w.length > 2);
+  const awayWords = (half.away_team || '').toLowerCase().split(' ').filter(w => w.length > 2);
+  const pickedHome = homeWords.some(w => pick.includes(w));
+  const pickedAway = awayWords.some(w => pick.includes(w));
+  if (!pickedHome && !pickedAway) return null;
+
+  // Spread (has a +/- number)
+  const spreadMatch = pick.match(/([+-]\d+\.?\d*)/);
+  if (spreadMatch) {
+    const spread = parseFloat(spreadMatch[1]);
+    const diff = pickedHome ? homeScore - awayScore : awayScore - homeScore;
+    if (diff + spread === 0) return 'Push';
+    return diff + spread > 0 ? 'Win' : 'Loss';
+  }
+
+  // Moneyline
+  if (homeScore === awayScore) return 'Push';
+  const homeWon = homeScore > awayScore;
+  return (pickedHome && homeWon) || (pickedAway && !homeWon) ? 'Win' : 'Loss';
+}
+
 // ─── TEAM TOTAL ───────────────────────────────────────────────
 
 async function settleTeamTotal(bet) {
@@ -840,8 +978,12 @@ async function settleLeg(leg, allScores) {
     return await settleComboPick(leg, leg.game, allScores);
   }
 
-  if (pick.includes('first 5') || pick.includes('f5') || pick.includes('1h ml')) {
+  if (pick.includes('first 5') || pick.includes('f5')) {
     if (sport.includes('mlb') || sport.includes('baseball')) return await settleMLBF5(leg);
+  }
+
+  if (/\b1h\b/.test(pick) || pick.includes('first half')) {
+    if (sportToEspnHalfPath(leg.sport)) return await settleFirstHalf(leg);
   }
 
   if (betType?.includes('prop') || betType?.includes('player')) {
@@ -1102,10 +1244,16 @@ async function settleDailyPicks() {
       result = await settleTeamTotal(betLike);
       log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'team_total', result });
     }
-    else if (pickLower.includes('first 5') || pickLower.includes('f5') || pickLower.includes('1h ml')) {
+    else if (pickLower.includes('first 5') || pickLower.includes('f5')) {
       if (sport.includes('mlb') || sport.includes('baseball')) {
         result = await settleMLBF5(betLike);
         log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'espn_f5', result });
+      }
+    }
+    else if (/\b1h\b/.test(pickLower) || pickLower.includes('first half')) {
+      if (sportToEspnHalfPath(pick.sport)) {
+        result = await settleFirstHalf(betLike);
+        log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'espn_first_half', result });
       }
     }
     else if (
@@ -1269,10 +1417,15 @@ export async function GET(request) {
       } else if (pick.includes('team total') || bet.bet_type?.toLowerCase() === 'teamtotal') {
         result = await settleTeamTotal(bet);
         settlementLog.push({ id: bet.id, pick: bet.pick, method: 'team_total', result });
-      } else if (pick.includes('first 5') || pick.includes('f5') || pick.includes('1h ml') || bet.bet_type?.toLowerCase() === '1h') {
+      } else if (pick.includes('first 5') || pick.includes('f5')) {
         if (sport.includes('mlb') || sport.includes('baseball')) {
           result = await settleMLBF5(bet);
           settlementLog.push({ id: bet.id, pick: bet.pick, method: 'espn_f5', result });
+        }
+      } else if (/\b1h\b/.test(pick) || pick.includes('first half') || bet.bet_type?.toLowerCase() === '1h') {
+        if (sportToEspnHalfPath(bet.sport)) {
+          result = await settleFirstHalf(bet);
+          settlementLog.push({ id: bet.id, pick: bet.pick, method: 'espn_first_half', result });
         }
       } else if (bet.bet_type?.toLowerCase().includes('prop') || bet.bet_type?.toLowerCase().includes('player')) {
         if (sport.includes('mlb') || sport.includes('baseball')) result = await settleMLBProp(bet);
