@@ -479,16 +479,47 @@ async function fetchESPNGameId(date, game) {
     );
     const data = await res.json();
     const betGame = game.toLowerCase();
-    const events = (data.events || []).filter(e => {
-      const name = e.name.toLowerCase();
-      return name.split(' ').filter(w => w.length > 2).some(w => betGame.includes(w));
+    const events = data.events || [];
+
+    // FIX: previously matched on ANY shared word from the combined event
+    // name string (e.g. "Washington Nationals at San Diego Padres" split
+    // into words, any word >2 chars). Two teams sharing a metro prefix —
+    // "Chicago" (Cubs/White Sox), "New York" (Yankees/Mets), "Los Angeles"
+    // (Dodgers/Angels), "San" (Padres/Giants) — produced a false "2
+    // candidates" hit the moment BOTH teams played anywhere that day, not
+    // just in a real doubleheader against each other. Confirmed live: the
+    // Cubs/Pirates F5 pick (Sep 11) was stuck exactly this way because the
+    // White Sox also played (@ St. Louis) the same day. Now checks each
+    // event's actual structured team name (not the combined display
+    // string) for a WHOLE-name match first — mirrors findMatchingGame()'s
+    // already-safe two-tier pattern for the Odds API path — and only falls
+    // back to word-level fuzzy matching (with the same ambiguity guard) if
+    // no whole name is found, e.g. for an abbreviated manual game string.
+    const exactMatches = events.filter(e => {
+      const competitors = e.competitions?.[0]?.competitors || [];
+      return competitors.some(c => {
+        const teamName = c.team?.displayName?.toLowerCase();
+        return teamName && betGame.includes(teamName);
+      });
     });
-    // Ambiguous — don't guess which day's game this F5 bet belongs to.
-    if (events.length > 1) {
-      console.warn(`[settle] Ambiguous ESPN game match for game="${game}" on ${date} — ${events.length} candidates, skipping`);
+    if (exactMatches.length === 1) return exactMatches[0].id;
+    if (exactMatches.length > 1) {
+      console.warn(`[settle] Ambiguous ESPN game match (exact) for game="${game}" on ${date} — ${exactMatches.length} candidates, skipping`);
       return null;
     }
-    return events[0]?.id || null;
+
+    const fuzzyMatches = events.filter(e => {
+      const competitors = e.competitions?.[0]?.competitors || [];
+      return competitors.some(c => {
+        const teamName = c.team?.displayName?.toLowerCase() || '';
+        return teamName.split(' ').some(w => w.length > 2 && betGame.includes(w));
+      });
+    });
+    if (fuzzyMatches.length > 1) {
+      console.warn(`[settle] Ambiguous ESPN game match (fuzzy) for game="${game}" on ${date} — ${fuzzyMatches.length} candidates, skipping`);
+      return null;
+    }
+    return fuzzyMatches[0]?.id || null;
   } catch { return null; }
 }
 
@@ -559,17 +590,33 @@ async function settleTeamTotal(bet) {
     const games = await fetchMLBGamePks(bet.game_date);
     if (!games.length) return null;
     const betGame = bet.game.toLowerCase();
-    const matchingGames = games.filter(g => {
+    // FIX: same whole-name-first pattern as fetchESPNGameId/
+    // settleMLBViaStatsAPI — a shared metro prefix (e.g. two Chicago or
+    // two LA teams playing the same day) was producing false ambiguity.
+    const exactGames = games.filter(g => {
       const away = g.awayTeam?.toLowerCase() || '';
       const home = g.homeTeam?.toLowerCase() || '';
-      return away.split(' ').some(w => w.length > 2 && betGame.includes(w)) ||
-        home.split(' ').some(w => w.length > 2 && betGame.includes(w));
+      return (away && betGame.includes(away)) || (home && betGame.includes(home));
     });
-    if (matchingGames.length > 1) {
-      console.warn(`[settle] Ambiguous team-total game match for game="${bet.game}" on ${bet.game_date} — ${matchingGames.length} candidates, skipping`);
+    let matchingGame;
+    if (exactGames.length === 1) {
+      matchingGame = exactGames[0];
+    } else if (exactGames.length > 1) {
+      console.warn(`[settle] Ambiguous team-total game match (exact) for game="${bet.game}" on ${bet.game_date} — ${exactGames.length} candidates, skipping`);
       return null;
+    } else {
+      const fuzzyGames = games.filter(g => {
+        const away = g.awayTeam?.toLowerCase() || '';
+        const home = g.homeTeam?.toLowerCase() || '';
+        return away.split(' ').some(w => w.length > 2 && betGame.includes(w)) ||
+          home.split(' ').some(w => w.length > 2 && betGame.includes(w));
+      });
+      if (fuzzyGames.length > 1) {
+        console.warn(`[settle] Ambiguous team-total game match (fuzzy) for game="${bet.game}" on ${bet.game_date} — ${fuzzyGames.length} candidates, skipping`);
+        return null;
+      }
+      matchingGame = fuzzyGames[0];
     }
-    const matchingGame = matchingGames[0];
     if (!matchingGame) return null;
     const res = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&gamePk=${matchingGame.gamePk}&hydrate=linescore`);
     const data = await res.json();
@@ -912,20 +959,37 @@ async function settleMLBViaStatsAPI(bet) {
   if (!games.length) return null;
 
   const betGame = (bet.game || '').toLowerCase();
-  const candidates = games.filter(g => {
+
+  // FIX: same metro-prefix false-ambiguity issue as fetchESPNGameId, same
+  // fix — require a whole team name to match first (Los Angeles Dodgers
+  // vs Los Angeles Angels sharing "Los Angeles" was producing exactly this
+  // false "2 candidates" skip whenever both LA teams played the same day,
+  // not just against each other).
+  const exactCandidates = games.filter(g => {
     const away = g.awayTeam?.toLowerCase() || '';
     const home = g.homeTeam?.toLowerCase() || '';
-    return away.split(' ').some(w => w.length > 2 && betGame.includes(w)) ||
-           home.split(' ').some(w => w.length > 2 && betGame.includes(w));
+    return (away && betGame.includes(away)) || (home && betGame.includes(home));
   });
-  // FIX: same fail-safe-over-guess rule as findMatchingGame — the 3-letter
-  // word floor can make a short nickname (e.g. "Sox") match more than one
-  // game on the same date. Only settle when it's unambiguous.
-  if (candidates.length > 1) {
-    console.warn(`[settle] Ambiguous MLB Stats API match for pick="${bet.pick}" game="${bet.game}" — ${candidates.length} candidates on ${bet.game_date}, skipping`);
+
+  let match;
+  if (exactCandidates.length === 1) {
+    match = exactCandidates[0];
+  } else if (exactCandidates.length > 1) {
+    console.warn(`[settle] Ambiguous MLB Stats API match (exact) for pick="${bet.pick}" game="${bet.game}" — ${exactCandidates.length} candidates on ${bet.game_date}, skipping`);
     return null;
+  } else {
+    const fuzzyCandidates = games.filter(g => {
+      const away = g.awayTeam?.toLowerCase() || '';
+      const home = g.homeTeam?.toLowerCase() || '';
+      return away.split(' ').some(w => w.length > 2 && betGame.includes(w)) ||
+             home.split(' ').some(w => w.length > 2 && betGame.includes(w));
+    });
+    if (fuzzyCandidates.length > 1) {
+      console.warn(`[settle] Ambiguous MLB Stats API match (fuzzy) for pick="${bet.pick}" game="${bet.game}" — ${fuzzyCandidates.length} candidates on ${bet.game_date}, skipping`);
+      return null;
+    }
+    match = fuzzyCandidates[0];
   }
-  const match = candidates[0];
   if (!match) return null;
 
   try {
@@ -1016,6 +1080,19 @@ async function settleDailyPicks() {
     };
 
     let result = null;
+
+    // FIX: "PASS — no eligible bet available" is a placeholder for a day
+    // Hunter chose not to publish a pick, not a real wager. It was falling
+    // through to the Odds-API path every run, never matching anything,
+    // and staying "Pending" forever. Flip it inactive immediately instead
+    // — same status value already used to exclude other non-public
+    // entries from the tracker, so it just stops being considered rather
+    // than needing a fake result.
+    if (pickLower.startsWith('pass')) {
+      await supabase.from('daily_picks').update({ status: 'inactive' }).eq('id', pick.id);
+      log.push({ id: pick.id, pick: pick.pick, game: pick.game, method: 'pass_skip', result: null });
+      continue;
+    }
 
     if (betType === 'combo') {
       result = await settleComboPick(betLike, pick.game, allScores);
