@@ -3421,6 +3421,14 @@ const unreadCount = notifications.filter(n => !n.read).length;
 const [bets, setBets] = useState([]);
 const [session, setSession] = useState(null);
 const [authLoading, setAuthLoading] = useState(true);
+// Sep 17, 2026: the known "stuck on Loading..." bug. getSession() below has
+// no timeout — on a flaky connection (phone waking from sleep, PWA reopened
+// with a dropped signal) that network call can just hang, and since nothing
+// else sets authLoading false, the screen sits on "Loading..." forever. A
+// manual refresh "fixes" it only because it throws the stuck request away
+// and starts over. This timer gives the same escape hatch inside the app
+// instead of requiring the user to know that trick.
+const [authTimedOut, setAuthTimedOut] = useState(false);
 const [showLogin, setShowLogin] = useState(false);
 const userKey = session?.user?.id ?? null;
   // Full-commit to the new onboarding flow: a logged-in user with no name
@@ -3436,7 +3444,13 @@ const userKey = session?.user?.id ?? null;
   }, [authLoading, session, user]);
 
 useEffect(() => {
+  // If the initial session check hasn't resolved within 8s, stop waiting
+  // silently and offer Retry instead. 8s comfortably clears a normal slow
+  // connection (a Slow-3G throttled load took ~4s in testing) without
+  // leaving someone staring at "Loading..." indefinitely on a bad one.
+  const authTimeoutId = setTimeout(() => setAuthTimedOut(true), 8000);
   supabase.auth.getSession().then(async ({ data: { session } }) => {
+    clearTimeout(authTimeoutId);
     setSession(session);
     if (session?.user?.id) {
       const { data } = await supabase
@@ -3449,6 +3463,7 @@ useEffect(() => {
     setAuthLoading(false);
   });
   const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    clearTimeout(authTimeoutId);
     setSession(session);
     if (session?.user?.id) {
       const { data } = await supabase
@@ -3471,7 +3486,7 @@ useEffect(() => {
     }
     setAuthLoading(false);
   });
-  return () => subscription.unsubscribe();
+  return () => { clearTimeout(authTimeoutId); subscription.unsubscribe(); };
 }, []);
   const handleComplete = async (userData) => {
   setUser(userData);
@@ -3733,9 +3748,21 @@ const deleteBet = async (id, isParlay) => {
 
  if (authLoading) return (
   <div style={{ minHeight: "100vh", background: "#0a0a0a", display: "flex",
-    alignItems: "center", justifyContent: "center", color: "#fff",
-    fontFamily: "Outfit, sans-serif", fontSize: 16 }}>
-    Loading...
+    flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff",
+    fontFamily: "Outfit, sans-serif", fontSize: 16, padding: 20, textAlign: "center", gap: 16 }}>
+    {authTimedOut ? (
+      <>
+        <div>This is taking longer than expected.</div>
+        <button
+          onClick={() => window.location.reload()}
+          style={{ background: "#f5a623", color: "#000", fontWeight: 700, fontSize: 14, padding: "10px 24px", borderRadius: 10, border: "none", cursor: "pointer" }}
+        >
+          Retry
+        </button>
+      </>
+    ) : (
+      "Loading..."
+    )}
   </div>
 );
 if (showLogin) return <LoginScreen onAuth={(s) => { setSession(s); setShowLogin(false); }} />;
