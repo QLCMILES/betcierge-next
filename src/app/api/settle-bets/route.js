@@ -223,6 +223,24 @@ function determineResult(bet, game) {
   const pick = bet.pick.toLowerCase();
   const betType = inferBetType(bet.pick);
 
+  // DIAGNOSTIC LOGGING (Sep 18, 2026) — added after Pittsburgh Panthers
+  // -10.5 and Buffalo Bills -4.5 both settled "Loss" on Sep 17 despite
+  // both covering comfortably (Pitt won by 14, Bills by 10). Root cause
+  // was never confirmed, because by the time it was investigated the Odds
+  // API only reflected its CURRENT state, not whatever it actually
+  // returned at the moment of settlement — there was nothing left to
+  // check. This logs the exact raw inputs this function used, every time
+  // it produces a real (non-null) result, so if it happens again there's
+  // real data to look at instead of reconstructing a guess after the
+  // fact. In particular: if game.home_team/away_team ever come back from
+  // the Odds API swapped relative to reality, this is where that would
+  // first become visible. Doesn't change any decision logic — pure
+  // logging wrapped around each existing return value.
+  const logResult = (result, extra = '') => {
+    console.log(`[settle-audit] pick="${bet.pick}" betGame="${bet.game}" betType=${betType} | odds_api_home="${game.home_team}" odds_api_away="${game.away_team}" homeScore=${homeScore} awayScore=${awayScore} gameId=${game.id} commence=${game.commence_time}${extra} | result=${result}`);
+    return result;
+  };
+
   // ── Total (Over/Under) ──
   if (betType === 'total') {
     const totalMatch = pick.match(/(\d+\.?\d*)/);
@@ -230,8 +248,8 @@ function determineResult(bet, game) {
     const total = parseFloat(totalMatch[1]);
     const actual = homeScore + awayScore;
     const isOver = pick.includes('over');
-    if (actual === total) return 'Push';
-    return isOver ? (actual > total ? 'Win' : 'Loss') : (actual < total ? 'Win' : 'Loss');
+    if (actual === total) return logResult('Push', ` total=${total}`);
+    return logResult(isOver ? (actual > total ? 'Win' : 'Loss') : (actual < total ? 'Win' : 'Loss'), ` total=${total}`);
   }
 
   // ── Run line / Spread ──
@@ -242,8 +260,8 @@ function determineResult(bet, game) {
     const homeWords = game.home_team.toLowerCase().split(' ').filter(w => w.length > 2);
     const pickedHome = homeWords.some(w => pick.includes(w));
     const diff = pickedHome ? homeScore - awayScore : awayScore - homeScore;
-    if (diff + spread === 0) return 'Push';
-    return diff + spread > 0 ? 'Win' : 'Loss';
+    if (diff + spread === 0) return logResult('Push', ` pickedHome=${pickedHome} spread=${spread} diff=${diff}`);
+    return logResult(diff + spread > 0 ? 'Win' : 'Loss', ` pickedHome=${pickedHome} spread=${spread} diff=${diff}`);
   }
 
   // ── Both Teams to Score ──
@@ -253,7 +271,7 @@ function determineResult(bet, game) {
   if (betType === 'btts') {
     const isNo = /\bno\b/.test(pick);
     const bothScored = homeScore > 0 && awayScore > 0;
-    return isNo ? (bothScored ? 'Loss' : 'Win') : (bothScored ? 'Win' : 'Loss');
+    return logResult(isNo ? (bothScored ? 'Loss' : 'Win') : (bothScored ? 'Win' : 'Loss'));
   }
 
   // ── Moneyline ──
@@ -267,9 +285,9 @@ function determineResult(bet, game) {
     return null;
   }
 
-  if (homeScore === awayScore) return 'Push';
+  if (homeScore === awayScore) return logResult('Push', ` pickedHome=${pickedHome} pickedAway=${pickedAway}`);
   const homeWon = homeScore > awayScore;
-  return (pickedHome && homeWon) || (pickedAway && !homeWon) ? 'Win' : 'Loss';
+  return logResult((pickedHome && homeWon) || (pickedAway && !homeWon) ? 'Win' : 'Loss', ` pickedHome=${pickedHome} pickedAway=${pickedAway}`);
 }
 
 // ─── COMBO PICK SETTLEMENT ───────────────────────────────────
