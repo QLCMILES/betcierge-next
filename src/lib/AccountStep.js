@@ -174,7 +174,11 @@ export default function AccountStep({ onAccountCreated, onSwitchToSignIn }) {
           <div style={S.ageText}>I confirm I am 21 years of age or older.</div>
         </div>
 
-        <div style={S.legal}>By continuing, you agree to our Terms of Service and Privacy Policy.</div>
+        <div style={S.legal}>
+          By continuing, you agree to our{" "}
+          <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: "#6a6a72", textDecoration: "underline" }}>Terms of Service</a> and{" "}
+          <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: "#6a6a72", textDecoration: "underline" }}>Privacy Policy</a>.
+        </div>
 
         <button
           style={{ ...S.btn, opacity: loading || !canSubmit ? 0.5 : 1, cursor: loading || !canSubmit ? "not-allowed" : "pointer" }}

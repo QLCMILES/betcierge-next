@@ -340,6 +340,10 @@ export default function Landing({ onGetStarted, onSignIn, source = "general" }) 
           If gambling stops being fun, it is time to stop. Call 1-800-GAMBLER for free, confidential help.<br />
           Betcierge is an information and discipline tool. It is not a sportsbook and does not take bets.
         </p>
+        <p style={{ marginTop: 12 }}>
+          <a href="/terms" style={{ color: GRAY, fontSize: 11, textDecoration: "underline", margin: "0 8px" }}>Terms of Service</a>
+          <a href="/privacy" style={{ color: GRAY, fontSize: 11, textDecoration: "underline", margin: "0 8px" }}>Privacy Policy</a>
+        </p>
       </footer>
     </div>
   );
