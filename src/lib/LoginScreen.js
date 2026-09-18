@@ -1,13 +1,15 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { signInWithEmail, signInWithGoogle } from "./supabase";
+import { signInWithEmail, signInWithGoogle, supabase } from "./supabase";
 
 // Sign-in ONLY. Per BETC_ONBOARDING_ARCHITECTURE_DECISION.md (Option B),
 // new-user account creation now lives in the onboarding flow (Screen 1 /
 // AccountStep), not here. This screen is for RETURNING users:
 //   - email/password sign-in
 //   - Google sign-in (returning Google users)
+//   - forgot-password (Sep 17, 2026 — self-service; replaces Miles manually
+//     triggering a reset from the Supabase dashboard per user)
 //   - a link sending brand-new users to /onboarding to create an account
 //
 // The old signup tab + signUpWithEmail path was removed deliberately — it
@@ -16,10 +18,17 @@ import { signInWithEmail, signInWithGoogle } from "./supabase";
 // place now.
 export default function LoginScreen({ onAuth }) {
   const router = useRouter();
+  const [mode, setMode] = useState("signin"); // "signin" | "forgot"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Forgot-password state — kept separate from the sign-in error/loading
+  // above so switching modes never shows stale state from the other flow.
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState("");
+  const [resetSent, setResetSent] = useState(false);
 
   const handleSubmit = async () => {
     setError("");
@@ -40,12 +49,46 @@ export default function LoginScreen({ onAuth }) {
     // Google OAuth redirects away — onAuth fires via onAuthStateChange after redirect
   };
 
+  // Sends the reset email via Supabase, which points the user to a
+  // DEDICATED page (/auth/reset-password), not /auth/callback. Supabase's
+  // recovery link resolves into a real session the same way an OAuth login
+  // does — if it landed on /auth/callback, that page's logic would just
+  // auto-route the now-authenticated user straight into the app and skip
+  // the actual "set a new password" step entirely. /auth/reset-password
+  // exists specifically so that doesn't happen.
+  //
+  // Supabase intentionally reports success here whether or not the email
+  // belongs to a real account (prevents leaking which emails are
+  // registered) — so the confirmation message is worded to match, and is
+  // shown the same way regardless of what actually happened server-side.
+  const handleSendReset = async () => {
+    setResetError("");
+    if (!email.trim()) {
+      setResetError("Please enter your email address.");
+      return;
+    }
+    setResetLoading(true);
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/auth/reset-password`,
+    });
+    setResetLoading(false);
+    if (err) { setResetError(err.message); return; }
+    setResetSent(true);
+  };
+
+  const backToSignIn = () => {
+    setMode("signin");
+    setResetError("");
+    setResetSent(false);
+  };
+
   const S = {
     wrap: { minHeight: "100vh", background: "#0a0a0a", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Outfit', sans-serif", padding: 20 },
     card: { background: "#111", border: "1px solid #222", borderRadius: 16, padding: "40px 36px", width: "100%", maxWidth: 420 },
     logo: { fontSize: 28, fontWeight: 700, color: "#fff", letterSpacing: 2, marginBottom: 4, fontFamily: "'Cormorant Garamond', serif" },
     tagline: { fontSize: 13, color: "#666", marginBottom: 28 },
     heading: { fontSize: 16, fontWeight: 600, color: "#fff", marginBottom: 20 },
+    sub: { fontSize: 13, color: "#888", marginBottom: 20, lineHeight: 1.5 },
     input: { width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 14, marginBottom: 12, outline: "none", boxSizing: "border-box" },
     btn: { width: "100%", padding: "13px 0", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 15, fontWeight: 600, marginBottom: 12, transition: "opacity 0.15s" },
     primaryBtn: { background: "#e8c97a", color: "#000" },
@@ -53,9 +96,60 @@ export default function LoginScreen({ onAuth }) {
     divider: { display: "flex", alignItems: "center", gap: 12, margin: "4px 0 12px", color: "#444", fontSize: 12 },
     line: { flex: 1, height: 1, background: "#2a2a2a" },
     error: { background: "#2a1a1a", border: "1px solid #5a2a2a", borderRadius: 8, padding: "10px 12px", color: "#e07a7a", fontSize: 13, marginBottom: 12 },
+    success: { background: "#1a2a1a", border: "1px solid #2a5a2a", borderRadius: 8, padding: "10px 12px", color: "#7ae0a0", fontSize: 13, marginBottom: 12, lineHeight: 1.5 },
     signupRow: { textAlign: "center", color: "#666", fontSize: 13, marginTop: 18 },
     signupLink: { color: "#e8c97a", cursor: "pointer", fontWeight: 600 },
+    forgotRow: { textAlign: "right", marginTop: -6, marginBottom: 16 },
+    forgotLink: { color: "#888", fontSize: 12, cursor: "pointer" },
+    backLink: { color: "#e8c97a", cursor: "pointer", fontWeight: 600 },
   };
+
+  if (mode === "forgot") {
+    return (
+      <div style={S.wrap}>
+        <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+        <div style={S.card}>
+          <div style={S.logo}>BETCIERGE</div>
+          <div style={S.tagline}>Your Personal Betting Concierge</div>
+          <div style={S.heading}>Reset your password.</div>
+
+          {resetSent ? (
+            <>
+              <div style={S.success}>
+                If an account exists for that email, we've sent a link to reset your password. Check your inbox (and spam folder).
+              </div>
+              <div style={S.signupRow}>
+                <span style={S.backLink} onClick={backToSignIn}>← Back to sign in</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={S.sub}>Enter the email on your account and we'll send you a link to set a new password.</div>
+              {resetError && <div style={S.error}>{resetError}</div>}
+              <input
+                style={S.input}
+                type="email"
+                placeholder="Email address"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSendReset()}
+              />
+              <button
+                style={{ ...S.btn, ...S.primaryBtn, opacity: resetLoading ? 0.6 : 1 }}
+                onClick={handleSendReset}
+                disabled={resetLoading}
+              >
+                {resetLoading ? "Sending..." : "Send reset link"}
+              </button>
+              <div style={S.signupRow}>
+                <span style={S.backLink} onClick={backToSignIn}>← Back to sign in</span>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={S.wrap}>
@@ -83,6 +177,9 @@ export default function LoginScreen({ onAuth }) {
           onChange={e => setPassword(e.target.value)}
           onKeyDown={e => e.key === "Enter" && handleSubmit()}
         />
+        <div style={S.forgotRow}>
+          <span style={S.forgotLink} onClick={() => { setMode("forgot"); setError(""); }}>Forgot password?</span>
+        </div>
 
         <button
           style={{ ...S.btn, ...S.primaryBtn, opacity: loading ? 0.6 : 1 }}
