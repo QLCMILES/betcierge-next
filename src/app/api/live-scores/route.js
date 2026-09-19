@@ -11,10 +11,19 @@ const month = new Date().getMonth() + 1;
 const isEuropeanSoccerSeason = month >= 8 || month <= 5;
 const isMLSSeason = month >= 3 && month <= 11;
 
+// The full set of sports the Odds API /scores endpoint can return for us.
+// NOTE (Sep 19, 2026): americanfootball_ncaaf and americanfootball_nfl were
+// MISSING from this list, which is why college-football / NFL Gamecast scores
+// never populated (Coastal Carolina live with no score). Added here. Football
+// is in season now, so both are always included; the seasonal soccer gating
+// below is unchanged.
 const SPORTS = [
   "baseball_mlb",
   "basketball_nba",
   "icehockey_nhl",
+  "americanfootball_nfl",
+  "americanfootball_ncaaf",
+  "basketball_ncaab",
   "mma_mixed_martial_arts",
   ...(isMLSSeason ? ["soccer_usa_mls"] : []),
   ...(isEuropeanSoccerSeason ? [
@@ -39,8 +48,12 @@ const SPORTS = [
 // every MLB straight bet / parlay leg with a real game_id for today or
 // yesterday, finds the actual matchup via team+date match against the
 // MLB schedule, and upserts under THAT SAME game_id — so the existing
-// frontend lookup (scores.find(s => s.game_id === leg.gameId)) keeps
-// working with zero frontend changes.
+// frontend lookup keeps working with zero frontend changes.
+//
+// Sep 19, 2026: upsert onConflict changed from 'game_id' to 'game_id,sport'
+// to match the new composite unique constraint (live_scores_game_id_sport_key).
+// This row already wrote sport: 'baseball_mlb', so the only change is the
+// conflict target — behavior for MLB is otherwise identical to before.
 
 async function fetchMLBScheduleForDate(date) {
   try {
@@ -97,15 +110,15 @@ async function refreshMLBFromStatsAPI() {
       if (!games.length) continue;
 
       const betGame = (bet.game || '').toLowerCase();
-      const candidates = games.filter(g =>
+      const matched = games.filter(g =>
         g.awayTeam.toLowerCase().split(' ').some(w => w.length > 2 && betGame.includes(w)) ||
         g.homeTeam.toLowerCase().split(' ').some(w => w.length > 2 && betGame.includes(w))
       );
       // Same fail-safe-over-guess rule as the settlement matchers — a short
       // shared nickname (e.g. "Sox") could match more than one game on the
       // same date. Skip rather than show the wrong live score.
-      if (candidates.length > 1) continue;
-      const match = candidates[0];
+      if (matched.length > 1) continue;
+      const match = matched[0];
       if (!match || !match.homeTeam || !match.awayTeam) continue;
       if (match.homeScore === undefined || match.awayScore === undefined) continue;
 
@@ -124,7 +137,7 @@ async function refreshMLBFromStatsAPI() {
         period: null,
         clock: null,
         last_updated: new Date().toISOString(),
-      }, { onConflict: 'game_id' });
+      }, { onConflict: 'game_id,sport' });
 
       updated++;
     }
@@ -173,7 +186,7 @@ export async function GET(req) {
             period: game.scores?.[0]?.period || null,
             clock: null,
             last_updated: new Date().toISOString()
-          }, { onConflict: "game_id" });
+          }, { onConflict: "game_id,sport" });
 
           allScores.push(game);
         }

@@ -2725,6 +2725,21 @@ function Gamecast({ bets, parlays = [], onNav }) {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
 
+  // Sport-aware score lookup. live_scores is keyed on (game_id, sport), so a
+  // match must agree on BOTH — otherwise a football bet could be handed a
+  // baseball score row sharing a game_id. SPORT_KEY_MAP (defined above)
+  // translates the bet's display label ("NCAAF") to the score row's Odds API
+  // key ("americanfootball_ncaaf"). If the sport isn't mapped (soccer/golf/
+  // tennis, not in SPORT_KEY_MAP yet), fall back to game_id-only so we never
+  // hide a legitimate score for an unmapped sport.
+  const findScore = (gameId, betSport) => {
+    if (!gameId) return null;
+    const wantKey = SPORT_KEY_MAP[betSport];
+    return scores.find(s =>
+      s.game_id === gameId && (!wantKey || s.sport === wantKey)
+    ) || null;
+  };
+
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
   const activeBets = bets.filter(b => !b.isParlay && b.gameDate === today && b.betType !== 'manual_adjustment');
   const todayParlays = bets.filter(b => b.isParlay && b.gameDate === today);
@@ -2814,7 +2829,7 @@ function Gamecast({ bets, parlays = [], onNav }) {
               </div>
               {/* All Legs */}
               {(parlay.legs || []).map((leg, i) => {
-                const legScore = scores.find(s => s.game_id === leg.gameId);
+                const legScore = findScore(leg.gameId, leg.sport);
                 const legOdds = String(leg.odds).startsWith('+') ? String(leg.odds) : Number(leg.odds) > 0 ? `+${leg.odds}` : `${leg.odds}`;
                 const isWinning = legScore && (
                   (leg.pick?.toLowerCase().includes(legScore.home_team?.toLowerCase()) && legScore.home_score > legScore.away_score) ||
@@ -2880,9 +2895,9 @@ function Gamecast({ bets, parlays = [], onNav }) {
         })}
         {/* Straight Bet Game Cards */}
         {straightGameIds.map(gameId => {
-          const score = scores.find(s => s.game_id === gameId);
           const gameBets = activeBets.filter(b => b.gameId === gameId);
           const firstBet = gameBets[0];
+          const score = findScore(gameId, firstBet?.sport);
 
           return (
             <div key={gameId} style={{ ...S.card, marginBottom: 16 }}>
